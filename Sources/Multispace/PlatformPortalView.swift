@@ -121,6 +121,22 @@ private struct PortalBrowser: View {
                 toolbarButton("square.on.square", help: "Open in browser", enabled: true) {
                     NSWorkspace.shared.open(session.currentURL ?? url)
                 }
+                toolbarButton(
+                    session.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
+                    help: session.isMuted ? "Unmute tab" : "Mute tab",
+                    enabled: true,
+                    tint: session.isMuted ? Palette.accent : nil
+                ) {
+                    session.toggleMute()
+                }
+                toolbarButton(
+                    store.isSplitView ? "rectangle.split.2x1.fill" : "rectangle.split.2x1",
+                    help: store.isSplitView ? "Exit split view" : "Split view side-by-side",
+                    enabled: true,
+                    tint: store.isSplitView ? Palette.accent : nil
+                ) {
+                    store.toggleSplitView()
+                }
                 Menu {
                     Button("Edit platform…") { store.editingPlatform = platform }
                     Button("Remove from sidebar", role: .destructive) { store.removePlatform(platform.id) }
@@ -172,6 +188,27 @@ private struct PortalBrowser: View {
                     .frame(maxWidth: 390)
                     .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                 }
+                if session.isHibernated {
+                    VStack(spacing: 14) {
+                        Image(systemName: "moon.zzz.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(Palette.accent)
+                        Text("\(platform.name) is sleeping")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("This account was put to sleep while inactive to save RAM and battery life.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                            .multilineTextAlignment(.center)
+                        Button("Wake Session") {
+                            session.wake()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.accent)
+                    }
+                    .padding(28)
+                    .frame(maxWidth: 380)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                }
             }
             .background(.white)
         }
@@ -182,6 +219,8 @@ private struct PortalBrowser: View {
             }
         }
         .onAppear {
+            session.wake()
+            session.resume()
             session.activityHandler = { title, messages, notifications in
                 store.updatePlatformActivity(accountID: account.id, title: title,
                                              messages: messages, notifications: notifications)
@@ -199,9 +238,11 @@ private struct PortalBrowser: View {
         }
     }
 
-    private func toolbarButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func toolbarButton(_ symbol: String, help: String, enabled: Bool, tint: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).frame(width: 27, height: 27)
+            Image(systemName: symbol)
+                .foregroundStyle(tint ?? (enabled ? .primary : Palette.muted))
+                .frame(width: 27, height: 27)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -282,6 +323,28 @@ final class PortalSessionRegistry {
             dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         }
     }
+
+    func cleanupInactiveSessions(activeAccountIDs: Set<UUID>, timeout: TimeInterval) {
+        for (id, session) in sessions {
+            if activeAccountIDs.contains(id) {
+                session.wake()
+                session.resume()
+            } else {
+                let inactiveTime = Date.now.timeIntervalSince(session.lastAccessedAt)
+                if inactiveTime >= timeout {
+                    session.hibernate()
+                } else {
+                    session.suspend()
+                }
+            }
+        }
+    }
+
+    func hibernateAllInactive(activeAccountIDs: Set<UUID>) {
+        for (id, session) in sessions where !activeAccountIDs.contains(id) {
+            session.hibernate()
+        }
+    }
 }
 
 @MainActor
@@ -289,8 +352,11 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var isLoading = false
+    @Published var isMuted = false
+    @Published var isHibernated = false
     @Published var currentURL: URL?
     @Published var error: String?
+    var lastAccessedAt: Date = .now
     let webView: WKWebView
     let homeURL: URL
     let accountID: UUID
@@ -304,6 +370,9 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         configuration.userContentController.addUserScript(WKUserScript(source: Self.activityScript,
                                                                        injectionTime: .atDocumentEnd,
                                                                        forMainFrameOnly: true))
+        configuration.userContentController.addUserScript(WKUserScript(source: Self.audioScript,
+                                                                       injectionTime: .atDocumentStart,
+                                                                       forMainFrameOnly: false))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(self, name: "multispaceActivity")
@@ -319,6 +388,51 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.stopLoading()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "multispaceActivity")
         activityHandler = nil
+    }
+
+    func suspend() {
+        webView.setAllMediaPlaybackSuspended(true)
+        webView.evaluateJavaScript("window.__multispaceSuspended = true;", completionHandler: nil)
+    }
+
+    func resume() {
+        lastAccessedAt = .now
+        if !isMuted {
+            webView.setAllMediaPlaybackSuspended(false)
+        }
+        webView.evaluateJavaScript("window.__multispaceSuspended = false;", completionHandler: nil)
+    }
+
+    func hibernate() {
+        guard !isHibernated else { return }
+        isHibernated = true
+        suspend()
+        webView.stopLoading()
+        webView.loadHTMLString("<html><body style='background:#121318;'></body></html>", baseURL: nil)
+    }
+
+    func wake() {
+        guard isHibernated else { return }
+        isHibernated = false
+        lastAccessedAt = .now
+        load(homeURL)
+    }
+
+    func toggleMute() {
+        isMuted.toggle()
+        applyMute()
+    }
+
+    func applyMute() {
+        let script = """
+        (() => {
+            window.__multispaceMuted = \(isMuted ? "true" : "false");
+            document.querySelectorAll('video, audio').forEach(el => {
+                el.muted = \(isMuted ? "true" : "false");
+            });
+        })();
+        """
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -350,6 +464,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isLoading = false
         updateNavigation()
+        if isMuted { applyMute() }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -536,12 +651,37 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         window.webkit?.messageHandlers?.multispaceActivity?.postMessage(payload);
       }
       function schedule() {
-        if (pending) return;
-        pending = setTimeout(() => { pending = null; collect(); }, 1000);
+        if (pending || window.__multispaceSuspended) return;
+        const delay = document.hidden ? 30000 : 1000;
+        pending = setTimeout(() => { pending = null; collect(); }, delay);
       }
       new MutationObserver(schedule).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-      setInterval(collect, 15000);
+      setInterval(() => {
+        if (!window.__multispaceSuspended) collect();
+      }, 30000);
       collect();
+    })();
+    """#
+
+    private static let audioScript = #"""
+    (() => {
+      if (window.__multispaceAudioInjected) return;
+      window.__multispaceAudioInjected = true;
+      const origPlay = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function() {
+        if (window.__multispaceMuted) {
+          this.muted = true;
+        }
+        return origPlay.apply(this, arguments);
+      };
+      const origAudio = window.Audio;
+      if (origAudio) {
+        window.Audio = function(...args) {
+          const a = new origAudio(...args);
+          if (window.__multispaceMuted) { a.muted = true; }
+          return a;
+        };
+      }
     })();
     """#
 }

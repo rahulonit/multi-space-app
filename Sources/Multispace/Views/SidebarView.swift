@@ -11,9 +11,7 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             if compact {
                 Button { if canExpand { sidebarCollapsed = false } } label: {
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Palette.accent)
+                    AppLogo(size: 24)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
@@ -22,9 +20,16 @@ struct SidebarView: View {
                 .padding(.bottom, 26)
             } else {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("Multispace")
-                            .font(.system(size: 20, weight: .bold))
+                    HStack(spacing: 10) {
+                        AppLogo(size: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Multispace")
+                                .font(.system(size: 18, weight: .bold))
+                            Text("All your social apps, one place")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                                .lineLimit(1)
+                        }
                         Spacer()
                         Button { sidebarCollapsed = true } label: {
                             Image(systemName: "sidebar.left")
@@ -32,15 +37,42 @@ struct SidebarView: View {
                         .buttonStyle(.plain)
                         .help("Collapse sidebar")
                     }
-                    Text("All your social apps, one place")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 18)
                 .padding(.top, 31)
                 .padding(.bottom, 24)
             }
+
+            // Command Palette (⌘K) trigger
+            Button {
+                store.showingCommandPalette = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                    if !compact {
+                        Text("Search or jump to…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        Spacer()
+                        Text("⌘K")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(.horizontal, compact ? 12 : 10)
+                .frame(height: 32)
+                .frame(maxWidth: .infinity)
+                .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .help("Command Palette (⌘K)")
+            .padding(.horizontal, compact ? 8 : 10)
+            .padding(.bottom, 8)
 
             VStack(spacing: 4) {
                 navButton("Home", symbol: "house.fill", destination: .home)

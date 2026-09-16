@@ -1,13 +1,14 @@
 import SwiftUI
 
 private enum SettingsPage: String, CaseIterable {
-    case general = "General", launch = "Launch", interaction = "Interaction"
-    case subscription = "Subscription", about = "About"
+    case general = "General", security = "Security", launch = "Performance"
+    case interaction = "Interaction", subscription = "Subscription", about = "About"
 
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
-        case .launch: "play.fill"
+        case .security: "lock.shield.fill"
+        case .launch: "bolt.fill"
         case .interaction: "cursorarrow.click.2"
         case .subscription: "crown.fill"
         case .about: "info.circle.fill"
@@ -16,6 +17,7 @@ private enum SettingsPage: String, CaseIterable {
     var color: Color {
         switch self {
         case .general: .cyan
+        case .security: .purple
         case .launch: .orange
         case .interaction: .blue
         case .subscription: .yellow
@@ -28,6 +30,7 @@ struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     @State private var page: SettingsPage = .general
     @State private var detail: String?
+    @State private var hibernatedFeedback = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,6 +57,7 @@ struct SettingsView: View {
                             .padding(.bottom, 28)
                         switch page {
                         case .general: generalPage
+                        case .security: securityPage
                         case .launch: launchPage
                         case .interaction: interactionPage
                         case .subscription: subscriptionPage
@@ -173,18 +177,85 @@ struct SettingsView: View {
         }
     }
 
+    private var securityPage: some View {
+        VStack(spacing: 24) {
+            settingsCard("App Lock", symbol: "lock.shield.fill", color: .purple) {
+                settingsRow("Touch ID & Password Lock", "Require biometric or system password authentication to open Multispace.") {
+                    Toggle("App Lock", isOn: $store.preferences.appLockEnabled)
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+                if store.preferences.appLockEnabled {
+                    Divider()
+                    settingsRow("Auto-Lock", "Automatically lock after inactivity or when the display sleeps.") {
+                        Picker("Auto-Lock", selection: $store.preferences.autoLockMinutes) {
+                            Text("Immediately").tag(0)
+                            Text("After 5 minutes").tag(5)
+                            Text("After 15 minutes").tag(15)
+                            Text("After 30 minutes").tag(30)
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                    }
+                    Divider()
+                    settingsRow("Lock Immediately", "Lock Multispace now. You can also press ⌘L anywhere.") {
+                        Button("Lock Now") {
+                            store.lockApp()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+    }
+
     private var launchPage: some View {
         VStack(spacing: 24) {
-            settingsCard("Launch All", symbol: "play.fill", color: .orange) {
-                settingsRow("Apps", "Native app launching is not configured yet.") {
-                    Toggle("Apps", isOn: .constant(false)).labelsHidden().disabled(true)
+            settingsCard("Memory Saver & Tab Freezing", symbol: "bolt.fill", color: .orange) {
+                settingsRow("Smart Tab Freezing", "Hibernate inactive web views to dramatically reduce RAM and battery usage.") {
+                    Toggle("Tab Freezing", isOn: $store.preferences.tabFreezingEnabled)
+                        .labelsHidden()
+                        .tint(Palette.accent)
                 }
-                Divider()
-                settingsRow("Websites", "Check your social websites when Multispace opens.") {
+                if store.preferences.tabFreezingEnabled {
+                    Divider()
+                    settingsRow("Freeze Inactive Tabs", "Unload web portals when not used for a period of time.") {
+                        Picker("Freeze Timeout", selection: $store.preferences.tabFreezeMinutes) {
+                            Text("5 minutes").tag(5)
+                            Text("15 minutes").tag(15)
+                            Text("30 minutes").tag(30)
+                            Text("60 minutes").tag(60)
+                        }
+                        .labelsHidden()
+                        .frame(width: 160)
+                    }
+                    Divider()
+                    settingsRow("Hibernate Background Tabs", "Free RAM immediately for all tabs not currently active.") {
+                        HStack(spacing: 8) {
+                            if hibernatedFeedback {
+                                Text("Hibernated!")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.green)
+                            }
+                            Button("Hibernate Inactive Tabs") {
+                                PortalSessionRegistry.shared.hibernateAllInactive(activeAccountIDs: Set(store.currentActiveAccountIDs))
+                                hibernatedFeedback = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    hibernatedFeedback = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+
+            settingsCard("Startup & Background", symbol: "play.fill", color: .cyan) {
+                settingsRow("Websites Check", "Check your connected accounts when Multispace opens.") {
                     Toggle("Websites", isOn: $store.preferences.launchWebsites).labelsHidden().tint(Palette.accent)
                 }
                 Divider()
-                settingsRow("Delay", "Wait before checking websites on startup.") {
+                settingsRow("Check Delay", "Wait before checking websites on startup.") {
                     Picker("Delay", selection: $store.preferences.launchDelay) {
                         Text("No Delay").tag(0)
                         Text("5 Seconds").tag(5)
@@ -230,9 +301,21 @@ struct SettingsView: View {
 
     private var aboutPage: some View {
         VStack(spacing: 24) {
-            settingsCard("App Info", symbol: "square.stack.3d.up.fill", color: .blue) {
+            VStack(spacing: 12) {
+                AppLogo(size: 72, cornerRadius: 16)
+                    .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
+                Text("Multispace")
+                    .font(.system(size: 22, weight: .bold))
+                Text("All your social apps, in one native macOS workspace")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+
+            settingsCard("App Info", symbol: "info.circle.fill", color: .blue) {
                 settingsRow("Version", "Multispace") {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development build")
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")
                         .foregroundStyle(Palette.muted)
                 }
             }

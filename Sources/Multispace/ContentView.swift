@@ -28,6 +28,19 @@ struct ContentView: View {
         .sheet(item: $store.editingPlatform) { platform in
             EditPlatformSheet(platform: platform)
         }
+        .overlay {
+            if store.showingCommandPalette {
+                CommandPaletteView()
+            }
+        }
+        .overlay {
+            if store.isAppLocked {
+                LockScreenView()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowAddPlatformSheet"))) { _ in
+            showingAddPlatform = true
+        }
         .onAppear {
             guard store.preferences.launchWebsites else { return }
             Task { @MainActor in
@@ -48,12 +61,16 @@ struct ContentView: View {
     @ViewBuilder
     private var mainContent: some View {
         Group {
-            switch store.destination {
-            case .home: HomeView()
-            case .feed: FeedView()
-            case .inbox: InboxView()
-            case .platform(let id): PlatformPortalView(platformID: id)
-            case .channel, .conversation, .profile, .settings: SettingsView()
+            if store.isSplitView {
+                SplitPortalView()
+            } else {
+                switch store.destination {
+                case .home: HomeView()
+                case .feed: FeedView()
+                case .inbox: InboxView()
+                case .platform(let id): PlatformPortalView(platformID: id)
+                case .channel, .conversation, .profile, .settings: SettingsView()
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

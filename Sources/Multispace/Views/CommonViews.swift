@@ -51,3 +51,26 @@ func labeledField(_ title: String, text: Binding<String>) -> some View {
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 9))
     }
 }
+
+struct AppLogo: View {
+    let size: CGFloat
+    var cornerRadius: CGFloat? = nil
+
+    var body: some View {
+        Group {
+            if let file = Bundle.module.url(forResource: "app-logo", withExtension: "png"),
+               let image = NSImage(contentsOf: file) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius ?? (size * 0.22)))
+            } else {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(Palette.accent)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}

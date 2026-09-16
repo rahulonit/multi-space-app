@@ -1,12 +1,14 @@
 import Foundation
 import Combine
 import AppKit
+import LocalAuthentication
 
 @MainActor
 final class AppStore: ObservableObject {
     @Published private(set) var data: AppData
     @Published var destination: AppDestination = .home {
         didSet {
+            recordActivity()
             if case .platform(let id) = destination {
                 UserDefaults.standard.set(id, forKey: "lastPlatformID")
             }
@@ -25,7 +27,13 @@ final class AppStore: ObservableObject {
     }
     @Published var editingPlatform: SocialPlatform?
     @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
+    @Published var isSplitView: Bool = false
+    @Published var splitDestination: AppDestination? = nil
+    @Published var showingCommandPalette: Bool = false
+    @Published var isAppLocked: Bool = false
+    @Published var lastActiveTime: Date = .now
 
+    private var cancellables = Set<AnyCancellable>()
     private let fileURL: URL
 
     init() {
@@ -84,6 +92,40 @@ final class AppStore: ObservableObject {
            let id = UserDefaults.standard.string(forKey: "lastPlatformID"), platform(id) != nil {
             destination = .platform(id)
         }
+        if preferences.appLockEnabled {
+            isAppLocked = true
+        }
+
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.preferences.appLockEnabled else { return }
+                self.isAppLocked = true
+            }
+            .store(in: &cancellables)
+
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.preferences.appLockEnabled else { return }
+                self.isAppLocked = true
+            }
+            .store(in: &cancellables)
+
+        Timer.publish(every: 30, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.checkAutoLock()
+                if self.preferences.tabFreezingEnabled {
+                    let active = Set(self.currentActiveAccountIDs)
+                    PortalSessionRegistry.shared.cleanupInactiveSessions(
+                        activeAccountIDs: active,
+                        timeout: Double(self.preferences.tabFreezeMinutes * 60)
+                    )
+                }
+            }
+            .store(in: &cancellables)
     }
 
     var me: Member { data.me }
@@ -236,6 +278,88 @@ final class AppStore: ObservableObject {
             NSApp.dockTile.badgeLabel = "\(totalUnread)"
         } else {
             NSApp.dockTile.badgeLabel = nil
+        }
+    }
+
+    func toggleSplitView() {
+        if isSplitView {
+            isSplitView = false
+        } else {
+            if splitDestination == nil {
+                let currentPlatformID: String? = {
+                    if case .platform(let id) = destination { return id }
+                    return nil
+                }()
+                let alternative = socialPlatforms.first { $0.id != currentPlatformID } ?? socialPlatforms.first
+                if let alternative {
+                    splitDestination = .platform(alternative.id)
+                } else {
+                    splitDestination = .feed
+                }
+            }
+            isSplitView = true
+        }
+    }
+
+    func openInSplitView(_ dest: AppDestination) {
+        splitDestination = dest
+        isSplitView = true
+    }
+
+    func closeSplitView() {
+        isSplitView = false
+    }
+
+    var currentActiveAccountIDs: [UUID] {
+        var ids: [UUID] = []
+        if case .platform(let id) = destination, let account = selectedAccount(for: id) {
+            ids.append(account.id)
+        }
+        if isSplitView, case .platform(let id) = splitDestination, let account = selectedAccount(for: id) {
+            ids.append(account.id)
+        }
+        return ids
+    }
+
+    func recordActivity() {
+        lastActiveTime = .now
+    }
+
+    func lockApp() {
+        isAppLocked = true
+    }
+
+    func unlockApp() async -> Bool {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            isAppLocked = false
+            recordActivity()
+            return true
+        }
+
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Unlock Multispace to access your social apps"
+            )
+            if success {
+                self.isAppLocked = false
+                self.recordActivity()
+            }
+            return success
+        } catch {
+            return false
+        }
+    }
+
+    func checkAutoLock() {
+        guard preferences.appLockEnabled, !isAppLocked else { return }
+        if preferences.autoLockMinutes > 0 {
+            let elapsed = Date.now.timeIntervalSince(lastActiveTime)
+            if elapsed >= Double(preferences.autoLockMinutes * 60) {
+                isAppLocked = true
+            }
         }
     }
 

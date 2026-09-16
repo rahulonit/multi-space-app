@@ -145,4 +145,8 @@ struct AppPreferences: Codable, Equatable {
     var launchWebsites = true
     var launchDelay = 0
     var showWebsiteAlerts = true
+    var appLockEnabled = false
+    var autoLockMinutes = 5
+    var tabFreezingEnabled = true
+    var tabFreezeMinutes = 15
 }
