@@ -19,6 +19,8 @@ struct MultispaceApp: App {
                     .keyboardShortcut("2", modifiers: .command)
                 Button("Inbox") { store.destination = .inbox }
                     .keyboardShortcut("3", modifiers: .command)
+                Button("Settings…") { store.destination = .settings }
+                    .keyboardShortcut(",", modifiers: .command)
             }
         }
     }

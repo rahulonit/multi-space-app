@@ -42,8 +42,10 @@ struct PlatformPortalView: View {
     var body: some View {
         if let platform = store.platform(platformID) {
             if let url = platform.resolvedWebsiteURL {
-                PortalBrowser(platform: platform, url: url)
-                    .id("\(platform.id):\(url.absoluteString)")
+                if let account = store.selectedAccount(for: platform.id) {
+                    PortalBrowser(platform: platform, account: account, url: url)
+                        .id("\(account.id):\(url.absoluteString)")
+                }
             } else {
                 missingWebsite(for: platform)
             }
@@ -70,13 +72,17 @@ struct PlatformPortalView: View {
 private struct PortalBrowser: View {
     @EnvironmentObject private var store: AppStore
     let platform: SocialPlatform
+    let account: PlatformAccount
     let url: URL
     @ObservedObject private var session: PortalSession
+    @State private var showingAddAccount = false
+    @State private var showingRenameAccount = false
 
-    init(platform: SocialPlatform, url: URL) {
+    init(platform: SocialPlatform, account: PlatformAccount, url: URL) {
         self.platform = platform
+        self.account = account
         self.url = url
-        _session = ObservedObject(wrappedValue: PortalSessionRegistry.shared.session(for: platform.id, url: url))
+        _session = ObservedObject(wrappedValue: PortalSessionRegistry.shared.session(for: account, url: url))
     }
 
     var body: some View {
@@ -86,6 +92,28 @@ private struct PortalBrowser: View {
                 Text(platform.name)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
+                Menu {
+                    ForEach(store.accounts(for: platform.id)) { item in
+                        Button {
+                            store.selectAccount(item.id)
+                        } label: {
+                            if item.id == account.id { Label(item.name, systemImage: "checkmark") }
+                            else { Text(item.name) }
+                        }
+                    }
+                    Divider()
+                    Button("Add account…", systemImage: "plus") { showingAddAccount = true }
+                    Button("Rename this account…", systemImage: "pencil") { showingRenameAccount = true }
+                    if !account.usesLegacyStore {
+                        Button("Remove this account", systemImage: "minus.circle", role: .destructive) {
+                            store.removeAccount(account.id)
+                        }
+                    }
+                } label: {
+                    Label(account.name, systemImage: "person.crop.circle")
+                        .lineLimit(1)
+                }
+                .menuStyle(.borderlessButton)
                 Spacer(minLength: 8)
                 toolbarButton("chevron.left", help: "Back", enabled: session.canGoBack) { session.webView.goBack() }
                 toolbarButton("chevron.right", help: "Forward", enabled: session.canGoForward) { session.webView.goForward() }
@@ -153,6 +181,22 @@ private struct PortalBrowser: View {
                     .padding(.top, 78)
             }
         }
+        .onAppear {
+            session.activityHandler = { title, messages, notifications in
+                store.updatePlatformActivity(accountID: account.id, title: title,
+                                             messages: messages, notifications: notifications)
+            }
+        }
+        .sheet(isPresented: $showingAddAccount) {
+            AccountNameSheet(title: "Add \(platform.name) account", suggestedName: "Account \(store.accounts(for: platform.id).count + 1)") { name in
+                store.addAccount(to: platform.id, name: name)
+            }
+        }
+        .sheet(isPresented: $showingRenameAccount) {
+            AccountNameSheet(title: "Rename account", suggestedName: account.name) { name in
+                store.renameAccount(account.id, to: name)
+            }
+        }
     }
 
     private func toolbarButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -162,6 +206,34 @@ private struct PortalBrowser: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .help(help)
+    }
+}
+
+private struct AccountNameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let suggestedName: String
+    let save: (String) -> Void
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title).font(.system(size: 20, weight: .bold))
+            Text("This account keeps a separate website login on this Mac.")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+            TextField("Account name", text: $name)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { save(name); dismiss() }
+                    .buttonStyle(.borderedProminent).tint(Palette.accent)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 390)
+        .onAppear { name = suggestedName }
     }
 }
 
@@ -175,35 +247,45 @@ private struct PortalWebView: NSViewRepresentable {
 @MainActor
 final class PortalSessionRegistry {
     static let shared = PortalSessionRegistry()
-    private var sessions: [String: PortalSession] = [:]
+    private var sessions: [UUID: PortalSession] = [:]
 
-    func session(for id: String, url: URL) -> PortalSession {
-        if let existing = sessions[id], existing.homeURL == url { return existing }
-        sessions[id]?.stop()
-        let created = PortalSession(id: id, url: url)
-        sessions[id] = created
+    func session(for account: PlatformAccount, url: URL) -> PortalSession {
+        if let existing = sessions[account.id], existing.homeURL == url { return existing }
+        sessions[account.id]?.stop()
+        let created = PortalSession(account: account, url: url)
+        sessions[account.id] = created
         return created
     }
 
-    func monitor(_ platforms: [SocialPlatform], store: AppStore) {
-        let activeIDs = Set(platforms.map(\.id))
+    func monitor(_ platforms: [SocialPlatform], accounts: [PlatformAccount], store: AppStore) {
+        let activeIDs = Set(accounts.map(\.id))
         for id in Array(sessions.keys) where !activeIDs.contains(id) {
             sessions[id]?.stop()
             sessions.removeValue(forKey: id)
         }
-        for platform in platforms {
+        for account in accounts {
+            guard let platform = platforms.first(where: { $0.id == account.platformID }) else { continue }
             guard let url = platform.resolvedWebsiteURL else { continue }
-            let browser = session(for: platform.id, url: url)
+            let browser = session(for: account, url: url)
             browser.activityHandler = { [weak store] title, messages, notifications in
-                store?.updatePlatformActivity(id: platform.id, title: title,
+                store?.updatePlatformActivity(accountID: account.id, title: title,
                                               messages: messages, notifications: notifications)
             }
+        }
+    }
+
+    func forget(_ account: PlatformAccount) {
+        let browser = sessions.removeValue(forKey: account.id)
+        browser?.stop()
+        if !account.usesLegacyStore {
+            let dataStore = browser?.webView.configuration.websiteDataStore ?? WKWebsiteDataStore(forIdentifier: account.id)
+            dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         }
     }
 }
 
 @MainActor
-final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate {
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var isLoading = false
@@ -211,14 +293,14 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var error: String?
     let webView: WKWebView
     let homeURL: URL
-    let platformID: String
+    let accountID: UUID
     var activityHandler: ((String, [[String: String]], [String]) -> Void)?
 
-    init(id: String, url: URL) {
-        platformID = id
+    init(account: PlatformAccount, url: URL) {
+        accountID = account.id
         homeURL = url
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
         configuration.userContentController.addUserScript(WKUserScript(source: Self.activityScript,
                                                                        injectionTime: .atDocumentEnd,
                                                                        forMainFrameOnly: true))
@@ -278,10 +360,127 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         report(error)
     }
 
+    // MARK: - WKUIDelegate (WebRTC media capture & popups)
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.grant)
+    }
+
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url { webView.load(URLRequest(url: url)) }
+        if let url = navigationAction.request.url {
+            if isExternalURL(url) {
+                NSWorkspace.shared.open(url)
+            } else {
+                webView.load(URLRequest(url: url))
+            }
+        }
         return nil
+    }
+
+    // MARK: - WKNavigationDelegate (External link routing & downloads)
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard let targetURL = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+
+        if ["blob", "data", "about"].contains(targetURL.scheme?.lowercased()) {
+            decisionHandler(.allow)
+            return
+        }
+
+        if navigationAction.navigationType == .linkActivated {
+            if isExternalURL(targetURL) {
+                decisionHandler(.cancel)
+                NSWorkspace.shared.open(targetURL)
+                return
+            }
+        }
+
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+        if !navigationResponse.canShowMIMEType {
+            decisionHandler(.download)
+            return
+        }
+        if let httpResponse = navigationResponse.response as? HTTPURLResponse,
+           let contentDisposition = (httpResponse.allHeaderFields["Content-Disposition"] ?? httpResponse.allHeaderFields["content-disposition"]) as? String,
+           contentDisposition.lowercased().contains("attachment") {
+            decisionHandler(.download)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    // MARK: - WKDownloadDelegate
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
+        let fileManager = FileManager.default
+        let downloadsDir = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
+        
+        var destinationURL = downloadsDir.appendingPathComponent(suggestedFilename)
+        var counter = 1
+        let ext = destinationURL.pathExtension
+        let baseName = destinationURL.deletingPathExtension().lastPathComponent
+
+        while fileManager.fileExists(atPath: destinationURL.path) {
+            let candidate = ext.isEmpty ? "\(baseName) (\(counter))" : "\(baseName) (\(counter)).\(ext)"
+            destinationURL = downloadsDir.appendingPathComponent(candidate)
+            counter += 1
+        }
+        completionHandler(destinationURL)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {}
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        report(error)
+    }
+
+    private func isExternalURL(_ url: URL) -> Bool {
+        guard let targetHost = url.host?.lowercased(),
+              let homeHost = homeURL.host?.lowercased() else { return false }
+
+        let authDomains = ["accounts.google.com", "appleid.apple.com", "login.microsoftonline.com", "auth0.com"]
+        if authDomains.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+            return false
+        }
+
+        let cleanHome = homeHost.replacingOccurrences(of: "^(www|web|m|app)\\.", with: "", options: .regularExpression)
+        let metaFamily = ["instagram.com", "facebook.com", "fb.com", "messenger.com", "threads.net", "whatsapp.com"]
+        if metaFamily.contains(cleanHome) && metaFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+            return false
+        }
+
+        if (cleanHome == "telegram.org" || cleanHome == "t.me") &&
+            (targetHost == "telegram.org" || targetHost.hasSuffix(".telegram.org") || targetHost == "t.me") {
+            return false
+        }
+
+        if targetHost == cleanHome || targetHost.hasSuffix(".\(cleanHome)") {
+            return false
+        }
+
+        return true
     }
 
     private func report(_ failure: Error) {

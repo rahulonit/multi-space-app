@@ -34,7 +34,10 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSMicrophoneUsageDescription</key><string>Multispace requires microphone access for audio calls and voice notes in web portals.</string>
+    <key>NSCameraUsageDescription</key><string>Multispace requires camera access for video calls in web portals.</string>
 </dict>
 </plist>
 PLIST
+codesign --force --deep --sign - "$app_path"
 echo "Built $app_path"

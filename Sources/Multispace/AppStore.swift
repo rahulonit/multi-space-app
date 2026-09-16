@@ -1,15 +1,30 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 final class AppStore: ObservableObject {
     @Published private(set) var data: AppData
-    @Published var destination: AppDestination = .home
+    @Published var destination: AppDestination = .home {
+        didSet {
+            if case .platform(let id) = destination {
+                UserDefaults.standard.set(id, forKey: "lastPlatformID")
+            }
+        }
+    }
+    @Published var preferences: AppPreferences = .init() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences") }
+    }
     @Published var activeSpaceID: UUID?
     @Published var searchText = ""
     @Published private(set) var socialPlatforms: [SocialPlatform] = SocialPlatform.defaults
+    @Published private(set) var platformAccounts: [PlatformAccount] = []
+    @Published private(set) var selectedAccountIDs: [String: UUID] = [:]
+    @Published var selectedFeedAccountID: UUID? {
+        didSet { UserDefaults.standard.set(selectedFeedAccountID?.uuidString, forKey: "selectedFeedAccountID") }
+    }
     @Published var editingPlatform: SocialPlatform?
-    @Published private(set) var platformActivity: [String: PlatformActivitySnapshot] = [:]
+    @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
 
     private let fileURL: URL
 
@@ -44,6 +59,31 @@ final class AppStore: ObservableObject {
             }
             return updated
         }
+        if let saved = UserDefaults.standard.data(forKey: "platformAccounts"),
+           let decoded = try? JSONDecoder().decode([PlatformAccount].self, from: saved) {
+            platformAccounts = decoded
+        }
+        for platform in socialPlatforms where !platformAccounts.contains(where: { $0.platformID == platform.id }) {
+            platformAccounts.append(PlatformAccount(platformID: platform.id, name: "Personal", usesLegacyStore: true))
+        }
+        platformAccounts.removeAll { account in !socialPlatforms.contains(where: { $0.id == account.platformID }) }
+        if let saved = UserDefaults.standard.data(forKey: "selectedAccountIDs"),
+           let decoded = try? JSONDecoder().decode([String: UUID].self, from: saved) {
+            selectedAccountIDs = decoded
+        }
+        if let saved = UserDefaults.standard.string(forKey: "selectedFeedAccountID"),
+           let id = UUID(uuidString: saved), account(id) != nil {
+            selectedFeedAccountID = id
+        }
+        saveAccounts()
+        if let saved = UserDefaults.standard.data(forKey: "appPreferences"),
+           let decoded = try? JSONDecoder().decode(AppPreferences.self, from: saved) {
+            preferences = decoded
+        }
+        if preferences.openTo == "Last Platform",
+           let id = UserDefaults.standard.string(forKey: "lastPlatformID"), platform(id) != nil {
+            destination = .platform(id)
+        }
     }
 
     var me: Member { data.me }
@@ -51,6 +91,61 @@ final class AppStore: ObservableObject {
     var activeChannels: [Channel] { data.channels.filter { $0.spaceID == activeSpaceID } }
     var activePosts: [Post] { data.posts.filter { $0.spaceID == activeSpaceID }.sorted { $0.createdAt > $1.createdAt } }
     func platform(_ id: String) -> SocialPlatform? { socialPlatforms.first { $0.id == id } }
+    func accounts(for platformID: String) -> [PlatformAccount] {
+        platformAccounts.filter { $0.platformID == platformID }
+    }
+    func selectedAccount(for platformID: String) -> PlatformAccount? {
+        let list = accounts(for: platformID)
+        return list.first { $0.id == selectedAccountIDs[platformID] } ?? list.first
+    }
+    func account(_ id: UUID) -> PlatformAccount? { platformAccounts.first { $0.id == id } }
+
+    func selectAccount(_ id: UUID, navigate: Bool = true) {
+        guard let account = account(id) else { return }
+        selectedAccountIDs[account.platformID] = id
+        if ["instagram", "facebook", "x", "linkedin", "tiktok"].contains(account.platformID) {
+            selectedFeedAccountID = id
+        }
+        saveAccounts()
+        if navigate { destination = .platform(account.platformID) }
+    }
+
+    func addAccount(to platformID: String, name: String) {
+        guard platform(platformID) != nil else { return }
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let count = accounts(for: platformID).count + 1
+        let account = PlatformAccount(platformID: platformID,
+                                      name: clean.isEmpty ? "Account \(count)" : String(clean.prefix(50)))
+        platformAccounts.append(account)
+        selectAccount(account.id)
+    }
+
+    func renameAccount(_ id: UUID, to name: String) {
+        guard let index = platformAccounts.firstIndex(where: { $0.id == id }) else { return }
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        platformAccounts[index].name = String(clean.prefix(50))
+        saveAccounts()
+    }
+
+    func removeAccount(_ id: UUID) {
+        guard let account = account(id), !account.usesLegacyStore,
+              accounts(for: account.platformID).count > 1 else { return }
+        PortalSessionRegistry.shared.forget(account)
+        platformAccounts.removeAll { $0.id == id }
+        platformActivity.removeValue(forKey: id)
+        if selectedFeedAccountID == id { selectedFeedAccountID = nil }
+        if selectedAccountIDs[account.platformID] == id {
+            selectedAccountIDs[account.platformID] = accounts(for: account.platformID).first?.id
+        }
+        saveAccounts()
+        updateDockBadge()
+    }
+
+    private func saveAccounts() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(platformAccounts), forKey: "platformAccounts")
+        UserDefaults.standard.set(try? JSONEncoder().encode(selectedAccountIDs), forKey: "selectedAccountIDs")
+    }
 
     func isPlatformNameAvailable(_ name: String, excluding id: String? = nil) -> Bool {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -73,6 +168,8 @@ final class AppStore: ObservableObject {
             return
         }
         socialPlatforms.append(platform)
+        platformAccounts.append(PlatformAccount(platformID: platform.id, name: "Personal", usesLegacyStore: true))
+        saveAccounts()
         savePlatforms()
         destination = .platform(platform.id)
     }
@@ -91,18 +188,26 @@ final class AppStore: ObservableObject {
 
     func removePlatform(_ id: String) {
         socialPlatforms.removeAll { $0.id == id }
-        platformActivity.removeValue(forKey: id)
+        for account in accounts(for: id) {
+            platformActivity.removeValue(forKey: account.id)
+            PortalSessionRegistry.shared.forget(account)
+            if selectedFeedAccountID == account.id { selectedFeedAccountID = nil }
+        }
+        platformAccounts.removeAll { $0.platformID == id }
+        selectedAccountIDs.removeValue(forKey: id)
+        saveAccounts()
         if destination == .platform(id) { destination = .home }
         if editingPlatform?.id == id { editingPlatform = nil }
         savePlatforms()
+        updateDockBadge()
     }
 
     private func savePlatforms() {
         UserDefaults.standard.set(try? JSONEncoder().encode(socialPlatforms), forKey: "socialPlatforms")
     }
 
-    func updatePlatformActivity(id: String, title: String, messages: [[String: String]], notifications: [String]) {
-        guard socialPlatforms.contains(where: { $0.id == id }) else { return }
+    func updatePlatformActivity(accountID: UUID, title: String, messages: [[String: String]], notifications: [String]) {
+        guard account(accountID) != nil else { return }
         let unread: Int? = {
             guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
             return Int(title[title.index(after: title.startIndex)..<end])
@@ -111,7 +216,7 @@ final class AppStore: ObservableObject {
             let sender = (item["sender"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let content = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
-            return .init(id: "\(id)-\(index)-\(sender)-\(content)",
+            return .init(id: "\(accountID)-\(index)-\(sender)-\(content)",
                          sender: String(sender.prefix(80)), text: String(content.prefix(240)))
         }
         let alerts = Array(Set(notifications.map {
@@ -119,9 +224,19 @@ final class AppStore: ObservableObject {
         }.filter { !$0.isEmpty })).sorted().prefix(8)
         let next = PlatformActivitySnapshot(unreadCount: unread, messages: previews,
                                             notifications: Array(alerts), updatedAt: .now)
-        if let previous = platformActivity[id], previous.unreadCount == next.unreadCount,
+        if let previous = platformActivity[accountID], previous.unreadCount == next.unreadCount,
            previous.messages == next.messages, previous.notifications == next.notifications { return }
-        platformActivity[id] = next
+        platformActivity[accountID] = next
+        updateDockBadge()
+    }
+
+    func updateDockBadge() {
+        let totalUnread = platformAccounts.compactMap { platformActivity[$0.id]?.unreadCount }.reduce(0, +)
+        if totalUnread > 0 {
+            NSApp.dockTile.badgeLabel = "\(totalUnread)"
+        } else {
+            NSApp.dockTile.badgeLabel = nil
+        }
     }
 
     func member(_ id: UUID) -> Member? {

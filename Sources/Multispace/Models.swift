@@ -85,6 +85,13 @@ struct PlatformActivitySnapshot {
     var updatedAt: Date
 }
 
+struct PlatformAccount: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var platformID: String
+    var name: String
+    var usesLegacyStore: Bool = false
+}
+
 struct Conversation: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var memberID: UUID
@@ -126,4 +133,16 @@ enum AppDestination: Hashable {
     case channel(UUID)
     case conversation(UUID)
     case profile
+    case settings
+}
+
+struct AppPreferences: Codable, Equatable {
+    var language = "Follow System"
+    var appearance = "Follow System"
+    var accent = "indigo"
+    var compactMode = false
+    var openTo = "Home"
+    var launchWebsites = true
+    var launchDelay = 0
+    var showWebsiteAlerts = true
 }
