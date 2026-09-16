@@ -12,6 +12,7 @@ final class AppStore: ObservableObject {
     private let fileURL: URL
 
     init() {
+        // Keep app data in Application Support so it survives app launches without a server.
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Multispace", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -23,6 +24,7 @@ final class AppStore: ObservableObject {
             data = Self.sampleData()
         }
         activeSpaceID = data.spaces.first?.id
+        // Added platforms are preferences rather than part of the main app data document.
         if let saved = UserDefaults.standard.data(forKey: "addedSocialPlatforms"),
            let decoded = try? JSONDecoder().decode([SocialPlatform].self, from: saved) {
             addedPlatforms = decoded
@@ -96,6 +98,7 @@ final class AppStore: ObservableObject {
     func send(_ text: String, to destination: AppDestination) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
+        // A message belongs to either a channel or a direct conversation, never both.
         switch destination {
         case .channel(let id):
             data.messages.append(Message(channelID: id, authorID: me.id, text: clean))
@@ -143,11 +146,13 @@ final class AppStore: ObservableObject {
     }
 
     private func save() {
+        // Atomic writes prevent a partially written JSON file if the app closes during a save.
         guard let encoded = try? JSONEncoder().encode(data) else { return }
         try? encoded.write(to: fileURL, options: .atomic)
     }
 
     private static func sampleData() -> AppData {
+        // The sample graph gives a first launch useful content while all mutations remain local.
         let me = Member(name: "You", handle: "you", color: "purple", status: "Exploring spaces")
         let maya = Member(name: "Maya Chen", handle: "mayachen", color: "pink")
         let noah = Member(name: "Noah Williams", handle: "noahw", color: "blue")
