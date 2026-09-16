@@ -16,8 +16,9 @@ fi
 swift build "${build_args[@]}"
 
 app_path="$project_root/dist/Multispace.app"
-mkdir -p "$app_path/Contents/MacOS"
+mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$project_root/.build/out/Products/Debug/Multispace" "$app_path/Contents/MacOS/Multispace"
+cp -R "$project_root/.build/out/Products/Debug/Multispace_Multispace.bundle" "$app_path/Contents/Resources/"
 cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

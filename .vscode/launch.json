@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Multi-Space App}",
+            "name": "Debug Multispace",
+            "target": "Multispace",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Multispace"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Multi-Space App}",
+            "name": "Release Multispace",
+            "target": "Multispace",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Multispace"
+        }
+    ]
+}

@@ -5,5 +5,5 @@ let package = Package(
     name: "Multispace",
     platforms: [.macOS(.v14)],
     products: [.executable(name: "Multispace", targets: ["Multispace"])],
-    targets: [.executableTarget(name: "Multispace", path: "Sources/Multispace")]
+    targets: [.executableTarget(name: "Multispace", path: "Sources/Multispace", resources: [.process("Resources")])]
 )

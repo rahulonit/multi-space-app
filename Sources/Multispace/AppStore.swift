@@ -7,7 +7,9 @@ final class AppStore: ObservableObject {
     @Published var destination: AppDestination = .home
     @Published var activeSpaceID: UUID?
     @Published var searchText = ""
-    @Published private(set) var addedPlatforms: [SocialPlatform] = []
+    @Published private(set) var socialPlatforms: [SocialPlatform] = SocialPlatform.defaults
+    @Published var editingPlatform: SocialPlatform?
+    @Published private(set) var platformActivity: [String: PlatformActivitySnapshot] = [:]
 
     private let fileURL: URL
 
@@ -24,10 +26,23 @@ final class AppStore: ObservableObject {
             data = Self.sampleData()
         }
         activeSpaceID = data.spaces.first?.id
-        // Added platforms are preferences rather than part of the main app data document.
-        if let saved = UserDefaults.standard.data(forKey: "addedSocialPlatforms"),
+        // Migrate the earlier custom-only preference without changing existing app data.
+        if let saved = UserDefaults.standard.data(forKey: "socialPlatforms"),
            let decoded = try? JSONDecoder().decode([SocialPlatform].self, from: saved) {
-            addedPlatforms = decoded
+            socialPlatforms = decoded
+        } else if let saved = UserDefaults.standard.data(forKey: "addedSocialPlatforms"),
+                  let decoded = try? JSONDecoder().decode([SocialPlatform].self, from: saved) {
+            socialPlatforms = SocialPlatform.defaults + decoded
+        }
+        socialPlatforms = socialPlatforms.map { platform in
+            var updated = platform
+            if updated.websiteURL == nil,
+               let match = SocialPlatform.suggestions.first(where: {
+                   $0.name.localizedCaseInsensitiveCompare(updated.name) == .orderedSame
+               }) {
+                updated.websiteURL = match.websiteURL
+            }
+            return updated
         }
     }
 
@@ -35,22 +50,78 @@ final class AppStore: ObservableObject {
     var activeSpace: Space? { data.spaces.first { $0.id == activeSpaceID } }
     var activeChannels: [Channel] { data.channels.filter { $0.spaceID == activeSpaceID } }
     var activePosts: [Post] { data.posts.filter { $0.spaceID == activeSpaceID }.sorted { $0.createdAt > $1.createdAt } }
-    var socialPlatforms: [SocialPlatform] { SocialPlatform.defaults + addedPlatforms }
-
     func platform(_ id: String) -> SocialPlatform? { socialPlatforms.first { $0.id == id } }
 
-    func addPlatform(name: String) {
+    func isPlatformNameAvailable(_ name: String, excluding id: String? = nil) -> Bool {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !clean.isEmpty && !socialPlatforms.contains {
+            $0.id != id && $0.name.localizedCaseInsensitiveCompare(clean) == .orderedSame
+        }
+    }
+
+    func addPlatform(name: String, websiteURL: String? = nil) {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if let existing = socialPlatforms.first(where: { $0.name.localizedCaseInsensitiveCompare(clean) == .orderedSame }) {
             destination = .platform(existing.id)
             return
         }
-        let id = UUID().uuidString
-        let platform = SocialPlatform(id: id, name: clean, symbol: "bubble.left.and.bubble.right.fill", color: "purple")
-        addedPlatforms.append(platform)
-        UserDefaults.standard.set(try? JSONEncoder().encode(addedPlatforms), forKey: "addedSocialPlatforms")
-        destination = .platform(id)
+        let platform = (SocialPlatform.defaults + SocialPlatform.suggestions).first { $0.name.localizedCaseInsensitiveCompare(clean) == .orderedSame }
+            ?? SocialPlatform(id: UUID().uuidString, name: clean, symbol: "bubble.left.and.bubble.right.fill", color: "purple", websiteURL: websiteURL)
+        if socialPlatforms.contains(where: { $0.id == platform.id }) {
+            destination = .platform(platform.id)
+            return
+        }
+        socialPlatforms.append(platform)
+        savePlatforms()
+        destination = .platform(platform.id)
+    }
+
+    func updatePlatform(id: String, name: String, symbol: String, color: String, websiteURL: String?) {
+        guard let index = socialPlatforms.firstIndex(where: { $0.id == id }),
+              isPlatformNameAvailable(name, excluding: id) else { return }
+        let original = socialPlatforms[index].officialIdentity
+        socialPlatforms[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        socialPlatforms[index].symbol = symbol
+        socialPlatforms[index].color = color
+        socialPlatforms[index].websiteURL = websiteURL
+        socialPlatforms[index].customIcon = original.map { symbol != $0.symbol }
+        savePlatforms()
+    }
+
+    func removePlatform(_ id: String) {
+        socialPlatforms.removeAll { $0.id == id }
+        platformActivity.removeValue(forKey: id)
+        if destination == .platform(id) { destination = .home }
+        if editingPlatform?.id == id { editingPlatform = nil }
+        savePlatforms()
+    }
+
+    private func savePlatforms() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(socialPlatforms), forKey: "socialPlatforms")
+    }
+
+    func updatePlatformActivity(id: String, title: String, messages: [[String: String]], notifications: [String]) {
+        guard socialPlatforms.contains(where: { $0.id == id }) else { return }
+        let unread: Int? = {
+            guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
+            return Int(title[title.index(after: title.startIndex)..<end])
+        }()
+        let previews = messages.prefix(8).enumerated().compactMap { index, item -> PlatformMessagePreview? in
+            let sender = (item["sender"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !content.isEmpty else { return nil }
+            return .init(id: "\(id)-\(index)-\(sender)-\(content)",
+                         sender: String(sender.prefix(80)), text: String(content.prefix(240)))
+        }
+        let alerts = Array(Set(notifications.map {
+            String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
+        }.filter { !$0.isEmpty })).sorted().prefix(8)
+        let next = PlatformActivitySnapshot(unreadCount: unread, messages: previews,
+                                            notifications: Array(alerts), updatedAt: .now)
+        if let previous = platformActivity[id], previous.unreadCount == next.unreadCount,
+           previous.messages == next.messages, previous.notifications == next.notifications { return }
+        platformActivity[id] = next
     }
 
     func member(_ id: UUID) -> Member? {

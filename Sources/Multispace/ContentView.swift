@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum Palette {
+enum Palette {
     static let background = Color(red: 0.055, green: 0.060, blue: 0.085)
     static let sidebar = Color(red: 0.080, green: 0.084, blue: 0.115)
     static let panel = Color(red: 0.105, green: 0.110, blue: 0.145)
@@ -9,7 +9,7 @@ private enum Palette {
     static let accent = Color(red: 0.65, green: 0.55, blue: 1.0)
 }
 
-private func spaceColor(_ name: String) -> Color {
+func spaceColor(_ name: String) -> Color {
     switch name {
     case "green": return Color(red: 0.25, green: 0.80, blue: 0.48)
     case "pink": return Color(red: 1, green: 0.55, blue: 0.72)
@@ -22,114 +22,173 @@ private func spaceColor(_ name: String) -> Color {
 struct ContentView: View {
     @EnvironmentObject private var store: AppStore
     @State private var showingAddPlatform = false
+    @State private var sidebarCollapsed = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            navigationSidebar
-            mainContent
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 820 || sidebarCollapsed
+            HStack(spacing: 0) {
+                navigationSidebar(compact: compact, canExpand: geometry.size.width >= 820)
+                mainContent
+            }
         }
         .background(Palette.background)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showingAddPlatform) { AddPlatformSheet() }
+        .sheet(item: $store.editingPlatform) { platform in
+            EditPlatformSheet(platform: platform)
+        }
+        .onAppear { PortalSessionRegistry.shared.monitor(store.socialPlatforms, store: store) }
+        .onChange(of: store.socialPlatforms) { _, platforms in
+            PortalSessionRegistry.shared.monitor(platforms, store: store)
+        }
     }
 
-    private var navigationSidebar: some View {
+    private func navigationSidebar(compact: Bool, canExpand: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Multispace")
-                    .font(.system(size: 20, weight: .bold))
-                Text("All your social apps, one place")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
+            if compact {
+                Button { if canExpand { sidebarCollapsed = false } } label: {
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Palette.accent)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .help(canExpand ? "Expand sidebar" : "Multispace")
+                .padding(.top, 31)
+                .padding(.bottom, 26)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("Multispace")
+                            .font(.system(size: 20, weight: .bold))
+                        Spacer()
+                        Button { sidebarCollapsed = true } label: {
+                            Image(systemName: "sidebar.left")
+                        }
+                        .buttonStyle(.plain)
+                        .help("Collapse sidebar")
+                    }
+                    Text("All your social apps, one place")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 31)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 31)
-            .padding(.bottom, 24)
 
             VStack(spacing: 4) {
-                navButton("Home", symbol: "house.fill", destination: .home)
-                navButton("Feed", symbol: "square.grid.2x2.fill", destination: .feed)
-                navButton("Inbox", symbol: "bubble.left.and.bubble.right.fill", destination: .inbox)
+                navButton("Home", symbol: "house.fill", destination: .home, compact: compact)
+                navButton("Feed", symbol: "square.grid.2x2.fill", destination: .feed, compact: compact)
+                navButton("Inbox", symbol: "bubble.left.and.bubble.right.fill", destination: .inbox, compact: compact)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, compact ? 8 : 10)
 
             HStack {
-                Text("SOCIAL APPS")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.5)
-                    .foregroundStyle(Palette.muted)
-                Spacer()
+                if !compact {
+                    Text("SOCIAL APPS")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(Palette.muted)
+                    Spacer()
+                }
                 Button { showingAddPlatform = true } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                        .frame(maxWidth: compact ? .infinity : nil)
                 }
                 .buttonStyle(.plain)
                 .help("Add social app")
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, compact ? 8 : 20)
             .padding(.top, 32)
             .padding(.bottom, 10)
 
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(store.socialPlatforms) { platform in
-                        platformButton(platform)
+                        platformButton(platform, compact: compact)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, compact ? 8 : 10)
             }
             Spacer(minLength: 12)
             HStack(spacing: 10) {
-                Avatar(member: store.me, size: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.me.name).font(.system(size: 12, weight: .semibold))
-                    Text("@\(store.me.handle)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                if compact {
+                    Button { store.destination = .profile } label: { Avatar(member: store.me, size: 34) }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .help("Your profile")
+                } else {
+                    Avatar(member: store.me, size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(store.me.name).font(.system(size: 12, weight: .semibold))
+                        Text("@\(store.me.handle)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    Button { store.destination = .profile } label: { Image(systemName: "gearshape") }
+                        .buttonStyle(.plain)
                 }
-                Spacer()
-                Button { store.destination = .profile } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
             }
             .padding(14)
             .background(Palette.card.opacity(0.45))
         }
-        .frame(width: 224)
+        .frame(width: compact ? 68 : 224)
         .background(Palette.sidebar)
     }
 
-    private func navButton(_ title: String, symbol: String, destination: AppDestination) -> some View {
+    private func navButton(_ title: String, symbol: String, destination: AppDestination, compact: Bool) -> some View {
         Button { store.destination = destination } label: {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 19)
-                Text(title).font(.system(size: 13, weight: store.destination == destination ? .semibold : .medium))
-                Spacer()
+                if !compact {
+                    Text(title).font(.system(size: 13, weight: store.destination == destination ? .semibold : .medium))
+                    Spacer()
+                }
             }
             .foregroundStyle(store.destination == destination ? .white : Palette.muted)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, compact ? 16 : 12)
             .frame(height: 35)
             .background(store.destination == destination ? Palette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
+        .help(title)
     }
 
-    private func platformButton(_ platform: SocialPlatform) -> some View {
+    private func platformButton(_ platform: SocialPlatform, compact: Bool) -> some View {
         let selected = store.destination == .platform(platform.id)
         return Button { store.destination = .platform(platform.id) } label: {
             HStack(spacing: 12) {
-                Image(systemName: platform.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(spaceColor(platform.color))
-                    .frame(width: 19)
-                Text(platform.name).font(.system(size: 13, weight: selected ? .semibold : .medium))
-                Spacer()
+                PlatformLogo(platform: platform, size: 20)
+                    .frame(width: 20)
+                if !compact {
+                    Text(platform.name).font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    Spacer()
+                    if let count = store.platformActivity[platform.id]?.unreadCount, count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Palette.accent, in: Capsule())
+                    }
+                }
             }
             .foregroundStyle(selected ? .white : Palette.muted)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, compact ? 16 : 12)
             .frame(height: 37)
             .background(selected ? Palette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
+        .help(platform.name)
+        .contextMenu {
+            Button("Edit…", systemImage: "pencil") { store.editingPlatform = platform }
+            Button("Remove from sidebar", systemImage: "minus.circle", role: .destructive) {
+                store.removePlatform(platform.id)
+            }
+        }
     }
 
     @ViewBuilder
@@ -139,7 +198,7 @@ struct ContentView: View {
             case .home: HomeView()
             case .feed: FeedView()
             case .inbox: InboxView()
-            case .platform(let id): PlatformView(platformID: id)
+            case .platform(let id): PlatformPortalView(platformID: id)
             case .channel, .conversation: ChatView(destination: store.destination)
             case .profile: ProfileView()
             }
@@ -181,7 +240,7 @@ private struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack {
-                    SectionHeading(title: "Welcome back, \(store.me.name)", subtitle: "Your people and conversations are all here.")
+                    SectionHeading(title: "Welcome back, \(store.me.name)", subtitle: "Recent activity from your social apps.")
                     Spacer()
                     Image(systemName: "sparkles").font(.system(size: 25)).foregroundStyle(Palette.accent)
                 }
@@ -191,12 +250,20 @@ private struct HomeView: View {
                     ForEach(store.socialPlatforms) { platform in
                         Button { store.destination = .platform(platform.id) } label: {
                             HStack(spacing: 14) {
-                                Image(systemName: platform.symbol).font(.system(size: 19)).foregroundStyle(spaceColor(platform.color))
+                                PlatformLogo(platform: platform, size: 27)
                                     .frame(width: 42, height: 42)
                                     .background(spaceColor(platform.color).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(platform.name).font(.system(size: 14, weight: .semibold))
-                                    Text("Account not connected").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                                    Text(platform.resolvedWebsiteURL?.host ?? "Set a website URL")
+                                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                                    if let snapshot = store.platformActivity[platform.id] {
+                                        Text(snapshot.unreadCount.map { "Website unread indicator: \($0)" } ?? "Website checked")
+                                            .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                    } else {
+                                        Text("Open to check activity")
+                                            .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                    }
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right").foregroundStyle(Palette.muted)
@@ -208,8 +275,28 @@ private struct HomeView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("COMMUNITY POSTS").font(.system(size: 11, weight: .bold)).tracking(1.5).foregroundStyle(Palette.muted)
-                    ForEach(store.activePosts.prefix(2)) { post in PostCard(post: post) }
+                    Text("RECENT ACTIVITY").font(.system(size: 11, weight: .bold)).tracking(1.5).foregroundStyle(Palette.muted)
+                    if !hasActivity {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("No message previews yet")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Open a platform and sign in. Previews and website alerts appear here when its web portal makes them available.")
+                                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    ForEach(store.socialPlatforms) { platform in
+                        if let snapshot = store.platformActivity[platform.id] {
+                            ForEach(snapshot.messages) { message in
+                                activityRow(platform: platform, symbol: "bubble.left.fill", title: message.sender, detail: message.text)
+                            }
+                            ForEach(snapshot.notifications, id: \.self) { notification in
+                                activityRow(platform: platform, symbol: "bell.fill", title: "Website alert", detail: notification)
+                            }
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 38)
@@ -217,6 +304,36 @@ private struct HomeView: View {
             .frame(maxWidth: 850)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private var hasActivity: Bool {
+        store.socialPlatforms.contains { platform in
+            guard let snapshot = store.platformActivity[platform.id] else { return false }
+            return !snapshot.messages.isEmpty || !snapshot.notifications.isEmpty
+        }
+    }
+
+    private func activityRow(platform: SocialPlatform, symbol: String, title: String, detail: String) -> some View {
+        Button { store.destination = .platform(platform.id) } label: {
+            HStack(alignment: .top, spacing: 12) {
+                PlatformLogo(platform: platform, size: 24).frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: symbol).font(.system(size: 10))
+                        Text(platform.name).font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(Palette.muted)
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(Palette.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -507,31 +624,51 @@ private struct AddPlatformSheet: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    private let suggestions = ["Discord", "Signal", "LinkedIn", "X", "Snapchat", "TikTok"]
+    @State private var websiteURL = ""
+
+    private var availablePlatforms: [SocialPlatform] {
+        (SocialPlatform.defaults + SocialPlatform.suggestions).filter { candidate in
+            !store.socialPlatforms.contains {
+                $0.id == candidate.id || $0.name.localizedCaseInsensitiveCompare(candidate.name) == .orderedSame
+            }
+        }
+    }
+
+    private var validWebsite: Bool {
+        guard let url = URL(string: websiteURL), url.scheme?.lowercased() == "https" else { return false }
+        return url.host != nil
+    }
+
+    private var isKnownName: Bool {
+        (SocialPlatform.defaults + SocialPlatform.suggestions).contains {
+            $0.name.localizedCaseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             SectionHeading(title: "Add a social app", subtitle: "Choose another platform to show in your sidebar.")
-            Text("POPULAR APPS")
+            Text("AVAILABLE APPS")
                 .font(.system(size: 10, weight: .bold))
                 .tracking(1.5)
                 .foregroundStyle(Palette.muted)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    Button(suggestion) {
-                        store.addPlatform(name: suggestion)
+                ForEach(availablePlatforms) { suggestion in
+                    Button(suggestion.name) {
+                        store.addPlatform(name: suggestion.name)
                         dismiss()
                     }
                     .buttonStyle(.bordered)
                 }
             }
             labeledField("Or enter an app name", text: $name)
+            labeledField("Official website URL (https://…)", text: $websiteURL)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button("Add app") { store.addPlatform(name: name); dismiss() }
+                Button("Add app") { store.addPlatform(name: name, websiteURL: websiteURL); dismiss() }
                     .buttonStyle(.borderedProminent).tint(Palette.accent)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!isKnownName && !validWebsite))
             }
         }
         .padding(28)
@@ -540,37 +677,94 @@ private struct AddPlatformSheet: View {
     }
 }
 
-private struct PlatformView: View {
+private struct EditPlatformSheet: View {
     @EnvironmentObject private var store: AppStore
-    let platformID: String
+    @Environment(\.dismiss) private var dismiss
+    let platform: SocialPlatform
+    @State private var name: String
+    @State private var symbol: String
+    @State private var color: String
+    @State private var websiteURL: String
+
+    private let icons = [
+        ("Chat", "bubble.left.and.bubble.right.fill"),
+        ("Phone", "phone.bubble.fill"),
+        ("Camera", "camera.fill"),
+        ("Send", "paperplane.fill"),
+        ("People", "person.2.fill"),
+        ("Video", "video.fill")
+    ]
+    private let colors = ["purple", "green", "pink", "blue", "orange"]
+
+    init(platform: SocialPlatform) {
+        self.platform = platform
+        _name = State(initialValue: platform.name)
+        _symbol = State(initialValue: platform.symbol)
+        _color = State(initialValue: platform.color)
+        _websiteURL = State(initialValue: platform.resolvedWebsiteURL?.absoluteString ?? "")
+    }
 
     var body: some View {
-        let platform = store.platform(platformID)
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 17) {
-                Image(systemName: platform?.symbol ?? "bubble.left.and.bubble.right.fill")
-                    .font(.system(size: 27))
-                    .foregroundStyle(spaceColor(platform?.color ?? "purple"))
-                    .frame(width: 64, height: 64)
-                    .background(spaceColor(platform?.color ?? "purple").opacity(0.14), in: RoundedRectangle(cornerRadius: 18))
-                SectionHeading(title: platform?.name ?? "Social app", subtitle: "Your account and conversations")
+        VStack(alignment: .leading, spacing: 20) {
+            SectionHeading(title: "Edit social app", subtitle: "Change how this platform appears in Multispace.")
+            labeledField("Display name", text: $name)
+            labeledField("Website URL (https://…)", text: $websiteURL)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ICON").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(Palette.muted)
+                HStack(spacing: 9) {
+                    ForEach(icons, id: \.1) { icon in
+                        Button { symbol = icon.1 } label: {
+                            Image(systemName: icon.1)
+                                .font(.system(size: 16))
+                                .frame(width: 42, height: 38)
+                                .background(symbol == icon.1 ? Palette.accent.opacity(0.35) : Palette.card, in: RoundedRectangle(cornerRadius: 9))
+                        }
+                        .buttonStyle(.plain)
+                        .help(icon.0)
+                    }
+                }
             }
-            .padding(.top, 38)
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Account not connected", systemImage: "link.badge.plus")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("\(platform?.name ?? "This app") appears in your sidebar. Account connection and message sync will be available when its supported integration is added.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("COLOR").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(Palette.muted)
+                HStack(spacing: 11) {
+                    ForEach(colors, id: \.self) { option in
+                        Button { color = option } label: {
+                            Circle().fill(spaceColor(option))
+                                .frame(width: 25, height: 25)
+                                .padding(4)
+                                .overlay(Circle().strokeBorder(color == option ? .white : .clear, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                        .help(option.capitalized)
+                    }
+                }
             }
-            .padding(22)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
-            Spacer()
+            HStack {
+                if !websiteURL.isEmpty && !validWebsite {
+                    Text("Enter a valid HTTPS website.").font(.system(size: 11)).foregroundStyle(.orange)
+                }
+                if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                    !store.isPlatformNameAvailable(name, excluding: platform.id) {
+                    Text("That name is already in your list.").font(.system(size: 11)).foregroundStyle(.orange)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save changes") {
+                    store.updatePlatform(id: platform.id, name: name, symbol: symbol, color: color,
+                                         websiteURL: websiteURL.isEmpty ? nil : websiteURL)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent).tint(Palette.accent)
+                .disabled(!store.isPlatformNameAvailable(name, excluding: platform.id) || (!websiteURL.isEmpty && !validWebsite))
+            }
         }
-        .padding(.horizontal, 38)
-        .frame(maxWidth: 760)
-        .frame(maxWidth: .infinity)
+        .padding(28)
+        .frame(width: 430)
+        .background(Palette.sidebar)
+    }
+
+    private var validWebsite: Bool {
+        guard let url = URL(string: websiteURL), url.scheme?.lowercased() == "https" else { return false }
+        return url.host != nil
     }
 }

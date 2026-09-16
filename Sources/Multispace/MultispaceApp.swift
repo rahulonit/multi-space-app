@@ -8,7 +8,7 @@ struct MultispaceApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 960, minHeight: 640)
+                .frame(minWidth: 620, minHeight: 520)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
