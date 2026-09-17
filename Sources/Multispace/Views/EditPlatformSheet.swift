@@ -29,7 +29,7 @@ struct EditPlatformSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SectionHeading(title: "Edit social app", subtitle: "Change how this platform appears in Multispace.")
+            SectionHeading(title: "Edit social app", subtitle: "Change how this platform appears in PINGGO.")
             labeledField("Display name", text: $name)
             labeledField("Website URL (https://…)", text: $websiteURL)
             VStack(alignment: .leading, spacing: 8) {

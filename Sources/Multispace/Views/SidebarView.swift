@@ -15,7 +15,7 @@ struct SidebarView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
-                .help(canExpand ? "Expand sidebar" : "Multispace")
+                .help(canExpand ? "Expand sidebar" : "PINGGO")
                 .padding(.top, 31)
                 .padding(.bottom, 26)
             } else {
@@ -23,7 +23,7 @@ struct SidebarView: View {
                     HStack(spacing: 10) {
                         AppLogo(size: 28)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Multispace")
+                            Text("PINGGO")
                                 .font(.system(size: 18, weight: .bold))
                             Text("All your social apps, one place")
                                 .font(.system(size: 11))
@@ -76,7 +76,6 @@ struct SidebarView: View {
 
             VStack(spacing: 4) {
                 navButton("Home", symbol: "house.fill", destination: .home)
-                navButton("Feed", symbol: "square.grid.2x2.fill", destination: .feed)
                 navButton("Inbox", symbol: "bubble.left.and.bubble.right.fill", destination: .inbox)
             }
             .padding(.horizontal, compact ? 8 : 10)

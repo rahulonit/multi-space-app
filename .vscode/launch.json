@@ -19,6 +19,26 @@
             "target": "Multispace",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release Multispace"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Multi-Space App}",
+            "name": "Debug PINGGO",
+            "target": "PINGGO",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PINGGO"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Multi-Space App}",
+            "name": "Release PINGGO",
+            "target": "PINGGO",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PINGGO"
         }
     ]
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MultispaceApp: App {
+struct PinggoApp: App {
     @StateObject private var store = AppStore()
 
     init() {
@@ -16,16 +16,17 @@ struct MultispaceApp: App {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 620, minHeight: 520)
+                .onOpenURL { url in
+                    store.handleDeepLink(url)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Home") { store.destination = .home }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("Feed") { store.destination = .feed }
-                    .keyboardShortcut("2", modifiers: .command)
                 Button("Inbox") { store.destination = .inbox }
-                    .keyboardShortcut("3", modifiers: .command)
+                    .keyboardShortcut("2", modifiers: .command)
                 Button("Settings…") { store.destination = .settings }
                     .keyboardShortcut(",", modifiers: .command)
                 Divider()
@@ -34,7 +35,7 @@ struct MultispaceApp: App {
                 Button("Toggle Split View") { store.toggleSplitView() }
                     .keyboardShortcut("\\", modifiers: .command)
                 Divider()
-                Button("Lock Multispace") { store.lockApp() }
+                Button("Lock PINGGO") { store.lockApp() }
                     .keyboardShortcut("l", modifiers: .command)
             }
         }

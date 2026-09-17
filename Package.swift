@@ -2,8 +2,8 @@
 import PackageDescription
 
 let package = Package(
-    name: "Multispace",
+    name: "PINGGO",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Multispace", targets: ["Multispace"])],
-    targets: [.executableTarget(name: "Multispace", path: "Sources/Multispace", resources: [.process("Resources")])]
+    products: [.executable(name: "PINGGO", targets: ["PINGGO"])],
+    targets: [.executableTarget(name: "PINGGO", path: "Sources/Multispace", resources: [.process("Resources")])]
 )

@@ -24,10 +24,7 @@ struct CommandPaletteView: View {
         list.append(Item(id: "nav-home", title: "Home", subtitle: "Overview & recent activity", category: "Navigation", symbol: "house.fill", platform: nil, badge: "⌘1") {
             store.destination = .home
         })
-        list.append(Item(id: "nav-feed", title: "Feeds", subtitle: "Browse social media posts", category: "Navigation", symbol: "square.grid.2x2.fill", platform: nil, badge: "⌘2") {
-            store.destination = .feed
-        })
-        list.append(Item(id: "nav-inbox", title: "Inbox", subtitle: "Cross-platform message previews", category: "Navigation", symbol: "bubble.left.and.bubble.right.fill", platform: nil, badge: "⌘3") {
+        list.append(Item(id: "nav-inbox", title: "Inbox", subtitle: "Cross-platform message previews", category: "Navigation", symbol: "bubble.left.and.bubble.right.fill", platform: nil, badge: "⌘2") {
             store.destination = .inbox
         })
         list.append(Item(id: "nav-settings", title: "Settings", subtitle: "Preferences, appearance & accounts", category: "Navigation", symbol: "gearshape.fill", platform: nil, badge: "⌘,") {
@@ -213,7 +210,7 @@ struct CommandPaletteView: View {
                     Text("↵ to select")
                     Text("esc to dismiss")
                     Spacer()
-                    Text("Multispace Spotlight")
+                    Text("PINGGO Spotlight")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Palette.accent)
                 }

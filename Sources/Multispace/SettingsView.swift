@@ -82,7 +82,7 @@ struct SettingsView: View {
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: 7) {
             Button { store.destination = .home } label: {
-                Label("Back to Multispace", systemImage: "chevron.left")
+                Label("Back to PINGGO", systemImage: "chevron.left")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
             }
@@ -166,7 +166,7 @@ struct SettingsView: View {
                 }
             }
             settingsCard("Startup", symbol: "house.fill", color: .blue) {
-                settingsRow("Open To", "Default view when Multispace opens.") {
+                settingsRow("Open To", "Default view when PINGGO opens.") {
                     Picker("Open To", selection: $store.preferences.openTo) {
                         Text("Home").tag("Home")
                         Text("Last Platform").tag("Last Platform")
@@ -180,7 +180,7 @@ struct SettingsView: View {
     private var securityPage: some View {
         VStack(spacing: 24) {
             settingsCard("App Lock", symbol: "lock.shield.fill", color: .purple) {
-                settingsRow("Touch ID & Password Lock", "Require biometric or system password authentication to open Multispace.") {
+                settingsRow("Touch ID & Password Lock", "Require biometric or system password authentication to open PINGGO.") {
                     Toggle("App Lock", isOn: $store.preferences.appLockEnabled)
                         .labelsHidden()
                         .tint(Palette.accent)
@@ -198,7 +198,7 @@ struct SettingsView: View {
                         .frame(width: 170)
                     }
                     Divider()
-                    settingsRow("Lock Immediately", "Lock Multispace now. You can also press ⌘L anywhere.") {
+                    settingsRow("Lock Immediately", "Lock PINGGO now. You can also press ⌘L anywhere.") {
                         Button("Lock Now") {
                             store.lockApp()
                         }
@@ -251,7 +251,7 @@ struct SettingsView: View {
             }
 
             settingsCard("Startup & Background", symbol: "play.fill", color: .cyan) {
-                settingsRow("Websites Check", "Check your connected accounts when Multispace opens.") {
+                settingsRow("Websites Check", "Check your connected accounts when PINGGO opens.") {
                     Toggle("Websites", isOn: $store.preferences.launchWebsites).labelsHidden().tint(Palette.accent)
                 }
                 Divider()
@@ -284,7 +284,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Purchase Info").font(.system(size: 22, weight: .bold))
             settingsCard("Subscription", symbol: "crown.fill", color: .yellow) {
-                settingsRow("Purchase Status", "Multispace is currently a local prototype.") {
+                settingsRow("Purchase Status", "PINGGO is currently a local prototype.") {
                     Text("No subscription")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Palette.muted)
@@ -304,7 +304,7 @@ struct SettingsView: View {
             VStack(spacing: 12) {
                 AppLogo(size: 72, cornerRadius: 16)
                     .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
-                Text("Multispace")
+                Text("PINGGO")
                     .font(.system(size: 22, weight: .bold))
                 Text("All your social apps, in one native macOS workspace")
                     .font(.system(size: 13))
@@ -314,7 +314,7 @@ struct SettingsView: View {
             .padding(.vertical, 14)
 
             settingsCard("App Info", symbol: "info.circle.fill", color: .blue) {
-                settingsRow("Version", "Multispace") {
+                settingsRow("Version", "PINGGO") {
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")
                         .foregroundStyle(Palette.muted)
                 }
@@ -388,7 +388,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(name).font(.system(size: 23, weight: .bold))
             if name == "Privacy" {
-                Text("Your platform sessions are stored by WebKit on this Mac. Chat previews and website alerts shown on Home stay in memory and clear when Multispace quits. Your local profile, chats, and posts are saved in Application Support. Multispace does not read passwords.")
+                Text("Your platform sessions are stored by WebKit on this Mac. Chat previews and website alerts shown on Home stay in memory and clear when PINGGO quits. Your local profile, chats, and posts are saved in Application Support. PINGGO does not read passwords.")
             } else {
                 Text("Choose a social app in the sidebar. Use the account menu beside its name to add, switch, or rename accounts. Each added account has its own website login. Home and Inbox show chat previews when the websites expose them; Feeds opens the selected social feed. Use the sidebar plus button to add a platform.")
             }

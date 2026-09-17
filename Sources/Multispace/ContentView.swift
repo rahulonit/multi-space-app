@@ -38,6 +38,23 @@ struct ContentView: View {
                 LockScreenView()
             }
         }
+        .overlay(alignment: .bottom) {
+            if let toast = store.toastMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(toast)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThickMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+                .padding(.bottom, 24)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: store.toastMessage)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowAddPlatformSheet"))) { _ in
             showingAddPlatform = true
         }
@@ -56,6 +73,12 @@ struct ContentView: View {
         .onChange(of: store.platformAccounts) { _, accounts in
             if store.preferences.launchWebsites { PortalSessionRegistry.shared.monitor(store.socialPlatforms, accounts: accounts, store: store) }
         }
+        .background {
+            BackgroundPortalHost()
+                .frame(width: 1, height: 1)
+                .opacity(0.001)
+                .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -66,7 +89,6 @@ struct ContentView: View {
             } else {
                 switch store.destination {
                 case .home: HomeView()
-                case .feed: FeedView()
                 case .inbox: InboxView()
                 case .platform(let id): PlatformPortalView(platformID: id)
                 case .channel, .conversation, .profile, .settings: SettingsView()
@@ -75,5 +97,15 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.background)
+    }
+}
+
+struct BackgroundPortalHost: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        PortalSessionRegistry.shared.attachBackgroundWebViews(to: nsView)
     }
 }

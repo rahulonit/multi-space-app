@@ -32,7 +32,7 @@ struct LockScreenView: View {
                 }
 
                 VStack(spacing: 8) {
-                    Text("Multispace is Locked")
+                    Text("PINGGO is Locked")
                         .font(.system(size: 24, weight: .bold))
 
                     Text("Touch ID or your Mac password is required to access your social accounts.")
@@ -57,7 +57,7 @@ struct LockScreenView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "touchid")
                             .font(.system(size: 18))
-                        Text("Unlock Multispace")
+                        Text("Unlock PINGGO")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     .frame(minWidth: 200, minHeight: 38)

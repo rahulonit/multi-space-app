@@ -22,27 +22,30 @@ final class AppStore: ObservableObject {
     @Published private(set) var socialPlatforms: [SocialPlatform] = SocialPlatform.defaults
     @Published private(set) var platformAccounts: [PlatformAccount] = []
     @Published private(set) var selectedAccountIDs: [String: UUID] = [:]
-    @Published var selectedFeedAccountID: UUID? {
-        didSet { UserDefaults.standard.set(selectedFeedAccountID?.uuidString, forKey: "selectedFeedAccountID") }
-    }
+
     @Published var editingPlatform: SocialPlatform?
     @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
     @Published var isSplitView: Bool = false
     @Published var splitDestination: AppDestination? = nil
+    @Published var splitAccountIDs: [String: UUID] = [:]
     @Published var showingCommandPalette: Bool = false
     @Published var isAppLocked: Bool = false
     @Published var lastActiveTime: Date = .now
+    @Published var toastMessage: String?
 
     private var cancellables = Set<AnyCancellable>()
     private let fileURL: URL
 
     init() {
         // Keep app data in Application Support so it survives app launches without a server.
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Multispace", isDirectory: true)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = appSupport.appendingPathComponent("PINGGO", isDirectory: true)
+        let legacyDir = appSupport.appendingPathComponent("Multispace", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        fileURL = directory.appendingPathComponent("data.json")
-        if let saved = try? Data(contentsOf: fileURL),
+        let primaryFileURL = directory.appendingPathComponent("data.json")
+        let legacyFileURL = legacyDir.appendingPathComponent("data.json")
+        fileURL = primaryFileURL
+        if let saved = (try? Data(contentsOf: primaryFileURL)) ?? (try? Data(contentsOf: legacyFileURL)),
            let decoded = try? JSONDecoder().decode(AppData.self, from: saved) {
             data = decoded
         } else {
@@ -79,10 +82,6 @@ final class AppStore: ObservableObject {
            let decoded = try? JSONDecoder().decode([String: UUID].self, from: saved) {
             selectedAccountIDs = decoded
         }
-        if let saved = UserDefaults.standard.string(forKey: "selectedFeedAccountID"),
-           let id = UUID(uuidString: saved), account(id) != nil {
-            selectedFeedAccountID = id
-        }
         saveAccounts()
         if let saved = UserDefaults.standard.data(forKey: "appPreferences"),
            let decoded = try? JSONDecoder().decode(AppPreferences.self, from: saved) {
@@ -95,6 +94,7 @@ final class AppStore: ObservableObject {
         if preferences.appLockEnabled {
             isAppLocked = true
         }
+        loadPlatformActivity()
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: DispatchQueue.main)
@@ -140,26 +140,77 @@ final class AppStore: ObservableObject {
         let list = accounts(for: platformID)
         return list.first { $0.id == selectedAccountIDs[platformID] } ?? list.first
     }
+
+    func splitAccount(for platformID: String) -> PlatformAccount? {
+        let list = accounts(for: platformID)
+        if let id = splitAccountIDs[platformID], let match = list.first(where: { $0.id == id }) {
+            return match
+        }
+        let primaryID = selectedAccount(for: platformID)?.id
+        return list.first(where: { $0.id != primaryID }) ?? list.first
+    }
+
+    func selectSplitAccount(_ id: UUID) {
+        guard let account = account(id) else { return }
+        splitAccountIDs[account.platformID] = id
+        // Ensure primary pane doesn't show the exact same account
+        if selectedAccountIDs[account.platformID] == id {
+            if let alternative = accounts(for: account.platformID).first(where: { $0.id != id }) {
+                selectedAccountIDs[account.platformID] = alternative.id
+                saveAccounts()
+            }
+        }
+    }
+
+    func ensureDifferentSplitAccount(for platformID: String) {
+        let all = accounts(for: platformID)
+        let primaryID = selectedAccount(for: platformID)?.id
+        if let other = all.first(where: { $0.id != primaryID }) {
+            splitAccountIDs[platformID] = other.id
+        } else {
+            // Only 1 account exists: auto-create a 2nd account for this platform
+            if let newAcc = addAccount(to: platformID, name: "Work", selectAsPrimary: false) {
+                splitAccountIDs[platformID] = newAcc.id
+            }
+        }
+    }
+
     func account(_ id: UUID) -> PlatformAccount? { platformAccounts.first { $0.id == id } }
 
     func selectAccount(_ id: UUID, navigate: Bool = true) {
         guard let account = account(id) else { return }
         selectedAccountIDs[account.platformID] = id
-        if ["instagram", "facebook", "x", "linkedin", "tiktok"].contains(account.platformID) {
-            selectedFeedAccountID = id
+        // If split view is active on the same platform and showing the same account, switch split pane
+        if isSplitView, splitAccountIDs[account.platformID] == id {
+            if let alternative = accounts(for: account.platformID).first(where: { $0.id != id }) {
+                splitAccountIDs[account.platformID] = alternative.id
+            }
         }
         saveAccounts()
-        if navigate { destination = .platform(account.platformID) }
+        if navigate {
+            destination = .platform(account.platformID)
+            if isSplitView {
+                splitDestination = .platform(account.platformID)
+                ensureDifferentSplitAccount(for: account.platformID)
+            }
+        }
     }
 
-    func addAccount(to platformID: String, name: String) {
-        guard platform(platformID) != nil else { return }
+    @discardableResult
+    func addAccount(to platformID: String, name: String, selectAsPrimary: Bool = true) -> PlatformAccount? {
+        guard platform(platformID) != nil else { return nil }
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = accounts(for: platformID).count + 1
+        let defaultName = count == 2 ? "Work" : "Account \(count)"
         let account = PlatformAccount(platformID: platformID,
-                                      name: clean.isEmpty ? "Account \(count)" : String(clean.prefix(50)))
+                                      name: clean.isEmpty ? defaultName : String(clean.prefix(50)))
         platformAccounts.append(account)
-        selectAccount(account.id)
+        if selectAsPrimary {
+            selectAccount(account.id)
+        } else {
+            saveAccounts()
+        }
+        return account
     }
 
     func renameAccount(_ id: UUID, to name: String) {
@@ -176,7 +227,6 @@ final class AppStore: ObservableObject {
         PortalSessionRegistry.shared.forget(account)
         platformAccounts.removeAll { $0.id == id }
         platformActivity.removeValue(forKey: id)
-        if selectedFeedAccountID == id { selectedFeedAccountID = nil }
         if selectedAccountIDs[account.platformID] == id {
             selectedAccountIDs[account.platformID] = accounts(for: account.platformID).first?.id
         }
@@ -233,7 +283,6 @@ final class AppStore: ObservableObject {
         for account in accounts(for: id) {
             platformActivity.removeValue(forKey: account.id)
             PortalSessionRegistry.shared.forget(account)
-            if selectedFeedAccountID == account.id { selectedFeedAccountID = nil }
         }
         platformAccounts.removeAll { $0.platformID == id }
         selectedAccountIDs.removeValue(forKey: id)
@@ -254,22 +303,79 @@ final class AppStore: ObservableObject {
             guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
             return Int(title[title.index(after: title.startIndex)..<end])
         }()
-        let previews = messages.prefix(8).enumerated().compactMap { index, item -> PlatformMessagePreview? in
+        let previews = messages.prefix(15).enumerated().compactMap { index, item -> PlatformMessagePreview? in
             let sender = (item["sender"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let content = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let time = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let link = (item["link"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
             return .init(id: "\(accountID)-\(index)-\(sender)-\(content)",
-                         sender: String(sender.prefix(80)), text: String(content.prefix(240)))
+                         sender: String(sender.prefix(80)),
+                         text: String(content.prefix(240)),
+                         time: time.isEmpty ? nil : String(time.prefix(30)),
+                         linkURL: link.isEmpty ? nil : link)
         }
         let alerts = Array(Set(notifications.map {
             String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
-        }.filter { !$0.isEmpty })).sorted().prefix(8)
+        }.filter { !$0.isEmpty })).sorted().prefix(12)
         let next = PlatformActivitySnapshot(unreadCount: unread, messages: previews,
                                             notifications: Array(alerts), updatedAt: .now)
         if let previous = platformActivity[accountID], previous.unreadCount == next.unreadCount,
            previous.messages == next.messages, previous.notifications == next.notifications { return }
         platformActivity[accountID] = next
+        savePlatformActivity()
         updateDockBadge()
+    }
+
+    private func loadPlatformActivity() {
+        if let saved = UserDefaults.standard.data(forKey: "savedPlatformActivity"),
+           let decoded = try? JSONDecoder().decode([String: PlatformActivitySnapshot].self, from: saved) {
+            var restored: [UUID: PlatformActivitySnapshot] = [:]
+            for (key, val) in decoded {
+                if let uuid = UUID(uuidString: key) {
+                    restored[uuid] = val
+                }
+            }
+            self.platformActivity = restored
+            updateDockBadge()
+        }
+    }
+
+    private func savePlatformActivity() {
+        var encodable: [String: PlatformActivitySnapshot] = [:]
+        for (key, val) in platformActivity {
+            encodable[key.uuidString] = val
+        }
+        if let encoded = try? JSONEncoder().encode(encodable) {
+            UserDefaults.standard.set(encoded, forKey: "savedPlatformActivity")
+        }
+    }
+
+    func openPlatformInbox(accountID: UUID, messageURL: String? = nil) {
+        guard let account = account(accountID) else { return }
+        selectAccount(accountID, navigate: true)
+        let session = PortalSessionRegistry.shared.existingSession(for: accountID)
+        session?.wake()
+        session?.resume()
+        if let messageURL, let url = URL(string: messageURL), url.scheme == "https" {
+            session?.load(url)
+        } else if let platform = platform(account.platformID), let inboxURL = platform.inboxURL {
+            let currentStr = session?.currentURL?.absoluteString ?? ""
+            if !currentStr.contains(inboxURL.path) && !currentStr.isEmpty {
+                session?.load(inboxURL)
+            }
+        }
+    }
+
+    func refreshAllPortals() {
+        for account in platformAccounts {
+            PortalSessionRegistry.shared.wakeSession(accountID: account.id)
+            if let session = PortalSessionRegistry.shared.existingSession(for: account.id) {
+                session.wake()
+                session.resume()
+                session.forceCollect()
+            }
+        }
     }
 
     func updateDockBadge() {
@@ -285,25 +391,49 @@ final class AppStore: ObservableObject {
         if isSplitView {
             isSplitView = false
         } else {
-            if splitDestination == nil {
-                let currentPlatformID: String? = {
-                    if case .platform(let id) = destination { return id }
-                    return nil
-                }()
-                let alternative = socialPlatforms.first { $0.id != currentPlatformID } ?? socialPlatforms.first
-                if let alternative {
-                    splitDestination = .platform(alternative.id)
-                } else {
-                    splitDestination = .feed
-                }
+            let targetPlatformID: String? = {
+                if case .platform(let id) = destination { return id }
+                return socialPlatforms.first?.id
+            }()
+            if let platformID = targetPlatformID {
+                destination = .platform(platformID)
+                splitDestination = .platform(platformID)
+                ensureDifferentSplitAccount(for: platformID)
+            } else {
+                splitDestination = .inbox
             }
             isSplitView = true
         }
     }
 
-    func openInSplitView(_ dest: AppDestination) {
-        splitDestination = dest
+    func openInSplitView(platformID: String, accountID: UUID? = nil) {
+        destination = .platform(platformID)
+        splitDestination = .platform(platformID)
+        let all = accounts(for: platformID)
+        if let accountID {
+            splitAccountIDs[platformID] = accountID
+            if let other = all.first(where: { $0.id != accountID }) {
+                selectedAccountIDs[platformID] = other.id
+            } else {
+                selectedAccountIDs[platformID] = accountID
+                if let newAcc = addAccount(to: platformID, name: "Work", selectAsPrimary: false) {
+                    splitAccountIDs[platformID] = newAcc.id
+                }
+            }
+        } else {
+            ensureDifferentSplitAccount(for: platformID)
+        }
+        saveAccounts()
         isSplitView = true
+    }
+
+    func openInSplitView(_ dest: AppDestination) {
+        if case .platform(let platformID) = dest {
+            openInSplitView(platformID: platformID, accountID: nil)
+        } else {
+            splitDestination = dest
+            isSplitView = true
+        }
     }
 
     func closeSplitView() {
@@ -315,10 +445,45 @@ final class AppStore: ObservableObject {
         if case .platform(let id) = destination, let account = selectedAccount(for: id) {
             ids.append(account.id)
         }
-        if isSplitView, case .platform(let id) = splitDestination, let account = selectedAccount(for: id) {
+        if isSplitView, case .platform(let id) = splitDestination, let account = splitAccount(for: id) {
             ids.append(account.id)
         }
         return ids
+    }
+
+    var totalUnreadCount: Int {
+        platformActivity.values.reduce(0) { $0 + ($1.unreadCount ?? 0) }
+    }
+
+    func isSessionHibernated(accountID: UUID) -> Bool {
+        PortalSessionRegistry.shared.isHibernated(accountID: accountID)
+    }
+
+    func isSessionMuted(accountID: UUID) -> Bool {
+        PortalSessionRegistry.shared.isMuted(accountID: accountID)
+    }
+
+    func toggleSessionMute(accountID: UUID) {
+        PortalSessionRegistry.shared.toggleMute(accountID: accountID)
+        objectWillChange.send()
+    }
+
+    func wakeSession(accountID: UUID) {
+        PortalSessionRegistry.shared.wakeSession(accountID: accountID)
+        objectWillChange.send()
+    }
+
+    func sleepingSessionCount() -> Int {
+        PortalSessionRegistry.shared.sleepingSessionCount()
+    }
+
+    func hibernateInactiveNow() {
+        PortalSessionRegistry.shared.hibernateAllInactive(activeAccountIDs: Set(currentActiveAccountIDs))
+        objectWillChange.send()
+    }
+
+    func triggerAddPlatform() {
+        NotificationCenter.default.post(name: Notification.Name("ShowAddPlatformSheet"), object: nil)
     }
 
     func recordActivity() {
@@ -341,7 +506,7 @@ final class AppStore: ObservableObject {
         do {
             let success = try await context.evaluatePolicy(
                 .deviceOwnerAuthentication,
-                localizedReason: "Unlock Multispace to access your social apps"
+                localizedReason: "Unlock PINGGO to access your social apps"
             )
             if success {
                 self.isAppLocked = false
@@ -453,6 +618,131 @@ final class AppStore: ObservableObject {
         data.me.handle = cleanHandle
         data.me.status = status.trimmingCharacters(in: .whitespacesAndNewlines)
         save()
+    }
+
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            if self.toastMessage == message {
+                self.toastMessage = nil
+            }
+        }
+    }
+
+    func importSessionCookies(accountID: UUID, platformID: String, rawInput: String) async {
+        guard let platform = platform(platformID),
+              let host = platform.resolvedWebsiteURL?.host else { return }
+
+        // Derive root cookie domain (e.g. "www.linkedin.com" -> ".linkedin.com")
+        let domain: String
+        let parts = host.split(separator: ".")
+        if parts.count >= 2 {
+            domain = "." + parts.suffix(2).joined(separator: ".")
+        } else {
+            domain = host
+        }
+
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        // If the string does not contain "=", treat it as a direct session token (e.g. li_at for LinkedIn)
+        if !trimmed.contains("=") {
+            let tokenKey = platformID == "linkedin" ? "li_at" : "session"
+            await PortalSessionRegistry.shared.injectTokenAndReload(
+                accountID: accountID,
+                tokenName: tokenKey,
+                tokenValue: trimmed,
+                domain: domain
+            )
+            showToast("Imported \(platform.name) session token!")
+            return
+        }
+
+        // Otherwise parse cookie string "name=value; name2=value2"
+        await PortalSessionRegistry.shared.injectCookiesAndReload(
+            accountID: accountID,
+            cookies: trimmed,
+            domain: domain
+        )
+        showToast("Imported \(platform.name) session cookies!")
+    }
+
+    func handleDeepLink(_ url: URL) {
+        guard let scheme = url.scheme?.lowercased(), scheme == "multispace" || scheme == "pinggo" else { return }
+        let hostAction = url.host?.lowercased() ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        let queryItems = components.queryItems ?? []
+
+        func value(for name: String) -> String? {
+            queryItems.first(where: { $0.name.lowercased() == name.lowercased() })?.value
+        }
+
+        switch hostAction {
+        case "auth-sync", "import-cookies", "sync":
+            let platformParam = value(for: "platform")?.lowercased()
+            let hostParam = value(for: "host")?.lowercased()
+            let cookiesParam = value(for: "cookies") ?? value(for: "cookie") ?? ""
+            let accountIDParam = value(for: "accountid")
+
+            // Identify platform
+            let targetPlatform: SocialPlatform?
+            if let p = platformParam, let found = socialPlatforms.first(where: { $0.id.lowercased() == p }) {
+                targetPlatform = found
+            } else if let h = hostParam {
+                targetPlatform = socialPlatforms.first(where: {
+                    guard let host = $0.resolvedWebsiteURL?.host?.lowercased() else { return false }
+                    return host == h || host.hasSuffix(".\(h)") || h.hasSuffix(".\(host)")
+                })
+            } else {
+                targetPlatform = socialPlatforms.first(where: { $0.id == "linkedin" })
+            }
+
+            guard let platform = targetPlatform else {
+                showToast("Unknown platform for sync link")
+                return
+            }
+
+            // Find account
+            let account: PlatformAccount?
+            if let accStr = accountIDParam, let uuid = UUID(uuidString: accStr) {
+                account = platformAccounts.first(where: { $0.id == uuid })
+            } else {
+                account = selectedAccount(for: platform.id)
+            }
+
+            guard let targetAccount = account else {
+                showToast("No account found for \(platform.name)")
+                return
+            }
+
+            if !cookiesParam.isEmpty {
+                Task {
+                    await self.importSessionCookies(accountID: targetAccount.id, platformID: platform.id, rawInput: cookiesParam)
+                }
+            }
+            destination = .platform(platform.id)
+
+        case "import-token":
+            let platformParam = value(for: "platform")?.lowercased() ?? "linkedin"
+            let tokenParam = value(for: "token") ?? ""
+            guard let platform = socialPlatforms.first(where: { $0.id.lowercased() == platformParam }),
+                  let account = selectedAccount(for: platform.id),
+                  !tokenParam.isEmpty else { return }
+            Task {
+                await self.importSessionCookies(accountID: account.id, platformID: platform.id, rawInput: tokenParam)
+            }
+            destination = .platform(platform.id)
+
+        case "open":
+            if let platformParam = value(for: "platform")?.lowercased(),
+               let platform = socialPlatforms.first(where: { $0.id.lowercased() == platformParam }) {
+                destination = .platform(platform.id)
+            }
+
+        default:
+            break
+        }
     }
 
     private func save() {

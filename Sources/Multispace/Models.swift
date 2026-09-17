@@ -38,11 +38,35 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
     }
 
     var resolvedWebsiteURL: URL? {
-        let address = websiteURL ?? Self.defaultWebsites[id]
+        var address = websiteURL ?? Self.defaultWebsites[id]
             ?? Self.defaultWebsites[officialIdentity?.id ?? ""] ?? officialIdentity?.websiteURL
+        if (id == "linkedin" || officialIdentity?.id == "linkedin") && (address == nil || address == "https://www.linkedin.com/feed/") {
+            address = "https://www.linkedin.com/login"
+        }
         guard let address, let url = URL(string: address),
               url.scheme?.lowercased() == "https", url.host != nil else { return nil }
         return url
+    }
+
+    var inboxURL: URL? {
+        let targetId = officialIdentity?.id ?? id
+        let directAddress: String? = {
+            switch targetId {
+            case "whatsapp": return "https://web.whatsapp.com/"
+            case "telegram": return "https://web.telegram.org/a/"
+            case "instagram": return "https://www.instagram.com/direct/inbox/"
+            case "facebook": return "https://www.facebook.com/messages/t/"
+            case "linkedin": return "https://www.linkedin.com/messaging/"
+            case "x": return "https://x.com/messages"
+            case "discord": return "https://discord.com/channels/@me"
+            case "snapchat": return "https://web.snapchat.com/"
+            default: return nil
+            }
+        }()
+        if let directAddress, let url = URL(string: directAddress) {
+            return url
+        }
+        return resolvedWebsiteURL
     }
 
     var usesOfficialLogo: Bool {
@@ -53,7 +77,8 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
         "whatsapp": "https://web.whatsapp.com/",
         "instagram": "https://www.instagram.com/",
         "telegram": "https://web.telegram.org/a/",
-        "facebook": "https://www.facebook.com/"
+        "facebook": "https://www.facebook.com/",
+        "linkedin": "https://www.linkedin.com/login"
     ]
 
     static let defaults: [SocialPlatform] = [
@@ -65,20 +90,22 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
 
     static let suggestions: [SocialPlatform] = [
         .init(id: "discord", name: "Discord", symbol: "bubble.left.and.bubble.right.fill", color: "purple", websiteURL: "https://discord.com/app"),
-        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/feed/"),
+        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/login"),
         .init(id: "x", name: "X", symbol: "at", color: "purple", websiteURL: "https://x.com/home"),
         .init(id: "snapchat", name: "Snapchat", symbol: "camera.fill", color: "orange", websiteURL: "https://web.snapchat.com/"),
         .init(id: "tiktok", name: "TikTok", symbol: "video.fill", color: "pink", websiteURL: "https://www.tiktok.com/")
     ]
 }
 
-struct PlatformMessagePreview: Identifiable, Hashable {
+struct PlatformMessagePreview: Identifiable, Hashable, Codable {
     let id: String
     let sender: String
     let text: String
+    var time: String? = nil
+    var linkURL: String? = nil
 }
 
-struct PlatformActivitySnapshot {
+struct PlatformActivitySnapshot: Codable, Equatable {
     var unreadCount: Int?
     var messages: [PlatformMessagePreview]
     var notifications: [String]
@@ -127,7 +154,6 @@ struct AppData: Codable {
 
 enum AppDestination: Hashable {
     case home
-    case feed
     case inbox
     case platform(String)
     case channel(UUID)

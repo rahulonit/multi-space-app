@@ -162,7 +162,7 @@ struct AddPlatformSheet: View {
             if let selectedPlatform {
                 HStack(spacing: 10) {
                     Image(systemName: "lock.shield").foregroundStyle(Palette.accent)
-                    Text("\(selectedPlatform.name) opens \(selectedPlatform.resolvedWebsiteURL?.host ?? "its website") inside Multispace. Sign in there with the platform’s own login.")
+                    Text("\(selectedPlatform.name) opens \(selectedPlatform.resolvedWebsiteURL?.host ?? "its website") inside PINGGO. Sign in there with the platform’s own login.")
                         .font(.system(size: 11)).foregroundStyle(Palette.muted)
                 }
                 .padding(12)

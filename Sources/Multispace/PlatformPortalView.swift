@@ -35,16 +35,272 @@ struct PlatformLogo: View {
     }
 }
 
+struct PopupBrowserView: View {
+    let webView: WKWebView
+    let onClose: () -> Void
+    var onOpenInBrowser: (() -> Void)? = nil
+    var onSyncSession: (() -> Void)? = nil
+
+    @State private var copiedNotice = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("Sign In")
+                    .font(.system(size: 13, weight: .semibold))
+
+                if let currentURL = webView.url {
+                    Text(currentURL.host ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if let onOpenInBrowser {
+                    Button(action: onOpenInBrowser) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "safari")
+                            Text("Open in Browser")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                    .help("Open sign-in in your default browser (Safari, Chrome)")
+                }
+
+                if let currentURL = webView.url, currentURL.absoluteString != "about:blank" {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(currentURL.absoluteString, forType: .string)
+                        copiedNotice = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copiedNotice = false
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: copiedNotice ? "checkmark" : "doc.on.doc")
+                            if copiedNotice {
+                                Text("Copied")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                    .help("Copy sign-in link")
+                }
+
+                if let onSyncSession {
+                    Button(action: onSyncSession) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Sync")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                    .help("Sync session from browser")
+                }
+
+                Button("Done") {
+                    onClose()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Palette.panel)
+
+            Divider()
+
+            PopupWebViewRepresentable(webView: webView)
+        }
+        .frame(minWidth: 540, minHeight: 680)
+    }
+}
+
+struct PopupWebViewRepresentable: NSViewRepresentable {
+    let webView: WKWebView
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+
+struct SessionSyncSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AppStore
+    let platform: SocialPlatform
+    let account: PlatformAccount
+
+    @State private var tokenInput: String = ""
+    @State private var copiedBookmarklet = false
+    @State private var isSubmitting = false
+
+    private var host: String {
+        platform.resolvedWebsiteURL?.host ?? "\(platform.id).com"
+    }
+
+    private var bookmarkletCode: String {
+        "javascript:(function(){const c=document.cookie;if(!c){alert('No cookies found! Please make sure you are logged into " + platform.name + ".');return;}window.location.href='pinggo://auth-sync?platform=" + platform.id + "&host=" + host + "&cookies='+encodeURIComponent(c);})();"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                PlatformLogo(platform: platform, size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync \(platform.name) Session")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Account: \(account.name) • \(host)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Palette.muted)
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+
+            // Option 1: Browser Bookmarklet
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "safari.fill")
+                        .foregroundStyle(.blue)
+                    Text("Option 1: Sign In in Default Browser (Passkey / Google)")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text("Open \(platform.name) in Safari or Chrome, log in with Passkeys, Touch ID, or Google, then use the 1-click sync bookmarklet below.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+
+                HStack(spacing: 10) {
+                    Button {
+                        if let url = platform.resolvedWebsiteURL {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.forward.app")
+                            Text("1. Open in Browser")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(bookmarkletCode, forType: .string)
+                        copiedBookmarklet = true
+                        store.showToast("Bookmarklet copied to clipboard!")
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copiedBookmarklet = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: copiedBookmarklet ? "checkmark" : "bookmark.fill")
+                            Text(copiedBookmarklet ? "Copied Bookmarklet!" : "2. Copy Sync Bookmarklet")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.2), lineWidth: 1))
+
+            // Option 2: Direct Token / Cookie Import
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "key.fill")
+                        .foregroundStyle(.orange)
+                    Text(platform.id == "linkedin" ? "Option 2: Direct Token Paste (li_at)" : "Option 2: Paste Session Cookies")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+
+                if platform.id == "linkedin" {
+                    Text("Paste the 'li_at' cookie value from Safari/Chrome DevTools (or full cookie string) for instant login.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                } else {
+                    Text("Paste the session cookie or full cookie header string from your browser.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                HStack(spacing: 8) {
+                    TextField(platform.id == "linkedin" ? "Paste li_at value or cookies..." : "Paste cookies (name=value; ...)", text: $tokenInput)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+
+                    Button("Import & Log In") {
+                        let text = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !text.isEmpty else { return }
+                        isSubmitting = true
+                        Task {
+                            await store.importSessionCookies(accountID: account.id, platformID: platform.id, rawInput: text)
+                            isSubmitting = false
+                            dismiss()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+
+            HStack {
+                Spacer()
+                Button("Close") {
+                    dismiss()
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 540)
+    }
+}
+
 struct PlatformPortalView: View {
     @EnvironmentObject private var store: AppStore
     let platformID: String
+    var explicitAccountID: UUID? = nil
+    var onSelectAccount: ((UUID) -> Void)? = nil
 
     var body: some View {
         if let platform = store.platform(platformID) {
             if let url = platform.resolvedWebsiteURL {
-                if let account = store.selectedAccount(for: platform.id) {
-                    PortalBrowser(platform: platform, account: account, url: url)
-                        .id("\(account.id):\(url.absoluteString)")
+                let targetAccount = (explicitAccountID != nil ? store.account(explicitAccountID!) : nil) ?? store.selectedAccount(for: platform.id)
+                if let account = targetAccount {
+                    PortalBrowser(
+                        platform: platform,
+                        account: account,
+                        url: url,
+                        onSelectAccount: onSelectAccount
+                    )
+                    .id("\(account.id):\(url.absoluteString)")
                 }
             } else {
                 missingWebsite(for: platform)
@@ -74,14 +330,17 @@ private struct PortalBrowser: View {
     let platform: SocialPlatform
     let account: PlatformAccount
     let url: URL
+    var onSelectAccount: ((UUID) -> Void)? = nil
     @ObservedObject private var session: PortalSession
     @State private var showingAddAccount = false
     @State private var showingRenameAccount = false
+    @State private var showingSyncSheet = false
 
-    init(platform: SocialPlatform, account: PlatformAccount, url: URL) {
+    init(platform: SocialPlatform, account: PlatformAccount, url: URL, onSelectAccount: ((UUID) -> Void)? = nil) {
         self.platform = platform
         self.account = account
         self.url = url
+        self.onSelectAccount = onSelectAccount
         _session = ObservedObject(wrappedValue: PortalSessionRegistry.shared.session(for: account, url: url))
     }
 
@@ -95,7 +354,11 @@ private struct PortalBrowser: View {
                 Menu {
                     ForEach(store.accounts(for: platform.id)) { item in
                         Button {
-                            store.selectAccount(item.id)
+                            if let onSelectAccount {
+                                onSelectAccount(item.id)
+                            } else {
+                                store.selectAccount(item.id)
+                            }
                         } label: {
                             if item.id == account.id { Label(item.name, systemImage: "checkmark") }
                             else { Text(item.name) }
@@ -120,6 +383,9 @@ private struct PortalBrowser: View {
                 toolbarButton("arrow.clockwise", help: "Reload", enabled: true) { session.webView.reload() }
                 toolbarButton("square.on.square", help: "Open in browser", enabled: true) {
                     NSWorkspace.shared.open(session.currentURL ?? url)
+                }
+                toolbarButton("arrow.triangle.2.circlepath", help: "Sync session from browser or import cookies", enabled: true) {
+                    showingSyncSheet = true
                 }
                 toolbarButton(
                     session.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
@@ -228,13 +494,44 @@ private struct PortalBrowser: View {
         }
         .sheet(isPresented: $showingAddAccount) {
             AccountNameSheet(title: "Add \(platform.name) account", suggestedName: "Account \(store.accounts(for: platform.id).count + 1)") { name in
-                store.addAccount(to: platform.id, name: name)
+                if let onSelectAccount {
+                    if let newAcc = store.addAccount(to: platform.id, name: name, selectAsPrimary: false) {
+                        onSelectAccount(newAcc.id)
+                    }
+                } else {
+                    store.addAccount(to: platform.id, name: name)
+                }
             }
         }
         .sheet(isPresented: $showingRenameAccount) {
             AccountNameSheet(title: "Rename account", suggestedName: account.name) { name in
                 store.renameAccount(account.id, to: name)
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { session.popupWebView != nil },
+            set: { if !$0 { session.closePopup() } }
+        )) {
+            if let popup = session.popupWebView {
+                PopupBrowserView(
+                    webView: popup,
+                    onClose: { session.closePopup() },
+                    onOpenInBrowser: {
+                        if let targetURL = popup.url, targetURL.absoluteString != "about:blank" {
+                            NSWorkspace.shared.open(targetURL)
+                        } else if let mainURL = session.currentURL ?? platform.resolvedWebsiteURL {
+                            NSWorkspace.shared.open(mainURL)
+                        }
+                    },
+                    onSyncSession: {
+                        session.closePopup()
+                        showingSyncSheet = true
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showingSyncSheet) {
+            SessionSyncSheet(platform: platform, account: account)
         }
     }
 
@@ -345,6 +642,61 @@ final class PortalSessionRegistry {
             session.hibernate()
         }
     }
+
+    func existingSession(for accountID: UUID) -> PortalSession? {
+        sessions[accountID]
+    }
+
+    func attachBackgroundWebViews(to container: NSView) {
+        for session in sessions.values {
+            if session.webView.superview == nil {
+                session.webView.frame = NSRect(x: -2000, y: -2000, width: 1280, height: 900)
+                session.webView.alphaValue = 0.01
+                container.addSubview(session.webView)
+            }
+        }
+    }
+
+    func isHibernated(accountID: UUID) -> Bool {
+        sessions[accountID]?.isHibernated ?? false
+    }
+
+    func isMuted(accountID: UUID) -> Bool {
+        sessions[accountID]?.isMuted ?? false
+    }
+
+    func toggleMute(accountID: UUID) {
+        sessions[accountID]?.toggleMute()
+    }
+
+    func wakeSession(accountID: UUID) {
+        sessions[accountID]?.wake()
+        sessions[accountID]?.resume()
+    }
+
+    func sleepingSessionCount() -> Int {
+        sessions.values.filter { $0.isHibernated }.count
+    }
+
+    func activeSessionCount() -> Int {
+        sessions.count
+    }
+
+    func injectCookiesAndReload(accountID: UUID, cookies: String, domain: String) async {
+        guard let session = sessions[accountID] else { return }
+        await session.injectCookies(headerString: cookies, domain: domain)
+        session.reload()
+    }
+
+    func injectTokenAndReload(accountID: UUID, tokenName: String, tokenValue: String, domain: String) async {
+        guard let session = sessions[accountID] else { return }
+        await session.injectCookie(name: tokenName, value: tokenValue, domain: domain)
+        if domain.contains("linkedin.com") {
+            session.load(URL(string: "https://www.linkedin.com/feed/")!)
+        } else {
+            session.reload()
+        }
+    }
 }
 
 @MainActor
@@ -354,6 +706,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var isLoading = false
     @Published var isMuted = false
     @Published var isHibernated = false
+    @Published var popupWebView: WKWebView?
     @Published var currentURL: URL?
     @Published var error: String?
     var lastAccessedAt: Date = .now
@@ -367,27 +720,72 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         homeURL = url
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.userContentController.addUserScript(WKUserScript(source: Self.activityScript,
                                                                        injectionTime: .atDocumentEnd,
                                                                        forMainFrameOnly: true))
         configuration.userContentController.addUserScript(WKUserScript(source: Self.audioScript,
                                                                        injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: configuration)
         super.init()
+        configuration.userContentController.add(self, name: "pinggoActivity")
         configuration.userContentController.add(self, name: "multispaceActivity")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        // Some portals use the Safari version token to decide whether to show their web app.
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15"
+        // Use standard modern Safari desktop user agent
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
         load(url)
     }
 
+    func closePopup() {
+        popupWebView?.stopLoading()
+        popupWebView = nil
+    }
+
     func stop() {
+        closePopup()
         webView.stopLoading()
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoActivity")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "multispaceActivity")
         activityHandler = nil
+    }
+
+    func reload() {
+        webView.reload()
+    }
+
+    func forceCollect() {
+        webView.evaluateJavaScript("window.__pinggoCollect ? window.__pinggoCollect() : (window.__multispaceCollect ? window.__multispaceCollect() : null);", completionHandler: nil)
+    }
+
+    func injectCookie(name: String, value: String, domain: String, path: String = "/") async {
+        let cookieProps: [HTTPCookiePropertyKey: Any] = [
+            .domain: domain,
+            .path: path,
+            .name: name,
+            .value: value,
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(86400 * 365)
+        ]
+        if let cookie = HTTPCookie(properties: cookieProps) {
+            await webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
+        }
+    }
+
+    func injectCookies(headerString: String, domain: String) async {
+        let pairs = headerString.components(separatedBy: ";")
+        for pair in pairs {
+            let trimmed = pair.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let eqIndex = trimmed.firstIndex(of: "=") else { continue }
+            let key = String(trimmed[..<eqIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let val = String(trimmed[trimmed.index(after: eqIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                await injectCookie(name: key, value: val, domain: domain)
+            }
+        }
     }
 
     func suspend() {
@@ -436,15 +834,26 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "multispaceActivity",
-              let currentHost = webView.url?.host?.lowercased(),
-              let homeHost = homeURL.host?.lowercased() else { return }
-        let baseHost = homeHost.replacingOccurrences(of: "^(www|web)\\.", with: "", options: .regularExpression)
-        guard currentHost == baseHost || currentHost.hasSuffix(".\(baseHost)") else { return }
+        guard message.name == "pinggoActivity" || message.name == "multispaceActivity" else { return }
+        if let currentHost = webView.url?.host?.lowercased(),
+           let homeHost = homeURL.host?.lowercased() {
+            let baseHome = homeHost.replacingOccurrences(of: "^(www|web)\\.", with: "", options: .regularExpression)
+            let baseCurrent = currentHost.replacingOccurrences(of: "^(www|web)\\.", with: "", options: .regularExpression)
+            let isAllowed = currentHost == baseHome || currentHost.hasSuffix(".\(baseHome)") ||
+                            baseHome == baseCurrent ||
+                            (baseHome.contains("x.com") && baseCurrent.contains("twitter.com")) ||
+                            (baseHome.contains("twitter.com") && baseCurrent.contains("x.com"))
+            guard isAllowed else { return }
+        }
         guard let body = message.body as? [String: Any] else { return }
         let title = body["title"] as? String ?? ""
         let rows = (body["messages"] as? [[String: Any]] ?? []).map { row in
-            ["sender": row["sender"] as? String ?? "", "text": row["text"] as? String ?? ""]
+            [
+                "sender": row["sender"] as? String ?? "",
+                "text": row["text"] as? String ?? "",
+                "time": row["time"] as? String ?? "",
+                "link": row["link"] as? String ?? ""
+            ]
         }
         let notifications = body["notifications"] as? [String] ?? []
         activityHandler?(title, rows, notifications)
@@ -465,6 +874,13 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         isLoading = false
         updateNavigation()
         if isMuted { applyMute() }
+        forceCollect()
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.forceCollect()
+            try? await Task.sleep(for: .seconds(4))
+            self?.forceCollect()
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -488,14 +904,57 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url {
-            if isExternalURL(url) {
-                NSWorkspace.shared.open(url)
-            } else {
-                webView.load(URLRequest(url: url))
-            }
+        if let targetURL = navigationAction.request.url, isExternalURL(targetURL) {
+            NSWorkspace.shared.open(targetURL)
+            return nil
         }
-        return nil
+
+        // WebKit requires the returned WKWebView to be initialized with the exact configuration passed into this method.
+        let popup = WKWebView(frame: NSRect(x: 0, y: 0, width: 540, height: 700), configuration: configuration)
+        popup.uiDelegate = self
+        popup.navigationDelegate = self
+        popup.customUserAgent = webView.customUserAgent
+        self.popupWebView = popup
+        return popup
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        if webView == popupWebView {
+            popupWebView = nil
+        }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        completionHandler()
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let result = alert.runModal() == .alertFirstButtonReturn
+        completionHandler(result)
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = parameters.allowsDirectories
+        openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        let result = openPanel.runModal()
+        if result == .OK {
+            completionHandler(openPanel.urls)
+        } else {
+            completionHandler(nil)
+        }
     }
 
     // MARK: - WKNavigationDelegate (External link routing & downloads)
@@ -511,7 +970,9 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             return
         }
 
-        if navigationAction.navigationType == .linkActivated {
+        // Only open in external browser if the user explicitly clicked a link targeting the main frame
+        // and it is truly an external website, not an auth domain or subframe captcha/challenge
+        if navigationAction.targetFrame?.isMainFrame == true && navigationAction.navigationType == .linkActivated {
             if isExternalURL(targetURL) {
                 decisionHandler(.cancel)
                 NSWorkspace.shared.open(targetURL)
@@ -520,6 +981,11 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         }
 
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        completionHandler(.performDefaultHandling, nil)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -575,12 +1041,35 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         guard let targetHost = url.host?.lowercased(),
               let homeHost = homeURL.host?.lowercased() else { return false }
 
-        let authDomains = ["accounts.google.com", "appleid.apple.com", "login.microsoftonline.com", "auth0.com"]
+        let authDomains = [
+            "accounts.google.com",
+            "appleid.apple.com",
+            "login.microsoftonline.com",
+            "login.live.com",
+            "account.live.com",
+            "account.microsoft.com",
+            "auth0.com",
+            "arkoselabs.com",
+            "funcaptcha.com",
+            "recaptcha.net",
+            "hcaptcha.com",
+            "cloudflare.com",
+            "challenges.cloudflare.com"
+        ]
         if authDomains.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
             return false
         }
 
         let cleanHome = homeHost.replacingOccurrences(of: "^(www|web|m|app)\\.", with: "", options: .regularExpression)
+
+        // LinkedIn domain family
+        if cleanHome == "linkedin.com" {
+            let linkedinFamily = ["linkedin.com", "licdn.com"]
+            if linkedinFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+                return false
+            }
+        }
+
         let metaFamily = ["instagram.com", "facebook.com", "fb.com", "messenger.com", "threads.net", "whatsapp.com"]
         if metaFamily.contains(cleanHome) && metaFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
             return false
@@ -618,47 +1107,125 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       const clean = value => (value || '').replace(/\s+/g, ' ').trim();
       let pending = null;
       let lastPayload = '';
-      function collect() {
+      function collect(force = false) {
         const host = location.hostname.toLowerCase();
         let selector = '';
-        if (host.endsWith('whatsapp.com')) selector = '[data-testid="cell-frame-container"]';
-        else if (host.endsWith('instagram.com')) selector = 'a[href*="/direct/t/"]';
-        else if (host.endsWith('telegram.org')) selector = '.chat-list .ListItem, .chat-list-item';
-        else if (host.endsWith('facebook.com')) selector = 'a[href*="/messages/t/"]';
-        else if (host.endsWith('snapchat.com')) selector = '[data-testid*="conversation-list"] [role="button"]';
+        if (host.endsWith('whatsapp.com')) {
+          selector = '#pane-side [role="row"], #pane-side [role="listitem"], [data-testid="cell-frame-container"], div[role="listitem"], div._ak8l, div[tabindex="-1"][role="row"]';
+        } else if (host.endsWith('instagram.com')) {
+          selector = 'a[href*="/direct/t/"], div[role="listitem"] a[href*="/direct/"], a[href*="/direct/inbox/"]';
+        } else if (host.endsWith('telegram.org')) {
+          selector = '.chat-list .ListItem, .chat-list-item, .chatlist-chat, a.chatlist-chat, .chatlist-parts, .c-ripple';
+        } else if (host.endsWith('facebook.com')) {
+          selector = 'a[href*="/messages/t/"], div[role="row"] a[role="link"], div[role="gridcell"] a';
+        } else if (host.endsWith('snapchat.com')) {
+          selector = '[data-testid*="conversation-list"] [role="button"], a[href*="/chat/"]';
+        } else if (host.endsWith('linkedin.com')) {
+          selector = 'li.msg-conversation-listitem, .msg-conversation-card, a[href*="/messaging/thread/"], [data-view-name*="conversation"], .msg-overlay-list-bubble__convo-item, .msg-overlay-conversation-bubble';
+        } else if (host.endsWith('x.com') || host.endsWith('twitter.com')) {
+          selector = '[data-testid="conversation"], a[href*="/messages/"]';
+        } else if (host.endsWith('discord.com')) {
+          selector = 'a[href*="/channels/@me/"], li[class*="channel_"]';
+        } else {
+          selector = '[role="listitem"] a[href*="message"], [role="listitem"] a[href*="chat"], a[href*="/messages/"], a[href*="/direct/"], [role="listitem"]';
+        }
         const messages = [];
         if (selector) {
-          document.querySelectorAll(selector).forEach(node => {
-            if (messages.length >= 8) return;
-            const lines = (node.innerText || '').split(/\n+/).map(clean).filter(Boolean);
-            if (lines.length < 2) return;
-            const sender = lines[0].slice(0, 80);
-            if (sender.toLowerCase() === 'archived') return;
-            const text = lines.slice(1).join(' ').slice(0, 240);
-            if (sender && text) messages.push({ sender, text });
+          const nodes = document.querySelectorAll(selector);
+          nodes.forEach(node => {
+            if (messages.length >= 20) return;
+            let sender = '';
+            let text = '';
+            let time = '';
+            let link = '';
+
+            const anchor = node.tagName === 'A' ? node : node.querySelector('a');
+            if (anchor && anchor.href && anchor.href.startsWith('http')) {
+              link = anchor.href;
+            }
+
+            const timeNode = node.querySelector('time, [class*="time"], [class*="timestamp"], [data-testid*="time"], div._ak8i, span[class*="_ak8i"]');
+            if (timeNode) {
+              time = clean(timeNode.innerText || timeNode.getAttribute('datetime'));
+            }
+
+            // WhatsApp specific: contact name in span[title] or _ak8q
+            if (host.endsWith('whatsapp.com')) {
+              const nameSpan = node.querySelector('span[title], div[class*="_ak8q"] span');
+              if (nameSpan) sender = clean(nameSpan.getAttribute('title') || nameSpan.innerText);
+              const textSpan = node.querySelector('[data-testid="last-msg-status"], span[class*="_ao3e"], div[class*="_ak8k"] span');
+              if (textSpan) text = clean(textSpan.innerText);
+            }
+
+            // LinkedIn specific:
+            if (!sender && host.endsWith('linkedin.com')) {
+              const nameEl = node.querySelector('.msg-conversation-listitem__participant-names, .msg-overlay-list-bubble__convo-item-header, h3');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('.msg-overlay-list-bubble__message-snippet, .msg-conversation-card__message-snippet, p');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Telegram specific:
+            if (!sender && host.endsWith('telegram.org')) {
+              const nameEl = node.querySelector('.peer-title, .title, .user-caption, h3');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('.subtitle, .last-message, .dialog-subtitle, p');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Fallback line parsing
+            if (!sender || !text) {
+              const lines = (node.innerText || '').split(/\n+/).map(clean).filter(Boolean);
+              if (lines.length >= 2) {
+                if (!sender) sender = lines[0].slice(0, 80);
+                if (!text) {
+                  if (/^((\d{1,2}:\d{2}(\s?[AP]M)?)|yesterday|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(lines[1])) {
+                    if (!time) time = lines[1];
+                    text = lines.slice(2).join(' ').slice(0, 240);
+                  } else {
+                    text = lines.slice(1).join(' ').slice(0, 240);
+                  }
+                }
+              }
+            }
+
+            const lowerSender = sender.toLowerCase();
+            if (lowerSender === 'archived' || lowerSender === 'chats' || lowerSender === 'messages' || lowerSender === 'search' || lowerSender === 'filter chats') return;
+
+            if (sender && text) {
+              if (!messages.some(m => m.sender === sender && m.text === text)) {
+                messages.push({ sender, text, time: time || undefined, link: link || undefined });
+              }
+            }
           });
         }
+
         const notifications = [];
-        document.querySelectorAll('[role="alert"], [aria-live="assertive"], [data-testid*="notification"]').forEach(node => {
-          if (notifications.length >= 8) return;
-          const text = clean(node.innerText).slice(0, 240);
+        document.querySelectorAll('[role="alert"], [aria-live="assertive"], [data-testid*="notification"], .notification-item, [aria-label*="unread message"], [aria-label*="unread notifications"]').forEach(node => {
+          if (notifications.length >= 10) return;
+          const text = clean(node.getAttribute('aria-label') || node.innerText).slice(0, 240);
           if (text && !notifications.includes(text)) notifications.push(text);
         });
+
         const payload = { title: document.title || '', messages, notifications };
         const signature = JSON.stringify(payload);
-        if (signature === lastPayload) return;
+        if (!force && signature === lastPayload) return;
         lastPayload = signature;
-        window.webkit?.messageHandlers?.multispaceActivity?.postMessage(payload);
+        (window.webkit?.messageHandlers?.pinggoActivity || window.webkit?.messageHandlers?.multispaceActivity)?.postMessage(payload);
       }
+
+      window.__pinggoCollect = () => collect(true);
+      window.__multispaceCollect = () => collect(true);
+
       function schedule() {
-        if (pending || window.__multispaceSuspended) return;
-        const delay = document.hidden ? 30000 : 1000;
+        if (pending) return;
+        const delay = document.hidden ? 10000 : 1200;
         pending = setTimeout(() => { pending = null; collect(); }, delay);
       }
       new MutationObserver(schedule).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
       setInterval(() => {
-        if (!window.__multispaceSuspended) collect();
-      }, 30000);
+        collect();
+      }, 15000);
       collect();
     })();
     """#
