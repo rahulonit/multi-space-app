@@ -1142,7 +1142,8 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 "sender": row["sender"] as? String ?? "",
                 "text": row["text"] as? String ?? "",
                 "time": row["time"] as? String ?? "",
-                "link": row["link"] as? String ?? ""
+                "link": row["link"] as? String ?? "",
+                "unread": (row["unread"] as? String) ?? ((row["unread"] as? Bool == true) ? "true" : "false")
             ]
         }
         let notifications = body["notifications"] as? [String] ?? []
@@ -1491,9 +1492,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             const lowerSender = sender.toLowerCase();
             if (lowerSender === 'archived' || lowerSender === 'chats' || lowerSender === 'messages' || lowerSender === 'search' || lowerSender === 'filter chats') return;
 
+            const isUnread = Boolean(
+              node.querySelector('[aria-label*="unread" i], [class*="unread" i], .badge, [data-testid*="unread"], span[class*="_ak8q"], .msg-conversation-listitem--unread, [data-qa="activity_item"]') ||
+              (node.getAttribute('aria-label') || '').toLowerCase().includes('unread') ||
+              (node.className || '').toString().toLowerCase().includes('unread') ||
+              node.querySelector('span[class*="unread"], div[class*="unread"], [aria-live="polite"]')
+            );
+
             if (sender && text) {
               if (!messages.some(m => m.sender === sender && m.text === text)) {
-                messages.push({ sender, text, time: time || undefined, link: link || undefined });
+                messages.push({ sender, text, time: time || undefined, link: link || undefined, unread: isUnread ? "true" : "false" });
               }
             }
           });

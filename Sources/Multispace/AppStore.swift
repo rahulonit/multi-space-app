@@ -320,12 +320,17 @@ final class AppStore: ObservableObject {
             let content = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let time = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let link = (item["link"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let isUnreadExplicit = item["unread"] == "true"
+            let isUnreadByCount = (unread ?? 0) > 0 && index < (unread ?? 0)
+            let unreadFlag = isUnreadExplicit || isUnreadByCount
+
             guard !content.isEmpty else { return nil }
             return .init(id: "\(accountID)-\(index)-\(sender)-\(content)",
                          sender: String(sender.prefix(80)),
                          text: String(content.prefix(240)),
                          time: time.isEmpty ? nil : String(time.prefix(30)),
-                         linkURL: link.isEmpty ? nil : link)
+                         linkURL: link.isEmpty ? nil : link,
+                         isUnread: unreadFlag)
         }
         let alerts = Array(Set(notifications.map {
             String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))

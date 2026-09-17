@@ -129,6 +129,11 @@ struct PlatformMessagePreview: Identifiable, Hashable, Codable {
     let text: String
     var time: String? = nil
     var linkURL: String? = nil
+    var isUnread: Bool? = nil
+
+    var unread: Bool {
+        isUnread ?? false
+    }
 }
 
 struct PlatformNotificationPreview: Identifiable, Hashable, Codable {
