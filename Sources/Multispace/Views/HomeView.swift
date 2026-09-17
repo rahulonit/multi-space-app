@@ -15,7 +15,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 heroHeaderCard
                 bentoStatsRow
                 searchAndFilterBar
@@ -23,10 +23,9 @@ struct HomeView: View {
                 recentActivityStream
                 quickShortcutsBar
             }
-            .padding(.horizontal, store.preferences.compactMode ? 24 : 36)
-            .padding(.vertical, 32)
-            .frame(maxWidth: 1050)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, store.preferences.compactMode ? 16 : 24)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
@@ -117,7 +116,7 @@ struct HomeView: View {
 
     // MARK: - Bento Metrics Strip
     private var bentoStatsRow: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 300), spacing: 14)], spacing: 14) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
             // Stat 1: Unread Messages
             Button { store.destination = .inbox } label: {
                 statTile(
@@ -317,7 +316,7 @@ struct HomeView: View {
                 .padding(40)
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 16)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                     ForEach(accounts) { account in
                         if let platform = store.platform(account.platformID) {
                             BentoAppCardView(platform: platform, account: account)

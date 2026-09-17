@@ -8,8 +8,8 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 820 || sidebarCollapsed
-            if store.destination == .settings {
-                SettingsView()
+            if store.destination == .settings || store.destination == .profile {
+                SettingsView(initialPage: store.destination == .profile ? .profile : .general)
             } else {
                 HStack(spacing: 0) {
                     SidebarView(
@@ -91,7 +91,8 @@ struct ContentView: View {
                 case .home: HomeView()
                 case .inbox: InboxView()
                 case .platform(let id): PlatformPortalView(platformID: id)
-                case .channel, .conversation, .profile, .settings: SettingsView()
+                case .channel, .conversation, .profile, .settings:
+                    SettingsView(initialPage: store.destination == .profile ? .profile : .general)
                 }
             }
         }

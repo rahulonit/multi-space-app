@@ -4,6 +4,18 @@ struct LockScreenView: View {
     @EnvironmentObject private var store: AppStore
     @State private var isAuthenticating = false
     @State private var errorMessage: String?
+    @State private var pinInput: String = ""
+    @State private var showPinText: Bool = false
+    @State private var failedAttempts: Int = 0
+    @FocusState private var isPinFocused: Bool
+
+    private var usesPin: Bool {
+        (store.preferences.lockMethod == "customPin" || store.preferences.lockMethod == "both") && store.hasCustomPin
+    }
+
+    private var allowsBiometric: Bool {
+        store.preferences.lockMethod == "biometric" || store.preferences.lockMethod == "both" || !store.hasCustomPin
+    }
 
     var body: some View {
         ZStack {
@@ -35,7 +47,7 @@ struct LockScreenView: View {
                     Text("PINGGO is Locked")
                         .font(.system(size: 24, weight: .bold))
 
-                    Text("Touch ID or your Mac password is required to access your social accounts.")
+                    Text(subtitleText)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.muted)
                         .multilineTextAlignment(.center)
@@ -43,29 +55,114 @@ struct LockScreenView: View {
                 }
 
                 if let error = errorMessage {
-                    Text(error)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(Color.red.opacity(0.1), in: Capsule())
+                    VStack(spacing: 4) {
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.red)
+
+                        if failedAttempts > 0 && !store.preferences.customPinHint.isEmpty {
+                            Text("Hint: \(store.preferences.customPinHint)")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.muted)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 }
 
-                Button {
-                    triggerUnlock()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "touchid")
-                            .font(.system(size: 18))
-                        Text("Unlock PINGGO")
-                            .font(.system(size: 14, weight: .semibold))
+                if usesPin {
+                    // PIN / Password Input Box
+                    VStack(spacing: 12) {
+                        HStack(spacing: 8) {
+                            Group {
+                                if showPinText {
+                                    TextField("Enter PIN or Password", text: $pinInput)
+                                } else {
+                                    SecureField("Enter PIN or Password", text: $pinInput)
+                                }
+                            }
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .focused($isPinFocused)
+                            .onSubmit {
+                                submitPin()
+                            }
+
+                            Button {
+                                showPinText.toggle()
+                            } label: {
+                                Image(systemName: showPinText ? "eye.slash" : "eye")
+                                    .foregroundStyle(Palette.muted)
+                                    .font(.system(size: 13))
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                submitPin()
+                            } label: {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(pinInput.isEmpty ? Palette.muted : Palette.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(pinInput.isEmpty)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Palette.card, lineWidth: 1)
+                        )
+                        .frame(width: 260)
+
+                        // Action button or Touch ID trigger
+                        if allowsBiometric {
+                            Button {
+                                triggerBiometricUnlock()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "touchid")
+                                        .font(.system(size: 14))
+                                    Text("Unlock with Touch ID")
+                                        .font(.system(size: 12.5, weight: .medium))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Palette.accent)
+                            .padding(.top, 4)
+                        }
+
+                        // Forgot PIN / Admin recovery
+                        Button {
+                            triggerAdminRecovery()
+                        } label: {
+                            Text("Forgot PIN? Unlock with Mac Admin")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
                     }
-                    .frame(minWidth: 200, minHeight: 38)
+                } else {
+                    // Biometric Unlock Only
+                    Button {
+                        triggerBiometricUnlock()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "touchid")
+                                .font(.system(size: 18))
+                            Text("Unlock PINGGO")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(minWidth: 200, minHeight: 38)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+                    .disabled(isAuthenticating)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Palette.accent)
-                .disabled(isAuthenticating)
-                .keyboardShortcut(.defaultAction)
             }
             .padding(40)
             .background(Palette.panel, in: RoundedRectangle(cornerRadius: 20))
@@ -76,11 +173,40 @@ struct LockScreenView: View {
             .shadow(color: .black.opacity(0.3), radius: 30, y: 15)
         }
         .onAppear {
-            triggerUnlock()
+            if usesPin {
+                isPinFocused = true
+            } else if allowsBiometric {
+                triggerBiometricUnlock()
+            }
         }
     }
 
-    private func triggerUnlock() {
+    private var subtitleText: String {
+        if usesPin && allowsBiometric {
+            return "Enter your PINGGO PIN or unlock with Touch ID."
+        } else if usesPin {
+            return "Enter your PINGGO PIN or password to unlock."
+        } else {
+            return "Touch ID or your Mac password is required to access your social accounts."
+        }
+    }
+
+    private func submitPin() {
+        guard !pinInput.isEmpty else { return }
+        errorMessage = nil
+        let success = store.unlockWithPin(pinInput)
+        if success {
+            pinInput = ""
+            failedAttempts = 0
+        } else {
+            failedAttempts += 1
+            errorMessage = "Incorrect PIN or password. Try again."
+            pinInput = ""
+            isPinFocused = true
+        }
+    }
+
+    private func triggerBiometricUnlock() {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         errorMessage = nil
@@ -89,6 +215,19 @@ struct LockScreenView: View {
             isAuthenticating = false
             if !success {
                 errorMessage = "Authentication failed. Click to try again."
+            }
+        }
+    }
+
+    private func triggerAdminRecovery() {
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        errorMessage = nil
+        Task { @MainActor in
+            let success = await store.unlockWithDeviceOwnerFallback()
+            isAuthenticating = false
+            if !success {
+                errorMessage = "Mac administrator authentication failed."
             }
         }
     }

@@ -110,19 +110,63 @@ struct SidebarView: View {
             Spacer(minLength: 12)
             HStack(spacing: 10) {
                 if compact {
-                    Button { store.destination = .settings } label: { Avatar(member: store.me, size: 34) }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .help("Settings & Profile")
-                } else {
-                    Avatar(member: store.me, size: 34)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(store.me.name).font(.system(size: 12, weight: .semibold))
-                        Text("@\(store.me.handle)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    Button { store.destination = .profile } label: {
+                        ZStack(alignment: .bottomTrailing) {
+                            Avatar(member: store.me, size: 34)
+                            if store.userProfile.isSignedIn {
+                                Circle()
+                                    .fill(Palette.background)
+                                    .frame(width: 12, height: 12)
+                                Circle()
+                                    .fill(.green)
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .help("Profile & Cloud Account")
+                } else {
+                    Button { store.destination = .profile } label: {
+                        HStack(spacing: 9) {
+                            ZStack(alignment: .bottomTrailing) {
+                                Avatar(member: store.me, size: 34)
+                                if store.userProfile.isSignedIn {
+                                    Circle()
+                                        .fill(Palette.background)
+                                        .frame(width: 12, height: 12)
+                                    Circle()
+                                        .fill(.green)
+                                        .frame(width: 8, height: 8)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text(store.userProfile.isSignedIn ? store.userProfile.displayName : store.me.name)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .lineLimit(1)
+                                    if store.userProfile.isSignedIn {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Palette.accent)
+                                    }
+                                }
+                                Text(store.userProfile.isSignedIn ? store.userProfile.email : "@\(store.me.handle)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.muted)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("Profile & Cloud Account")
+
                     Spacer()
+
                     Button { store.destination = .settings } label: { Image(systemName: "gearshape") }
                         .buttonStyle(.plain)
+                        .help("Settings")
                 }
             }
             .padding(14)

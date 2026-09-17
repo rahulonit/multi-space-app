@@ -69,6 +69,32 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
         return resolvedWebsiteURL
     }
 
+    var notificationsURL: URL? {
+        let targetId = officialIdentity?.id ?? id
+        let directAddress: String? = {
+            switch targetId {
+            case "linkedin": return "https://www.linkedin.com/notifications/"
+            case "x": return "https://x.com/notifications"
+            case "instagram": return "https://www.instagram.com/accounts/activity/"
+            case "facebook": return "https://www.facebook.com/notifications"
+            case "reddit": return "https://www.reddit.com/notifications"
+            case "discord": return "https://discord.com/channels/@me"
+            case "slack": return "https://app.slack.com/client"
+            case "threads": return "https://www.threads.net/activity"
+            case "tiktok": return "https://www.tiktok.com/inbox"
+            case "github": return "https://github.com/notifications"
+            case "youtube": return "https://www.youtube.com/feed/subscriptions"
+            case "whatsapp": return "https://web.whatsapp.com/"
+            case "telegram": return "https://web.telegram.org/a/"
+            default: return inboxURL?.absoluteString ?? resolvedWebsiteURL?.absoluteString
+            }
+        }()
+        if let directAddress, let url = URL(string: directAddress) {
+            return url
+        }
+        return inboxURL ?? resolvedWebsiteURL
+    }
+
     var usesOfficialLogo: Bool {
         officialIdentity != nil && customIcon != true
     }
@@ -105,11 +131,37 @@ struct PlatformMessagePreview: Identifiable, Hashable, Codable {
     var linkURL: String? = nil
 }
 
+struct PlatformNotificationPreview: Identifiable, Hashable, Codable {
+    let id: String
+    let title: String
+    let text: String
+    var time: String? = nil
+    var linkURL: String? = nil
+    var category: String = "general"
+}
+
 struct PlatformActivitySnapshot: Codable, Equatable {
     var unreadCount: Int?
     var messages: [PlatformMessagePreview]
     var notifications: [String]
+    var notificationPreviews: [PlatformNotificationPreview]? = nil
     var updatedAt: Date
+
+    var allNotificationPreviews: [PlatformNotificationPreview] {
+        if let previews = notificationPreviews, !previews.isEmpty {
+            return previews
+        }
+        return notifications.enumerated().map { idx, str in
+            PlatformNotificationPreview(
+                id: "legacy-\(idx)-\(str.hashValue)",
+                title: "Alert",
+                text: str,
+                time: nil,
+                linkURL: nil,
+                category: "general"
+            )
+        }
+    }
 }
 
 struct PlatformAccount: Identifiable, Codable, Hashable {
@@ -175,4 +227,50 @@ struct AppPreferences: Codable, Equatable {
     var autoLockMinutes = 5
     var tabFreezingEnabled = true
     var tabFreezeMinutes = 15
+    var lockMethod: String = "biometric" // "biometric", "customPin", "both"
+    var customPinHash: String = ""
+    var customPinSalt: String = ""
+    var customPinHint: String = ""
+
+    enum CodingKeys: String, CodingKey {
+        case language, appearance, accent, compactMode, openTo, launchWebsites, launchDelay
+        case showWebsiteAlerts, appLockEnabled, autoLockMinutes, tabFreezingEnabled, tabFreezeMinutes
+        case lockMethod, customPinHash, customPinSalt, customPinHint
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        language = try c.decodeIfPresent(String.self, forKey: .language) ?? "Follow System"
+        appearance = try c.decodeIfPresent(String.self, forKey: .appearance) ?? "Follow System"
+        accent = try c.decodeIfPresent(String.self, forKey: .accent) ?? "indigo"
+        compactMode = try c.decodeIfPresent(Bool.self, forKey: .compactMode) ?? false
+        openTo = try c.decodeIfPresent(String.self, forKey: .openTo) ?? "Home"
+        launchWebsites = try c.decodeIfPresent(Bool.self, forKey: .launchWebsites) ?? true
+        launchDelay = try c.decodeIfPresent(Int.self, forKey: .launchDelay) ?? 0
+        showWebsiteAlerts = try c.decodeIfPresent(Bool.self, forKey: .showWebsiteAlerts) ?? true
+        appLockEnabled = try c.decodeIfPresent(Bool.self, forKey: .appLockEnabled) ?? false
+        autoLockMinutes = try c.decodeIfPresent(Int.self, forKey: .autoLockMinutes) ?? 5
+        tabFreezingEnabled = try c.decodeIfPresent(Bool.self, forKey: .tabFreezingEnabled) ?? true
+        tabFreezeMinutes = try c.decodeIfPresent(Int.self, forKey: .tabFreezeMinutes) ?? 15
+        lockMethod = try c.decodeIfPresent(String.self, forKey: .lockMethod) ?? "biometric"
+        customPinHash = try c.decodeIfPresent(String.self, forKey: .customPinHash) ?? ""
+        customPinSalt = try c.decodeIfPresent(String.self, forKey: .customPinSalt) ?? ""
+        customPinHint = try c.decodeIfPresent(String.self, forKey: .customPinHint) ?? ""
+    }
+}
+
+struct UserProfile: Codable, Equatable {
+    var isSignedIn: Bool = false
+    var provider: String? = nil // "Apple", "Google", "Microsoft"
+    var email: String = "local.user@pinggo.internal"
+    var displayName: String = "Nikita"
+    var avatarColor: String = "indigo"
+    var subscriptionTier: String = "Free"
+    var subscriptionStatus: String = "Active"
+    var subscriptionRenewsAt: Date = Date().addingTimeInterval(86400 * 365)
+    var lastCloudBackup: Date? = nil
+    var autoCloudSync: Bool = true
+    var cloudStorageUsage: String = "1.4 MB of 50 GB used"
 }

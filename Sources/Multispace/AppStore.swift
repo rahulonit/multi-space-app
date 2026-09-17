@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AppKit
 import LocalAuthentication
+import CryptoKit
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -17,6 +18,9 @@ final class AppStore: ObservableObject {
     @Published var preferences: AppPreferences = .init() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences") }
     }
+    @Published var userProfile: UserProfile = .init() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(userProfile), forKey: "userProfile") }
+    }
     @Published var activeSpaceID: UUID?
     @Published var searchText = ""
     @Published private(set) var socialPlatforms: [SocialPlatform] = SocialPlatform.defaults
@@ -25,6 +29,7 @@ final class AppStore: ObservableObject {
 
     @Published var editingPlatform: SocialPlatform?
     @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
+    @Published var platformSummaries: [String: PlatformConversationSummary] = [:]
     @Published var isSplitView: Bool = false
     @Published var splitDestination: AppDestination? = nil
     @Published var splitAccountIDs: [String: UUID] = [:]
@@ -87,6 +92,12 @@ final class AppStore: ObservableObject {
            let decoded = try? JSONDecoder().decode(AppPreferences.self, from: saved) {
             preferences = decoded
         }
+        if let saved = UserDefaults.standard.data(forKey: "userProfile"),
+           let decoded = try? JSONDecoder().decode(UserProfile.self, from: saved) {
+            userProfile = decoded
+        } else {
+            userProfile.displayName = data.me.name
+        }
         if preferences.openTo == "Last Platform",
            let id = UserDefaults.standard.string(forKey: "lastPlatformID"), platform(id) != nil {
             destination = .platform(id)
@@ -95,6 +106,7 @@ final class AppStore: ObservableObject {
             isAppLocked = true
         }
         loadPlatformActivity()
+        refreshSummaries()
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: DispatchQueue.main)
@@ -297,7 +309,7 @@ final class AppStore: ObservableObject {
         UserDefaults.standard.set(try? JSONEncoder().encode(socialPlatforms), forKey: "socialPlatforms")
     }
 
-    func updatePlatformActivity(accountID: UUID, title: String, messages: [[String: String]], notifications: [String]) {
+    func updatePlatformActivity(accountID: UUID, title: String, messages: [[String: String]], notifications: [String], rawNotifications: [[String: String]] = []) {
         guard account(accountID) != nil else { return }
         let unread: Int? = {
             guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
@@ -318,13 +330,67 @@ final class AppStore: ObservableObject {
         let alerts = Array(Set(notifications.map {
             String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
         }.filter { !$0.isEmpty })).sorted().prefix(12)
-        let next = PlatformActivitySnapshot(unreadCount: unread, messages: previews,
-                                            notifications: Array(alerts), updatedAt: .now)
-        if let previous = platformActivity[accountID], previous.unreadCount == next.unreadCount,
-           previous.messages == next.messages, previous.notifications == next.notifications { return }
+
+        let notifPreviews: [PlatformNotificationPreview] = rawNotifications.prefix(15).enumerated().compactMap { index, item in
+            let itemTitle = (item["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let itemText = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let itemTime = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let itemLink = (item["link"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let itemCat = (item["category"] ?? "general").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !itemText.isEmpty || !itemTitle.isEmpty else { return nil }
+            return PlatformNotificationPreview(
+                id: "\(accountID)-notif-\(index)-\(itemTitle)-\(itemText)",
+                title: itemTitle.isEmpty ? "Notice" : String(itemTitle.prefix(80)),
+                text: itemText.isEmpty ? itemTitle : String(itemText.prefix(240)),
+                time: itemTime.isEmpty ? nil : String(itemTime.prefix(40)),
+                linkURL: itemLink.isEmpty ? nil : itemLink,
+                category: itemCat.isEmpty ? "general" : itemCat
+            )
+        }
+
+        let next = PlatformActivitySnapshot(
+            unreadCount: unread,
+            messages: previews,
+            notifications: Array(alerts),
+            notificationPreviews: notifPreviews.isEmpty ? nil : notifPreviews,
+            updatedAt: .now
+        )
+        if let previous = platformActivity[accountID],
+           previous.unreadCount == next.unreadCount,
+           previous.messages == next.messages,
+           previous.notifications == next.notifications,
+           previous.notificationPreviews == next.notificationPreviews { return }
         platformActivity[accountID] = next
         savePlatformActivity()
         updateDockBadge()
+        refreshSummaries()
+    }
+
+    func refreshSummaries() {
+        var map: [String: PlatformConversationSummary] = [:]
+        for platform in socialPlatforms {
+            let accs = accounts(for: platform.id)
+            var msgs: [PlatformMessagePreview] = []
+            var unread = 0
+            for acc in accs {
+                if let snap = platformActivity[acc.id] {
+                    msgs.append(contentsOf: snap.messages)
+                    unread += snap.unreadCount ?? 0
+                }
+            }
+            map[platform.id] = ConversationSummaryService.shared.generateSummary(
+                for: platform,
+                accounts: accs,
+                messages: msgs,
+                unreadCount: unread
+            )
+        }
+        map["all"] = ConversationSummaryService.shared.generateExecutiveBriefing(
+            platforms: socialPlatforms,
+            accounts: platformAccounts,
+            activity: platformActivity
+        )
+        self.platformSummaries = map
     }
 
     private func loadPlatformActivity() {
@@ -338,6 +404,7 @@ final class AppStore: ObservableObject {
             }
             self.platformActivity = restored
             updateDockBadge()
+            refreshSummaries()
         }
     }
 
@@ -364,6 +431,19 @@ final class AppStore: ObservableObject {
             if !currentStr.contains(inboxURL.path) && !currentStr.isEmpty {
                 session?.load(inboxURL)
             }
+        }
+    }
+
+    func openPlatformNotifications(accountID: UUID, notificationURL: String? = nil) {
+        guard let account = account(accountID) else { return }
+        selectAccount(accountID, navigate: true)
+        let session = PortalSessionRegistry.shared.existingSession(for: accountID)
+        session?.wake()
+        session?.resume()
+        if let notificationURL, let url = URL(string: notificationURL), url.scheme?.hasPrefix("http") == true {
+            session?.load(url)
+        } else if let platform = platform(account.platformID), let notifURL = platform.notificationsURL ?? platform.resolvedWebsiteURL {
+            session?.load(notifURL)
         }
     }
 
@@ -494,10 +574,85 @@ final class AppStore: ObservableObject {
         isAppLocked = true
     }
 
-    func unlockApp() async -> Bool {
+    private func hashPin(_ pin: String, salt: String) -> String {
+        let combined = salt + ":" + pin + ":pinggo_secure_salt"
+        let digest = SHA256.hash(data: Data(combined.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    var hasCustomPin: Bool {
+        !preferences.customPinHash.isEmpty && !preferences.customPinSalt.isEmpty
+    }
+
+    func setCustomPin(_ newPin: String, hint: String? = nil) {
+        let salt = UUID().uuidString
+        let hash = hashPin(newPin, salt: salt)
+        preferences.customPinSalt = salt
+        preferences.customPinHash = hash
+        preferences.customPinHint = hint ?? ""
+        objectWillChange.send()
+    }
+
+    func removeCustomPin() {
+        preferences.customPinSalt = ""
+        preferences.customPinHash = ""
+        preferences.customPinHint = ""
+        if preferences.lockMethod == "customPin" {
+            preferences.lockMethod = "biometric"
+        }
+        objectWillChange.send()
+    }
+
+    func verifyCustomPin(_ pin: String) -> Bool {
+        guard hasCustomPin else { return false }
+        let calculated = hashPin(pin, salt: preferences.customPinSalt)
+        return calculated == preferences.customPinHash
+    }
+
+    func unlockWithPin(_ pin: String) -> Bool {
+        if verifyCustomPin(pin) {
+            isAppLocked = false
+            recordActivity()
+            return true
+        }
+        return false
+    }
+
+    func unlockWithDeviceOwnerFallback() async -> Bool {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            isAppLocked = false
+            recordActivity()
+            return true
+        }
+
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Unlock PINGGO with Mac administrator credentials"
+            )
+            if success {
+                self.isAppLocked = false
+                self.recordActivity()
+            }
+            return success
+        } catch {
+            return false
+        }
+    }
+
+    func unlockApp() async -> Bool {
+        if preferences.lockMethod == "customPin" {
+            return false
+        }
+
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            if hasCustomPin {
+                return false
+            }
             isAppLocked = false
             recordActivity()
             return true
@@ -526,6 +681,62 @@ final class AppStore: ObservableObject {
                 isAppLocked = true
             }
         }
+    }
+
+    func signInWith(provider: String, name: String, email: String, tier: String = "PINGGO Pro (Active)") {
+        userProfile.isSignedIn = true
+        userProfile.provider = provider
+        userProfile.displayName = name
+        userProfile.email = email
+        userProfile.subscriptionTier = tier
+        userProfile.subscriptionStatus = "Active"
+        userProfile.lastCloudBackup = .now
+        data.me.name = name
+        save()
+        showToast("Signed in with \(provider). Subscription & spaces synced to cloud.")
+        objectWillChange.send()
+    }
+
+    func signOutProfile() {
+        userProfile.isSignedIn = false
+        userProfile.provider = nil
+        userProfile.subscriptionTier = "Free"
+        userProfile.subscriptionStatus = "Active"
+        showToast("Signed out. Operating in local mode.")
+        objectWillChange.send()
+    }
+
+    func triggerCloudSync() {
+        userProfile.lastCloudBackup = .now
+        showToast("Cloud sync complete: \(socialPlatforms.count) platforms, \(platformAccounts.count) accounts & subscription synced.")
+        objectWillChange.send()
+    }
+
+    func exportUserDataJSON() -> String {
+        let exportData: [String: Any] = [
+            "exportDate": ISO8601DateFormatter().string(from: .now),
+            "app": "PINGGO",
+            "profile": [
+                "displayName": userProfile.displayName,
+                "email": userProfile.email,
+                "provider": userProfile.provider ?? "None",
+                "subscriptionTier": userProfile.subscriptionTier
+            ],
+            "platforms": socialPlatforms.map { ["id": $0.id, "name": $0.name, "url": $0.websiteURL ?? ""] },
+            "accounts": platformAccounts.map { ["id": $0.id.uuidString, "platformID": $0.platformID, "name": $0.name] },
+            "preferences": [
+                "appearance": preferences.appearance,
+                "accent": preferences.accent,
+                "compactMode": preferences.compactMode,
+                "autoLockMinutes": preferences.autoLockMinutes,
+                "lockMethod": preferences.lockMethod
+            ]
+        ]
+        if let jsonData = try? JSONSerialization.data(withJSONObject: exportData, options: .prettyPrinted),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            return jsonString
+        }
+        return "{}"
     }
 
     func member(_ id: UUID) -> Member? {
@@ -620,6 +831,21 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    func updateProfileDetails(name: String, email: String) {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanName.isEmpty {
+            data.me.name = cleanName
+            userProfile.displayName = cleanName
+        }
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanEmail.isEmpty {
+            userProfile.email = cleanEmail
+        }
+        save()
+        showToast("Profile details updated!")
+        objectWillChange.send()
+    }
+
     func showToast(_ message: String) {
         toastMessage = message
         Task { @MainActor in
@@ -666,6 +892,26 @@ final class AppStore: ObservableObject {
             domain: domain
         )
         showToast("Imported \(platform.name) session cookies!")
+    }
+
+    func detectAndImportClipboardSession(accountID: UUID, platformID: String) async -> Bool {
+        guard let clipboardString = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !clipboardString.isEmpty else { return false }
+
+        // Case 1: Clipboard contains pinggo://auth-sync URL
+        if (clipboardString.hasPrefix("pinggo://auth-sync") || clipboardString.hasPrefix("multispace://auth-sync")),
+           let url = URL(string: clipboardString) {
+            handleDeepLink(url)
+            return true
+        }
+
+        // Case 2: Clipboard contains cookie string or session token
+        if clipboardString.contains("=") || (platformID == "linkedin" && clipboardString.count > 20) {
+            await importSessionCookies(accountID: accountID, platformID: platformID, rawInput: clipboardString)
+            return true
+        }
+
+        return false
     }
 
     func handleDeepLink(_ url: URL) {

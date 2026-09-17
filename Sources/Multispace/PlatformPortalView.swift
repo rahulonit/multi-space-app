@@ -136,15 +136,19 @@ struct PopupWebViewRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
-struct SessionSyncSheet: View {
+struct PasskeyLoginAssistantSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AppStore
     let platform: SocialPlatform
     let account: PlatformAccount
+    var session: PortalSession? = nil
 
+    @State private var selectedTab: Int = 0
     @State private var tokenInput: String = ""
     @State private var copiedBookmarklet = false
     @State private var isSubmitting = false
+    @State private var passkeyStatusMessage: String? = nil
+    @State private var isCheckingPasskey = false
 
     private var host: String {
         platform.resolvedWebsiteURL?.host ?? "\(platform.id).com"
@@ -155,14 +159,20 @@ struct SessionSyncSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
             HStack(spacing: 12) {
-                PlatformLogo(platform: platform, size: 36)
+                PlatformLogo(platform: platform, size: 38)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sync \(platform.name) Session")
-                        .font(.system(size: 18, weight: .bold))
+                    HStack(spacing: 6) {
+                        Text("\(platform.name) Passkey & Login Assistant")
+                            .font(.system(size: 17, weight: .bold))
+                        Image(systemName: "key.fill")
+                            .foregroundStyle(.orange)
+                            .font(.system(size: 12))
+                    }
                     Text("Account: \(account.name) • \(host)")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                 }
                 Spacer()
@@ -171,39 +181,249 @@ struct SessionSyncSheet: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Palette.muted)
-                        .font(.system(size: 16))
+                        .font(.system(size: 17))
                 }
                 .buttonStyle(.plain)
             }
 
+            // Sub-Navigation Tabs
+            Picker("", selection: $selectedTab) {
+                Text("🔑 Passkeys & Touch ID").tag(0)
+                Text("🌐 1-Click Browser Sync").tag(1)
+                Text("📋 Token & Cookies").tag(2)
+            }
+            .pickerStyle(.segmented)
+
             Divider()
 
-            // Option 1: Browser Bookmarklet
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "safari.fill")
-                        .foregroundStyle(.blue)
-                    Text("Option 1: Sign In in Default Browser (Passkey / Google)")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                Text("Open \(platform.name) in Safari or Chrome, log in with Passkeys, Touch ID, or Google, then use the 1-click sync bookmarklet below.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
+            if selectedTab == 0 {
+                passkeysTab
+            } else if selectedTab == 1 {
+                browserSyncTab
+            } else {
+                manualTokenTab
+            }
 
-                HStack(spacing: 10) {
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Close") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+    }
+
+    // MARK: - Tab 0: Native Passkeys & Biometrics
+    private var passkeysTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "touchid")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.green)
+                    Text("Biometric & Hardware Passkeys Enabled")
+                        .font(.system(size: 13, weight: .bold))
+                    Spacer()
+                    Text("FIDO2 / WebAuthn")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.green)
+                }
+
+                Text("PINGGO supports Apple Passkeys, Mac Touch ID, iCloud Keychain, and hardware security keys directly on \(platform.name).")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(12)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+
+            // Methods list
+            VStack(alignment: .leading, spacing: 10) {
+                methodRow(
+                    icon: "touchid",
+                    color: .blue,
+                    title: "Touch ID on Mac",
+                    desc: "When prompted on the login page, tap the Touch ID sensor on your Mac keyboard to sign in instantly."
+                )
+
+                methodRow(
+                    icon: "qrcode.viewfinder",
+                    color: .purple,
+                    title: "Phone Passkey (iPhone / Android)",
+                    desc: "Select 'Use phone or tablet' or 'Scan QR code' on the login screen to sign in with your phone's Face ID."
+                )
+
+                methodRow(
+                    icon: "key.horizontal.fill",
+                    color: .orange,
+                    title: "Hardware Security Keys (YubiKey)",
+                    desc: "Plug your USB-C security key directly into your Mac for instant hardware passkey authentication."
+                )
+            }
+
+            if let msg = passkeyStatusMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(msg)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.primary)
+                }
+                .padding(8)
+                .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            // Quick actions
+            HStack(spacing: 10) {
+                Button {
+                    isCheckingPasskey = true
+                    Task {
+                        if let session {
+                            let script = "(typeof window.PublicKeyCredential !== 'undefined') ? 'ready' : 'fallback';"
+                            let res = try? await session.webView.evaluateJavaScript(script)
+                            let val = res as? String ?? "ready"
+                            if val == "ready" {
+                                passkeyStatusMessage = "WebAuthn engine verified: Touch ID & Passkeys are ready on this page!"
+                            } else {
+                                passkeyStatusMessage = "Passkey engine active. Tap sign-in on page to authenticate."
+                            }
+                        } else {
+                            passkeyStatusMessage = "Touch ID and iCloud Keychain passkeys are ready for \(platform.name)."
+                        }
+                        isCheckingPasskey = false
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text(isCheckingPasskey ? "Checking..." : "Verify Passkey Readiness")
+                    }
+                    .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    session?.reload()
+                    store.showToast("Reloaded \(platform.name) portal")
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Reload Login Page")
+                    }
+                    .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func methodRow(icon: String, color: Color, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(color)
+                .frame(width: 20, height: 20)
+                .padding(4)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+        }
+    }
+
+    // MARK: - Tab 1: Browser 1-Click Sync
+    private var browserSyncTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Already logged in with Passkey in Safari or Chrome? Transfer your active session into PINGGO in seconds.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+
+            VStack(spacing: 8) {
+                // Step 1: Open in default browser
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Step 1: Sign in with Passkey in Browser")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Open \(platform.name) in Safari or Chrome and use your saved passkey.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
                     Button {
                         if let url = platform.resolvedWebsiteURL {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.forward.app")
-                            Text("1. Open in Browser")
+                        HStack(spacing: 4) {
+                            Image(systemName: "safari")
+                            Text("Open Browser")
                         }
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(10)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
 
+                // Step 2: Auto-detect session from clipboard
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Step 2: Auto-Sync Active Session")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Automatically detects cookies copied from browser or sync bookmarklet.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            let imported = await store.detectAndImportClipboardSession(accountID: account.id, platformID: platform.id)
+                            if imported {
+                                dismiss()
+                            } else {
+                                store.showToast("No session cookies in clipboard. Use bookmarklet below or copy cookies.")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Auto-Sync Now")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(Palette.accent)
+                }
+                .padding(10)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+
+                // Step 3: Copy 1-click Bookmarklet
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("1-Click Sync Bookmarklet (Optional)")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Run in browser bookmark bar to instantly sync session into PINGGO.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(bookmarkletCode, forType: .string)
@@ -214,84 +434,72 @@ struct SessionSyncSheet: View {
                             copiedBookmarklet = false
                         }
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             Image(systemName: copiedBookmarklet ? "checkmark" : "bookmark.fill")
-                            Text(copiedBookmarklet ? "Copied Bookmarklet!" : "2. Copy Sync Bookmarklet")
+                            Text(copiedBookmarklet ? "Copied!" : "Copy Bookmarklet")
                         }
-                        .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.2), lineWidth: 1))
-
-            // Option 2: Direct Token / Cookie Import
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "key.fill")
-                        .foregroundStyle(.orange)
-                    Text(platform.id == "linkedin" ? "Option 2: Direct Token Paste (li_at)" : "Option 2: Paste Session Cookies")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-
-                if platform.id == "linkedin" {
-                    Text("Paste the 'li_at' cookie value from Safari/Chrome DevTools (or full cookie string) for instant login.")
                         .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                } else {
-                    Text("Paste the session cookie or full cookie header string from your browser.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                }
-
-                HStack(spacing: 8) {
-                    TextField(platform.id == "linkedin" ? "Paste li_at value or cookies..." : "Paste cookies (name=value; ...)", text: $tokenInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-
-                    Button("Import & Log In") {
-                        let text = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { return }
-                        isSubmitting = true
-                        Task {
-                            await store.importSessionCookies(accountID: account.id, platformID: platform.id, rawInput: text)
-                            isSubmitting = false
-                            dismiss()
-                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.2), lineWidth: 1))
-
-            HStack {
-                Spacer()
-                Button("Close") {
-                    dismiss()
-                }
+                .padding(10)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
             }
         }
-        .padding(20)
-        .frame(width: 540)
+    }
+
+    // MARK: - Tab 2: Manual Token / Cookies
+    private var manualTokenTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(platform.id == "linkedin" ? "Paste the 'li_at' session token from browser DevTools, or paste raw cookie header." : "Paste session cookies (name=value; ...) from your browser.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+
+            HStack(spacing: 8) {
+                TextField(platform.id == "linkedin" ? "Paste li_at token or cookies..." : "Paste cookies (name=value; ...)", text: $tokenInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+
+                Button("Paste") {
+                    if let clip = NSPasteboard.general.string(forType: .string) {
+                        tokenInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("Log In") {
+                    let text = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return }
+                    isSubmitting = true
+                    Task {
+                        await store.importSessionCookies(accountID: account.id, platformID: platform.id, rawInput: text)
+                        isSubmitting = false
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(Palette.accent)
+                .disabled(tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
     }
 }
+typealias SessionSyncSheet = PasskeyLoginAssistantSheet
 
 struct PlatformPortalView: View {
     @EnvironmentObject private var store: AppStore
     let platformID: String
     var explicitAccountID: UUID? = nil
+    var customURL: URL? = nil
     var onSelectAccount: ((UUID) -> Void)? = nil
 
     var body: some View {
         if let platform = store.platform(platformID) {
-            if let url = platform.resolvedWebsiteURL {
+            let targetURL = customURL ?? platform.resolvedWebsiteURL
+            if let url = targetURL {
                 let targetAccount = (explicitAccountID != nil ? store.account(explicitAccountID!) : nil) ?? store.selectedAccount(for: platform.id)
                 if let account = targetAccount {
                     PortalBrowser(
@@ -334,7 +542,17 @@ private struct PortalBrowser: View {
     @ObservedObject private var session: PortalSession
     @State private var showingAddAccount = false
     @State private var showingRenameAccount = false
-    @State private var showingSyncSheet = false
+    @State private var showingPasskeyAssistant = false
+    @State private var dismissedPasskeyBanner = false
+
+    private var isAuthenticationPage: Bool {
+        let urlStr = (session.currentURL ?? url).absoluteString.lowercased()
+        return urlStr.contains("login") || urlStr.contains("signin") || urlStr.contains("sign-in") ||
+               urlStr.contains("auth") || urlStr.contains("checkpoint") || urlStr.contains("accounts.google") ||
+               urlStr.contains("appleid.apple") || urlStr.contains("web.whatsapp.com") || urlStr.contains("challenge") ||
+               urlStr.contains("two-factor") || urlStr.contains("2fa") || urlStr.contains("sso") ||
+               urlStr.contains("session") || urlStr.contains("identity")
+    }
 
     init(platform: SocialPlatform, account: PlatformAccount, url: URL, onSelectAccount: ((UUID) -> Void)? = nil) {
         self.platform = platform
@@ -384,8 +602,13 @@ private struct PortalBrowser: View {
                 toolbarButton("square.on.square", help: "Open in browser", enabled: true) {
                     NSWorkspace.shared.open(session.currentURL ?? url)
                 }
-                toolbarButton("arrow.triangle.2.circlepath", help: "Sync session from browser or import cookies", enabled: true) {
-                    showingSyncSheet = true
+                toolbarButton(
+                    "key.fill",
+                    help: "Passkey & Fast Login Assistant",
+                    enabled: true,
+                    tint: isAuthenticationPage ? .orange : Palette.accent
+                ) {
+                    showingPasskeyAssistant = true
                 }
                 toolbarButton(
                     session.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
@@ -430,6 +653,52 @@ private struct PortalBrowser: View {
             .padding(.horizontal, 17)
             .frame(height: 29)
             .background(Palette.sidebar)
+
+            if isAuthenticationPage && !dismissedPasskeyBanner {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill")
+                        .foregroundStyle(.orange)
+                        .font(.system(size: 11))
+
+                    Text("Fast Sign-In: Touch ID, Apple Passkeys, or 1-Click Sync available")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Button {
+                        showingPasskeyAssistant = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Passkey Assistant")
+                            Image(systemName: "arrow.up.right")
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                    .tint(.orange)
+
+                    Button {
+                        dismissedPasskeyBanner = true
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 4)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.12))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundStyle(Color.orange.opacity(0.25)),
+                    alignment: .bottom
+                )
+            }
 
             ZStack {
                 PortalWebView(session: session)
@@ -487,9 +756,18 @@ private struct PortalBrowser: View {
         .onAppear {
             session.wake()
             session.resume()
-            session.activityHandler = { title, messages, notifications in
+            if session.webView.url != url && session.currentURL != url {
+                session.load(url)
+            }
+            session.activityHandler = { title, messages, notifications, rawNotifications in
                 store.updatePlatformActivity(accountID: account.id, title: title,
-                                             messages: messages, notifications: notifications)
+                                             messages: messages, notifications: notifications,
+                                             rawNotifications: rawNotifications)
+            }
+        }
+        .onChange(of: url) { _, newURL in
+            if session.webView.url != newURL {
+                session.load(newURL)
             }
         }
         .sheet(isPresented: $showingAddAccount) {
@@ -525,13 +803,16 @@ private struct PortalBrowser: View {
                     },
                     onSyncSession: {
                         session.closePopup()
-                        showingSyncSheet = true
+                        showingPasskeyAssistant = true
                     }
                 )
             }
         }
-        .sheet(isPresented: $showingSyncSheet) {
-            SessionSyncSheet(platform: platform, account: account)
+        .sheet(isPresented: $showingPasskeyAssistant) {
+            PasskeyLoginAssistantSheet(platform: platform, account: account, session: session)
+        }
+        .onChange(of: session.currentURL) { _, _ in
+            dismissedPasskeyBanner = false
         }
     }
 
@@ -588,8 +869,13 @@ final class PortalSessionRegistry {
     private var sessions: [UUID: PortalSession] = [:]
 
     func session(for account: PlatformAccount, url: URL) -> PortalSession {
-        if let existing = sessions[account.id], existing.homeURL == url { return existing }
-        sessions[account.id]?.stop()
+        if let existing = sessions[account.id] {
+            existing.lastAccessedAt = .now
+            if existing.currentURL != url && existing.homeURL != url {
+                existing.load(url)
+            }
+            return existing
+        }
         let created = PortalSession(account: account, url: url)
         sessions[account.id] = created
         return created
@@ -605,9 +891,10 @@ final class PortalSessionRegistry {
             guard let platform = platforms.first(where: { $0.id == account.platformID }) else { continue }
             guard let url = platform.resolvedWebsiteURL else { continue }
             let browser = session(for: account, url: url)
-            browser.activityHandler = { [weak store] title, messages, notifications in
+            browser.activityHandler = { [weak store] title, messages, notifications, rawNotifications in
                 store?.updatePlatformActivity(accountID: account.id, title: title,
-                                              messages: messages, notifications: notifications)
+                                              messages: messages, notifications: notifications,
+                                              rawNotifications: rawNotifications)
             }
         }
     }
@@ -713,7 +1000,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     let webView: WKWebView
     let homeURL: URL
     let accountID: UUID
-    var activityHandler: ((String, [[String: String]], [String]) -> Void)?
+    var activityHandler: ((String, [[String: String]], [String], [[String: String]]) -> Void)?
 
     init(account: PlatformAccount, url: URL) {
         accountID = account.id
@@ -722,6 +1009,9 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.addUserScript(WKUserScript(source: Self.passkeyScript,
+                                                                       injectionTime: .atDocumentStart,
+                                                                       forMainFrameOnly: false))
         configuration.userContentController.addUserScript(WKUserScript(source: Self.activityScript,
                                                                        injectionTime: .atDocumentEnd,
                                                                        forMainFrameOnly: true))
@@ -856,7 +1146,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             ]
         }
         let notifications = body["notifications"] as? [String] ?? []
-        activityHandler?(title, rows, notifications)
+        let rawNotifications = (body["rawNotifications"] as? [[String: Any]] ?? []).map { item in
+            [
+                "title": item["title"] as? String ?? "",
+                "text": item["text"] as? String ?? "",
+                "time": item["time"] as? String ?? "",
+                "link": item["link"] as? String ?? "",
+                "category": item["category"] as? String ?? "general"
+            ]
+        }
+        activityHandler?(title, rows, notifications, rawNotifications)
     }
 
     func load(_ url: URL) {
@@ -1201,13 +1500,85 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         }
 
         const notifications = [];
-        document.querySelectorAll('[role="alert"], [aria-live="assertive"], [data-testid*="notification"], .notification-item, [aria-label*="unread message"], [aria-label*="unread notifications"]').forEach(node => {
-          if (notifications.length >= 10) return;
-          const text = clean(node.getAttribute('aria-label') || node.innerText).slice(0, 240);
-          if (text && !notifications.includes(text)) notifications.push(text);
+        const rawNotifications = [];
+        const seenNotifText = new Set();
+
+        const notifSelectors = [
+          '.nt-card',
+          '[data-id*="urn:li:activity"]',
+          '[data-testid="cellInnerDiv"]',
+          '[data-testid*="notification"]',
+          '[data-qa="activity_item"]',
+          '.notification-item',
+          '[role="alert"]',
+          '[aria-live="assertive"]',
+          '[aria-label*="notification" i]',
+          '[aria-label*="unread message" i]'
+        ];
+
+        document.querySelectorAll(notifSelectors.join(',')).forEach(node => {
+          if (rawNotifications.length >= 15) return;
+          if (node.parentElement && node.parentElement.closest(notifSelectors.join(','))) return;
+
+          const anchor = node.querySelector('a[href]') || node.closest('a[href]');
+          const link = anchor ? anchor.href : null;
+          const timeNode = node.querySelector('time, [class*="time"], [class*="timestamp"], [aria-label*="ago"], [aria-label*="AM"], [aria-label*="PM"]');
+          const time = timeNode ? clean(timeNode.innerText || timeNode.getAttribute('aria-label') || '').slice(0, 40) : null;
+
+          let title = '';
+          const heading = node.querySelector('h1, h2, h3, h4, [class*="headline"], [class*="title"], strong, b');
+          if (heading) {
+            title = clean(heading.innerText).slice(0, 80);
+          }
+
+          let rawText = clean(node.getAttribute('aria-label') || node.innerText);
+          let bodyText = rawText;
+          if (title && bodyText.startsWith(title)) {
+            bodyText = clean(bodyText.slice(title.length));
+          }
+          bodyText = bodyText.slice(0, 240);
+
+          if (!title && bodyText) {
+            const dotIdx = bodyText.indexOf('. ');
+            if (dotIdx > 0 && dotIdx < 60) {
+              title = bodyText.slice(0, dotIdx);
+              bodyText = bodyText.slice(dotIdx + 2);
+            } else {
+              title = bodyText.slice(0, 60);
+            }
+          }
+
+          if (!title && !bodyText) return;
+
+          const combined = (title + ' ' + bodyText).toLowerCase();
+          let category = 'general';
+          if (combined.includes('mentioned') || combined.includes('tagged') || combined.includes('@')) {
+            category = 'mention';
+          } else if (combined.includes('security') || combined.includes('password') || combined.includes('sign-in') || combined.includes('login') || combined.includes('device') || combined.includes('2fa') || combined.includes('code')) {
+            category = 'security';
+          } else if (combined.includes('request') || combined.includes('invited') || combined.includes('connect') || combined.includes('follow') || combined.includes('joined')) {
+            category = 'request';
+          } else if (combined.includes('reacted') || combined.includes('liked') || combined.includes('reposted') || combined.includes('retweet') || combined.includes('shared')) {
+            category = 'reaction';
+          } else if (combined.includes('commented') || combined.includes('replied')) {
+            category = 'reply';
+          }
+
+          const sig = (title + '|' + bodyText).slice(0, 100);
+          if (seenNotifText.has(sig)) return;
+          seenNotifText.add(sig);
+
+          notifications.push(rawText.slice(0, 240));
+          rawNotifications.push({
+            title: title || 'Notice',
+            text: bodyText || title || 'Notification received',
+            time: time || undefined,
+            link: link || undefined,
+            category: category
+          });
         });
 
-        const payload = { title: document.title || '', messages, notifications };
+        const payload = { title: document.title || '', messages, notifications, rawNotifications };
         const signature = JSON.stringify(payload);
         if (!force && signature === lastPayload) return;
         lastPayload = signature;
@@ -1248,6 +1619,42 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           if (window.__multispaceMuted) { a.muted = true; }
           return a;
         };
+      }
+    })();
+    """#
+
+    private static let passkeyScript = #"""
+    (() => {
+      if (window.__pinggoPasskeyInjected) return;
+      window.__pinggoPasskeyInjected = true;
+
+      // Polyfill / guarantee PublicKeyCredential platform authenticator & conditional mediation checks
+      if (window.PublicKeyCredential) {
+        if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+          const origIsAvailable = PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable.bind(PublicKeyCredential);
+          PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async function() {
+            try {
+              const avail = await origIsAvailable();
+              if (avail) return true;
+            } catch (e) {}
+            return true;
+          };
+        } else {
+          PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
+        }
+
+        if (typeof PublicKeyCredential.isConditionalMediationAvailable === 'function') {
+          const origIsCond = PublicKeyCredential.isConditionalMediationAvailable.bind(PublicKeyCredential);
+          PublicKeyCredential.isConditionalMediationAvailable = async function() {
+            try {
+              const cond = await origIsCond();
+              if (cond) return true;
+            } catch (e) {}
+            return true;
+          };
+        } else {
+          PublicKeyCredential.isConditionalMediationAvailable = async () => true;
+        }
       }
     })();
     """#

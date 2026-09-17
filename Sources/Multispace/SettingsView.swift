@@ -1,11 +1,12 @@
 import SwiftUI
 
-private enum SettingsPage: String, CaseIterable {
-    case general = "General", security = "Security", launch = "Performance"
+enum SettingsPage: String, CaseIterable {
+    case profile = "Profile", general = "General", security = "Security", launch = "Performance"
     case interaction = "Interaction", subscription = "Subscription", about = "About"
 
     var symbol: String {
         switch self {
+        case .profile: "person.crop.circle.fill"
         case .general: "gearshape.fill"
         case .security: "lock.shield.fill"
         case .launch: "bolt.fill"
@@ -16,6 +17,7 @@ private enum SettingsPage: String, CaseIterable {
     }
     var color: Color {
         switch self {
+        case .profile: .indigo
         case .general: .cyan
         case .security: .purple
         case .launch: .orange
@@ -28,9 +30,14 @@ private enum SettingsPage: String, CaseIterable {
 
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
-    @State private var page: SettingsPage = .general
+    var initialPage: SettingsPage? = nil
+    @State private var page: SettingsPage = .profile
     @State private var detail: String?
     @State private var hibernatedFeedback = false
+    @State private var showingPinSetupSheet = false
+    @State private var pinSetupIsChanging = false
+    @State private var selectedSocialLoginProvider: String? = nil
+    @State private var showingEditProfileSheet = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -56,6 +63,7 @@ struct SettingsView: View {
                             .font(.system(size: 27, weight: .bold))
                             .padding(.bottom, 28)
                         switch page {
+                        case .profile: profilePage
                         case .general: generalPage
                         case .security: securityPage
                         case .launch: launchPage
@@ -71,11 +79,32 @@ struct SettingsView: View {
                 .background(Palette.background)
             }
         }
+        .onAppear {
+            if let initialPage {
+                page = initialPage
+            } else if store.destination == .profile {
+                page = .profile
+            } else if store.destination == .settings {
+                page = .general
+            }
+        }
         .sheet(item: Binding(
             get: { detail.map(DetailSheet.init) },
             set: { detail = $0?.id }
         )) { item in
             detailSheet(item.id)
+        }
+        .sheet(isPresented: $showingPinSetupSheet) {
+            CustomPinSetupSheet(isChangingExisting: pinSetupIsChanging)
+        }
+        .sheet(item: Binding(
+            get: { selectedSocialLoginProvider.map { SocialLoginItem(provider: $0) } },
+            set: { selectedSocialLoginProvider = $0?.provider }
+        )) { item in
+            SocialLoginSheet(providerName: item.provider)
+        }
+        .sheet(isPresented: $showingEditProfileSheet) {
+            EditProfileSheet()
         }
     }
 
@@ -123,6 +152,390 @@ struct SettingsView: View {
         .padding(12)
         .frame(width: 210)
         .background(Palette.sidebar)
+    }
+
+    private var profilePage: some View {
+        VStack(spacing: 24) {
+            if !store.userProfile.isSignedIn {
+                guestProfileBanner
+                socialLoginSection
+                localUserCard
+                syncBenefitsCard
+            } else {
+                authenticatedUserCard
+                cloudSubscriptionCard
+                cloudBackupCard
+            }
+        }
+    }
+
+    private var guestProfileBanner: some View {
+        settingsCard("Cloud Account & Sync", symbol: "cloud.fill", color: .indigo) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Store Subscription & Sync Workspaces Across Devices")
+                    .font(.system(size: 15, weight: .bold))
+                Text("Sign in with Google, Apple, or Microsoft to back up your social workspaces, sync your PINGGO Pro subscription, and restore custom URLs and platforms on any Mac.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .lineSpacing(2)
+            }
+        }
+    }
+
+    private var socialLoginSection: some View {
+        settingsCard("Sign In Options", symbol: "person.badge.key.fill", color: .blue) {
+            VStack(spacing: 12) {
+                socialLoginRow(
+                    provider: "Apple",
+                    icon: "apple.logo",
+                    iconColor: .primary,
+                    title: "Continue with Apple",
+                    desc: "Fast Touch ID & iCloud Keychain sync",
+                    badge: " Apple ID"
+                )
+
+                Divider()
+
+                socialLoginRow(
+                    provider: "Google",
+                    icon: "g.circle.fill",
+                    iconColor: Color(red: 0.92, green: 0.26, blue: 0.21),
+                    title: "Continue with Google",
+                    desc: "Sync via Google Cloud & Workspace",
+                    badge: "Google Cloud"
+                )
+
+                Divider()
+
+                socialLoginRow(
+                    provider: "Microsoft",
+                    icon: "square.grid.2x2.fill",
+                    iconColor: Color(red: 0.0, green: 0.63, blue: 0.94),
+                    title: "Continue with Microsoft",
+                    desc: "Sync via Microsoft Account & Entra ID",
+                    badge: "Microsoft 365"
+                )
+            }
+        }
+    }
+
+    private func socialLoginRow(provider: String, icon: String, iconColor: Color, title: String, desc: String, badge: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 34, height: 34)
+                .background(iconColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(badge)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Palette.panel, in: Capsule())
+                }
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+
+            Spacer()
+
+            Button("Sign In") {
+                selectedSocialLoginProvider = provider
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(Palette.accent)
+        }
+    }
+
+    private var localUserCard: some View {
+        settingsCard("Local Profile (Offline)", symbol: "laptopcomputer", color: .gray) {
+            HStack(spacing: 14) {
+                Avatar(member: store.me, size: 44)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.me.name)
+                        .font(.system(size: 14, weight: .bold))
+                    Text("@\(store.me.handle) · \(store.me.status)")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                    Text("Currently saved only on this Mac. Sign in above to sync to cloud.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Spacer()
+
+                Button("Edit Name") {
+                    showingEditProfileSheet = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private var syncBenefitsCard: some View {
+        settingsCard("What Gets Stored in Cloud?", symbol: "checkmark.shield.fill", color: .green) {
+            VStack(alignment: .leading, spacing: 10) {
+                benefitRow(icon: "crown.fill", color: .yellow, title: "PINGGO Pro Subscription", desc: "Restore subscription status across any Mac without repurchasing.")
+                Divider()
+                benefitRow(icon: "square.grid.2x2.fill", color: .blue, title: "Social Platforms & Custom URLs", desc: "\(store.socialPlatforms.count) connected social apps and custom website configurations.")
+                Divider()
+                benefitRow(icon: "person.2.fill", color: .purple, title: "Multi-Account Profiles", desc: "\(store.platformAccounts.count) multi-account setups and split view layouts.")
+                Divider()
+                benefitRow(icon: "lock.shield.fill", color: .indigo, title: "Encrypted Security & Preferences", desc: "App lock settings, themes, and notification preferences securely backed up.")
+            }
+        }
+    }
+
+    private func benefitRow(icon: String, color: Color, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(color)
+                .frame(width: 20, height: 20)
+                .background(color.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+        }
+    }
+
+    private var authenticatedUserCard: some View {
+        settingsCard("Connected Account", symbol: "person.crop.circle.fill.badge.checkmark", color: .green) {
+            VStack(spacing: 16) {
+                HStack(spacing: 14) {
+                    ZStack(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(Palette.accent.opacity(0.2))
+                            .frame(width: 52, height: 52)
+                        Text(String(store.userProfile.displayName.prefix(1)).uppercased())
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Palette.accent)
+
+                        ZStack {
+                            Circle()
+                                .fill(Palette.panel)
+                                .frame(width: 20, height: 20)
+                            Image(systemName: providerSymbol(store.userProfile.provider ?? ""))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(providerColor(store.userProfile.provider ?? ""))
+                        }
+                        .offset(x: 2, y: 2)
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(store.userProfile.displayName)
+                                .font(.system(size: 15, weight: .bold))
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.seal.fill")
+                                Text("Synced")
+                            }
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                        }
+
+                        Text(store.userProfile.email)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+
+                        Text("Signed in with \(store.userProfile.provider ?? "Cloud Account")")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Button("Edit Details") {
+                            showingEditProfileSheet = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button("Sign Out", role: .destructive) {
+                            store.signOutProfile()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+
+    private func providerSymbol(_ provider: String) -> String {
+        switch provider {
+        case "Apple": return "apple.logo"
+        case "Google": return "g.circle.fill"
+        case "Microsoft": return "square.grid.2x2.fill"
+        default: return "cloud.fill"
+        }
+    }
+
+    private func providerColor(_ provider: String) -> Color {
+        switch provider {
+        case "Apple": return .primary
+        case "Google": return Color(red: 0.92, green: 0.26, blue: 0.21)
+        case "Microsoft": return Color(red: 0.0, green: 0.63, blue: 0.94)
+        default: return Palette.accent
+        }
+    }
+
+    private var cloudSubscriptionCard: some View {
+        settingsCard("Cloud Subscription & License", symbol: "crown.fill", color: .yellow) {
+            VStack(spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(store.userProfile.subscriptionTier)
+                                .font(.system(size: 14, weight: .bold))
+                            Text("ACTIVE")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(Color.green.opacity(0.15), in: Capsule())
+                        }
+                        Text("Linked to \(store.userProfile.email)")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Renews Oct 24, 2027")
+                            .font(.system(size: 11.5, weight: .medium))
+                        Text("Ref: #PG-\(abs(store.userProfile.email.hashValue % 90000) + 10000)")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+                .padding(10)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.system(size: 12))
+                    Text("Cloud License verified via \(store.userProfile.provider ?? "Provider") In-App Billing.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                    Spacer()
+                    Button("Manage Plan") {
+                        page = .subscription
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var cloudBackupCard: some View {
+        settingsCard("User Data & Cloud Sync", symbol: "arrow.triangle.2.circlepath.circle.fill", color: .cyan) {
+            VStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Cloud Storage Quota")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text(store.userProfile.cloudStorageUsage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    ProgressView(value: 0.03)
+                        .tint(Palette.accent)
+                }
+
+                Divider()
+
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Synced Items")
+                            .font(.system(size: 11.5, weight: .semibold))
+                        Text("• \(store.socialPlatforms.count) Social Platforms & URLs")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                        Text("• \(store.platformAccounts.count) Active Accounts & Sessions")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                        Text("• App Preferences & App Lock")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Last Backup")
+                            .font(.system(size: 11.5, weight: .semibold))
+                        if let backup = store.userProfile.lastCloudBackup {
+                            Text(backup.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.green)
+                        } else {
+                            Text("Never")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+
+                Divider()
+
+                HStack {
+                    Toggle("Auto-Sync Changes", isOn: $store.userProfile.autoCloudSync)
+                        .font(.system(size: 11.5))
+                        .tint(Palette.accent)
+
+                    Spacer()
+
+                    Button {
+                        let json = store.exportUserDataJSON()
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(json, forType: .string)
+                        store.showToast("Exported user data JSON copied to clipboard!")
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Export Data")
+                        }
+                        .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        store.triggerCloudSync()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Sync Now")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(Palette.accent)
+                }
+            }
+        }
     }
 
     private var generalPage: some View {
@@ -180,16 +593,117 @@ struct SettingsView: View {
     private var securityPage: some View {
         VStack(spacing: 24) {
             settingsCard("App Lock", symbol: "lock.shield.fill", color: .purple) {
-                settingsRow("Touch ID & Password Lock", "Require biometric or system password authentication to open PINGGO.") {
+                settingsRow("Enable App Lock", "Require authentication to access your connected social accounts.") {
                     Toggle("App Lock", isOn: $store.preferences.appLockEnabled)
                         .labelsHidden()
                         .tint(Palette.accent)
                 }
+
                 if store.preferences.appLockEnabled {
                     Divider()
+
+                    settingsRow("Lock Method", "Choose whether to use macOS Touch ID or a dedicated PINGGO PIN / Password.") {
+                        Picker("Lock Method", selection: $store.preferences.lockMethod) {
+                            Text("Touch ID / Mac Passcode").tag("biometric")
+                            Text("PINGGO Custom PIN / Password").tag("customPin")
+                            Text("PIN + Touch ID Shortcut").tag("both")
+                        }
+                        .labelsHidden()
+                        .frame(width: 230)
+                        .onChange(of: store.preferences.lockMethod) { _, newMethod in
+                            if (newMethod == "customPin" || newMethod == "both") && !store.hasCustomPin {
+                                pinSetupIsChanging = false
+                                showingPinSetupSheet = true
+                            }
+                        }
+                    }
+
+                    if store.preferences.lockMethod == "customPin" || store.preferences.lockMethod == "both" || store.hasCustomPin {
+                        Divider()
+
+                        HStack(alignment: .top, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text("PINGGO PIN / Password")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    if store.hasCustomPin {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                            Text("Configured")
+                                                .foregroundStyle(.green)
+                                        }
+                                        .font(.system(size: 11, weight: .medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.green.opacity(0.12), in: Capsule())
+                                    } else {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "exclamationmark.triangle.fill")
+                                                .foregroundStyle(.orange)
+                                            Text("Not Set")
+                                                .foregroundStyle(.orange)
+                                        }
+                                        .font(.system(size: 11, weight: .medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange.opacity(0.12), in: Capsule())
+                                    }
+                                }
+
+                                if store.hasCustomPin {
+                                    if !store.preferences.customPinHint.isEmpty {
+                                        Text("Hint: \"\(store.preferences.customPinHint)\"")
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Palette.muted)
+                                    } else {
+                                        Text("A unique PIN / password is active for PINGGO.")
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Palette.muted)
+                                    }
+                                } else {
+                                    Text("Set a PIN or password specifically for PINGGO to unlock without Touch ID.")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Palette.muted)
+                                }
+                            }
+
+                            Spacer()
+
+                            HStack(spacing: 8) {
+                                if store.hasCustomPin {
+                                    Button("Change PIN") {
+                                        pinSetupIsChanging = true
+                                        showingPinSetupSheet = true
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    Button("Remove", role: .destructive) {
+                                        store.removeCustomPin()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                } else {
+                                    Button("Set PIN Now") {
+                                        pinSetupIsChanging = false
+                                        showingPinSetupSheet = true
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                    .tint(Palette.accent)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Divider()
+
                     settingsRow("Auto-Lock", "Automatically lock after inactivity or when the display sleeps.") {
                         Picker("Auto-Lock", selection: $store.preferences.autoLockMinutes) {
                             Text("Immediately").tag(0)
+                            Text("After 1 minute").tag(1)
                             Text("After 5 minutes").tag(5)
                             Text("After 15 minutes").tag(15)
                             Text("After 30 minutes").tag(30)
@@ -197,7 +711,9 @@ struct SettingsView: View {
                         .labelsHidden()
                         .frame(width: 170)
                     }
+
                     Divider()
+
                     settingsRow("Lock Immediately", "Lock PINGGO now. You can also press ⌘L anywhere.") {
                         Button("Lock Now") {
                             store.lockApp()
@@ -402,4 +918,475 @@ struct SettingsView: View {
 
 private struct DetailSheet: Identifiable {
     let id: String
+}
+
+struct CustomPinSetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AppStore
+    var isChangingExisting: Bool = false
+
+    @State private var currentPinInput = ""
+    @State private var newPinInput = ""
+    @State private var confirmPinInput = ""
+    @State private var hintInput = ""
+    @State private var showPinText = false
+    @State private var errorMessage: String? = nil
+    @FocusState private var focusedField: SetupField?
+
+    enum SetupField {
+        case current, new, confirm, hint
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.purple.opacity(0.15))
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.purple)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isChangingExisting ? "Change PINGGO PIN / Password" : "Set PINGGO PIN / Password")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Use a numeric PIN (e.g. 4-8 digits) or alphanumeric password.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Palette.muted)
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+
+            VStack(spacing: 14) {
+                // If changing, require current PIN
+                if isChangingExisting && store.hasCustomPin {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Current PIN / Password")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+
+                        pinInputField(placeholder: "Enter current PIN", text: $currentPinInput)
+                            .focused($focusedField, equals: .current)
+                    }
+                }
+
+                // New PIN
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("New PIN / Password (min 4 characters)")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+
+                    pinInputField(placeholder: "Enter new PIN or password", text: $newPinInput)
+                        .focused($focusedField, equals: .new)
+                }
+
+                // Confirm PIN
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Confirm New PIN / Password")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+
+                    pinInputField(placeholder: "Re-enter new PIN or password", text: $confirmPinInput)
+                        .focused($focusedField, equals: .confirm)
+                }
+
+                // Password Hint
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("Password Reminder Hint (Optional)")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                        Spacer()
+                    }
+
+                    TextField("e.g. Favorite street or birthday", text: $hintInput)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .hint)
+                }
+
+                // Show/hide toggle
+                HStack {
+                    Button {
+                        showPinText.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: showPinText ? "eye.slash" : "eye")
+                            Text(showPinText ? "Hide characters" : "Show characters")
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+            }
+
+            if let error = errorMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.red)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            Divider()
+
+            // Footer
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Save PIN / Password") {
+                    savePin()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 440)
+        .onAppear {
+            if isChangingExisting {
+                hintInput = store.preferences.customPinHint
+                focusedField = .current
+            } else {
+                focusedField = .new
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pinInputField(placeholder: String, text: Binding<String>) -> some View {
+        HStack {
+            if showPinText {
+                TextField(placeholder, text: text)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                SecureField(placeholder, text: text)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private func savePin() {
+        errorMessage = nil
+
+        if isChangingExisting && store.hasCustomPin {
+            if !store.verifyCustomPin(currentPinInput) {
+                errorMessage = "The current PIN or password you entered is incorrect."
+                focusedField = .current
+                return
+            }
+        }
+
+        let trimmed = newPinInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count < 4 {
+            errorMessage = "PIN or password must be at least 4 characters long."
+            focusedField = .new
+            return
+        }
+
+        if newPinInput != confirmPinInput {
+            errorMessage = "The confirmed PIN or password does not match."
+            focusedField = .confirm
+            return
+        }
+
+        store.setCustomPin(newPinInput, hint: hintInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : hintInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        dismiss()
+    }
+}
+
+struct SocialLoginItem: Identifiable {
+    var id: String { provider }
+    let provider: String
+}
+
+struct SocialLoginSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AppStore
+    let providerName: String
+
+    @State private var customName: String = ""
+    @State private var customEmail: String = ""
+    @State private var selectedTier: String = "PINGGO Pro (Annual)"
+    @State private var isSigningIn: Bool = false
+
+    private var providerBrandColor: Color {
+        switch providerName {
+        case "Apple": return .primary
+        case "Google": return Color(red: 0.92, green: 0.26, blue: 0.21)
+        case "Microsoft": return Color(red: 0.0, green: 0.63, blue: 0.94)
+        default: return Palette.accent
+        }
+    }
+
+    private var providerSymbol: String {
+        switch providerName {
+        case "Apple": return "apple.logo"
+        case "Google": return "g.circle.fill"
+        case "Microsoft": return "square.grid.2x2.fill"
+        default: return "person.crop.circle.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            // Header
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(providerBrandColor.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: providerSymbol)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(providerBrandColor)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sign in with \(providerName)")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Connect your account to store subscriptions & sync workspaces.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Palette.muted)
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+
+            // 1-Click Quick Demo Presets
+            VStack(alignment: .leading, spacing: 8) {
+                Text("QUICK 1-CLICK DEMO ACCOUNTS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Palette.muted)
+                    .tracking(1)
+
+                ForEach(presetsForProvider(), id: \.email) { preset in
+                    Button {
+                        completeSignIn(name: preset.name, email: preset.email, tier: preset.tier)
+                    } label: {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                Circle()
+                                    .fill(Palette.accent.opacity(0.15))
+                                    .frame(width: 28, height: 28)
+                                Text(String(preset.name.prefix(1)))
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Palette.accent)
+                            }
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(preset.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(preset.email)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.muted)
+                            }
+
+                            Spacer()
+
+                            Text(preset.tier)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Palette.accent)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Palette.accent.opacity(0.1), in: Capsule())
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .padding(10)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Divider()
+
+            // Custom Account Option
+            VStack(alignment: .leading, spacing: 10) {
+                Text("OR SIGN IN WITH CUSTOM CREDENTIALS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Palette.muted)
+                    .tracking(1)
+
+                VStack(spacing: 8) {
+                    TextField("Full Name (e.g. Nikita Jangid)", text: $customName)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Email Address (e.g. nikita@\(providerName.lowercased()).com)", text: $customEmail)
+                        .textFieldStyle(.roundedBorder)
+
+                    Picker("Cloud Subscription", selection: $selectedTier) {
+                        Text("PINGGO Pro (Annual)").tag("PINGGO Pro (Annual)")
+                        Text("PINGGO Lifetime Cloud").tag("PINGGO Lifetime Cloud")
+                        Text("Free Tier").tag("Free Tier")
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            Divider()
+
+            // Footer
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button {
+                    let name = customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nikita" : customName
+                    let email = customEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "nikita@\(providerName.lowercased()).com" : customEmail
+                    completeSignIn(name: name, email: email, tier: selectedTier)
+                } label: {
+                    if isSigningIn {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: providerSymbol)
+                            Text("Sign In with \(providerName)")
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+                .disabled(isSigningIn)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
+        .onAppear {
+            customName = store.userProfile.displayName
+            customEmail = "nikita@\(providerName.lowercased()).com"
+        }
+    }
+
+    private struct DemoPreset {
+        let name: String
+        let email: String
+        let tier: String
+    }
+
+    private func presetsForProvider() -> [DemoPreset] {
+        switch providerName {
+        case "Google":
+            return [
+                DemoPreset(name: "Alex Chen", email: "alex.chen@gmail.com", tier: "PINGGO Pro"),
+                DemoPreset(name: "Elena Rostova", email: "elena.work@googlemail.com", tier: "PINGGO Lifetime")
+            ]
+        case "Apple":
+            return [
+                DemoPreset(name: "Sarah Connor", email: "sarah.appleid@icloud.com", tier: "PINGGO Pro"),
+                DemoPreset(name: "David Miller", email: "david.m@me.com", tier: "PINGGO Pro Family")
+            ]
+        case "Microsoft":
+            return [
+                DemoPreset(name: "Jordan Taylor", email: "jordan.taylor@outlook.com", tier: "PINGGO Pro"),
+                DemoPreset(name: "Morgan Reed", email: "m.reed@live.com", tier: "PINGGO Enterprise")
+            ]
+        default:
+            return [
+                DemoPreset(name: "Nikita", email: "nikita@pinggo.internal", tier: "PINGGO Pro")
+            ]
+        }
+    }
+
+    private func completeSignIn(name: String, email: String, tier: String) {
+        isSigningIn = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            await MainActor.run {
+                store.signInWith(provider: providerName, name: name, email: email, tier: tier)
+                isSigningIn = false
+                dismiss()
+            }
+        }
+    }
+}
+
+struct EditProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AppStore
+    @State private var nameInput: String = ""
+    @State private var emailInput: String = ""
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Edit Profile Details")
+                    .font(.system(size: 16, weight: .bold))
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.muted) }
+                    .buttonStyle(.plain)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Display Name").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Palette.muted)
+                TextField("Display Name", text: $nameInput).textFieldStyle(.roundedBorder)
+
+                Text("Email Address").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Palette.muted)
+                TextField("Email Address", text: $emailInput).textFieldStyle(.roundedBorder)
+            }
+            Divider()
+            HStack {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Save") {
+                    store.updateProfileDetails(name: nameInput, email: emailInput)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .onAppear {
+            nameInput = store.userProfile.displayName
+            emailInput = store.userProfile.email
+        }
+    }
 }
