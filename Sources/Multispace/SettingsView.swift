@@ -1,13 +1,15 @@
 import SwiftUI
+import WebKit
 
 enum SettingsPage: String, CaseIterable {
-    case profile = "Profile", general = "General", security = "Security", launch = "Performance"
+    case profile = "Profile", general = "General", ai = "AI Assistant", security = "Security", launch = "Performance"
     case interaction = "Interaction", subscription = "Subscription", about = "About"
 
     var symbol: String {
         switch self {
         case .profile: "person.crop.circle.fill"
         case .general: "gearshape.fill"
+        case .ai: "sparkles"
         case .security: "lock.shield.fill"
         case .launch: "bolt.fill"
         case .interaction: "cursorarrow.click.2"
@@ -19,6 +21,7 @@ enum SettingsPage: String, CaseIterable {
         switch self {
         case .profile: .indigo
         case .general: .cyan
+        case .ai: .purple
         case .security: .purple
         case .launch: .orange
         case .interaction: .blue
@@ -37,6 +40,7 @@ struct SettingsView: View {
     @State private var showingPinSetupSheet = false
     @State private var pinSetupIsChanging = false
     @State private var selectedSocialLoginProvider: String? = nil
+    @State private var activeAILoginProvider: String? = nil
     @State private var showingEditProfileSheet = false
 
     var body: some View {
@@ -65,6 +69,7 @@ struct SettingsView: View {
                         switch page {
                         case .profile: profilePage
                         case .general: generalPage
+                        case .ai: aiSettingsPage
                         case .security: securityPage
                         case .launch: launchPage
                         case .interaction: interactionPage
@@ -88,6 +93,13 @@ struct SettingsView: View {
                 page = .general
             }
         }
+        .onChange(of: store.destination) { _, newDestination in
+            if newDestination == .profile {
+                page = .profile
+            } else if newDestination == .settings && page == .profile {
+                page = .general
+            }
+        }
         .sheet(item: Binding(
             get: { detail.map(DetailSheet.init) },
             set: { detail = $0?.id }
@@ -102,6 +114,12 @@ struct SettingsView: View {
             set: { selectedSocialLoginProvider = $0?.provider }
         )) { item in
             SocialLoginSheet(providerName: item.provider)
+        }
+        .sheet(item: Binding(
+            get: { activeAILoginProvider.map { AILoginProviderItem(id: $0) } },
+            set: { activeAILoginProvider = $0?.id }
+        )) { item in
+            AILoginWebSheet(provider: item.id)
         }
         .sheet(isPresented: $showingEditProfileSheet) {
             EditProfileSheet()
@@ -538,6 +556,201 @@ struct SettingsView: View {
         }
     }
 
+    private var aiSettingsPage: some View {
+        VStack(spacing: 24) {
+            // Hero Intro Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(LinearGradient(colors: [.purple, .indigo, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 42, height: 42)
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text("AI Assistant & Smart Replies")
+                                .font(.system(size: 17, weight: .bold))
+                            Text("In-App Web Login")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2.5)
+                                .background(Color.green.opacity(0.18), in: Capsule())
+                                .foregroundStyle(.green)
+                        }
+                        Text("Log into your Google Gemini or ChatGPT account directly—no developer API keys or billing setup required.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.primary.opacity(0.08)))
+
+            // General AI settings
+            settingsCard("AI Configuration", symbol: "sparkles", color: .purple) {
+                settingsRow("Enable AI Assistant", "Activate conversation analysis, question detection, and multi-tone smart replies.") {
+                    Toggle("Enable AI Assistant", isOn: $store.preferences.aiEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                Divider()
+
+                settingsRow("Active AI Engine", "Choose which connected service is prioritized for reply synthesis and drafting.") {
+                    Picker("Active Engine", selection: $store.preferences.aiProvider) {
+                        Text("Google Gemini").tag("gemini")
+                        Text("OpenAI ChatGPT").tag("chatgpt")
+                    }
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+
+                Divider()
+
+                settingsRow("Stealth Mode Default", "When opening unread chats in Inbox, inspect messages and AI analysis without loading the interactive portal (no read receipts sent).") {
+                    Toggle("Stealth Mode", isOn: $store.preferences.stealthModeDefault)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                Divider()
+
+                settingsRow("Default Reply Tone", "Tone pre-selected when generating contextual reply suggestions.") {
+                    Picker("Reply Tone", selection: $store.preferences.defaultReplyTone) {
+                        ForEach(AIReplyTone.allCases) { tone in
+                            Text(tone.rawValue).tag(tone.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Custom AI Instructions (Persona)")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Optional rules or context to guide AI reply generation.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                    TextField("e.g. Keep responses friendly, concise, and prefer meeting on Thursdays.", text: $store.preferences.customAiPrompt)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                }
+            }
+
+            // Connected Accounts Card
+            settingsCard("Connected AI Accounts", symbol: "person.badge.shield.checkmark.fill", color: .indigo) {
+                // Google Gemini Card
+                aiAccountRow(
+                    title: "Google Gemini",
+                    subtitle: "gemini.google.com · Google Account",
+                    icon: "sparkles",
+                    color: Color(red: 0.26, green: 0.52, blue: 0.96),
+                    isLoggedIn: store.preferences.isGeminiLoggedIn,
+                    provider: "gemini"
+                )
+
+                Divider()
+
+                // OpenAI ChatGPT Card
+                aiAccountRow(
+                    title: "OpenAI ChatGPT",
+                    subtitle: "chatgpt.com · OpenAI Account",
+                    icon: "bubble.left.and.bubble.right.fill",
+                    color: Color(red: 0.06, green: 0.65, blue: 0.53),
+                    isLoggedIn: store.preferences.isChatGptLoggedIn,
+                    provider: "chatgpt"
+                )
+            }
+        }
+    }
+
+    private func aiAccountRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        isLoggedIn: Bool,
+        provider: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold))
+                    if isLoggedIn {
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.green).frame(width: 6, height: 6)
+                            Text("Connected")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(.green)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.12), in: Capsule())
+                    } else {
+                        Text("Not Logged In")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Palette.card.opacity(0.6), in: Capsule())
+                    }
+                }
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+
+            Spacer()
+
+            if isLoggedIn {
+                Button("Re-login") {
+                    activeAILoginProvider = provider
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("Sign Out") {
+                    Task {
+                        await AIService.shared.signOut(provider: provider, store: store)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Button {
+                    activeAILoginProvider = provider
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.right.circle.fill")
+                        Text("Log In")
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(color)
+                .controlSize(.small)
+            }
+        }
+    }
+
     private var generalPage: some View {
         VStack(spacing: 24) {
             settingsCard("Language Settings", symbol: "character.book.closed.fill", color: .indigo) {
@@ -606,19 +819,20 @@ struct SettingsView: View {
                         Picker("Lock Method", selection: $store.preferences.lockMethod) {
                             Text("Touch ID / Mac Passcode").tag("biometric")
                             Text("PINGGO Custom PIN / Password").tag("customPin")
-                            Text("PIN + Touch ID Shortcut").tag("both")
                         }
                         .labelsHidden()
                         .frame(width: 230)
                         .onChange(of: store.preferences.lockMethod) { _, newMethod in
-                            if (newMethod == "customPin" || newMethod == "both") && !store.hasCustomPin {
+                            if newMethod == "customPin" && !store.hasCustomPin {
                                 pinSetupIsChanging = false
                                 showingPinSetupSheet = true
+                            } else if newMethod == "biometric" && store.hasCustomPin {
+                                store.removeCustomPin()
                             }
                         }
                     }
 
-                    if store.preferences.lockMethod == "customPin" || store.preferences.lockMethod == "both" || store.hasCustomPin {
+                    if store.preferences.lockMethod == "customPin" || store.hasCustomPin {
                         Divider()
 
                         HStack(alignment: .top, spacing: 14) {
@@ -628,9 +842,9 @@ struct SettingsView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                     if store.hasCustomPin {
                                         HStack(spacing: 3) {
-                                            Image(systemName: "checkmark.circle.fill")
+                                            Image(systemName: "checkmark.shield.fill")
                                                 .foregroundStyle(.green)
-                                            Text("Configured")
+                                            Text("Strict Custom Lock Active")
                                                 .foregroundStyle(.green)
                                         }
                                         .font(.system(size: 11, weight: .medium))
@@ -656,13 +870,12 @@ struct SettingsView: View {
                                         Text("Hint: \"\(store.preferences.customPinHint)\"")
                                             .font(.system(size: 11.5))
                                             .foregroundStyle(Palette.muted)
-                                    } else {
-                                        Text("A unique PIN / password is active for PINGGO.")
-                                            .font(.system(size: 11.5))
-                                            .foregroundStyle(Palette.muted)
                                     }
+                                    Text("Touch ID and Mac system passcode are disabled. PINGGO unlocks strictly with your custom password.")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Palette.muted)
                                 } else {
-                                    Text("Set a PIN or password specifically for PINGGO to unlock without Touch ID.")
+                                    Text("Set a dedicated password specifically for PINGGO to unlock without Touch ID.")
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(Palette.muted)
                                 }
@@ -672,20 +885,20 @@ struct SettingsView: View {
 
                             HStack(spacing: 8) {
                                 if store.hasCustomPin {
-                                    Button("Change PIN") {
+                                    Button("Change Password") {
                                         pinSetupIsChanging = true
                                         showingPinSetupSheet = true
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
 
-                                    Button("Remove", role: .destructive) {
+                                    Button("Remove (Use Touch ID)", role: .destructive) {
                                         store.removeCustomPin()
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
                                 } else {
-                                    Button("Set PIN Now") {
+                                    Button("Set Password Now") {
                                         pinSetupIsChanging = false
                                         showingPinSetupSheet = true
                                     }
@@ -930,6 +1143,7 @@ struct CustomPinSetupSheet: View {
     @State private var confirmPinInput = ""
     @State private var hintInput = ""
     @State private var showPinText = false
+    @State private var saveToApplePasswords = true
     @State private var errorMessage: String? = nil
     @FocusState private var focusedField: SetupField?
 
@@ -976,11 +1190,30 @@ struct CustomPinSetupSheet: View {
                 // If changing, require current PIN
                 if isChangingExisting && store.hasCustomPin {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Current PIN / Password")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Palette.muted)
+                        HStack {
+                            Text("Current PIN / Password")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.muted)
+                            Spacer()
+                            if KeychainHelper.getPassword() != nil {
+                                Button {
+                                    if let saved = KeychainHelper.getPassword() {
+                                        currentPinInput = saved
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "key.fill")
+                                            .font(.system(size: 9))
+                                        Text("AutoFill from Apple Passwords")
+                                    }
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.accent)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
 
-                        pinInputField(placeholder: "Enter current PIN", text: $currentPinInput)
+                        pinInputField(placeholder: "Enter current PIN", text: $currentPinInput, isNew: false)
                             .focused($focusedField, equals: .current)
                     }
                 }
@@ -991,7 +1224,7 @@ struct CustomPinSetupSheet: View {
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.muted)
 
-                    pinInputField(placeholder: "Enter new PIN or password", text: $newPinInput)
+                    pinInputField(placeholder: "Enter new PIN or password", text: $newPinInput, isNew: true)
                         .focused($focusedField, equals: .new)
                 }
 
@@ -1001,7 +1234,7 @@ struct CustomPinSetupSheet: View {
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.muted)
 
-                    pinInputField(placeholder: "Re-enter new PIN or password", text: $confirmPinInput)
+                    pinInputField(placeholder: "Re-enter new PIN or password", text: $confirmPinInput, isNew: true)
                         .focused($focusedField, equals: .confirm)
                 }
 
@@ -1018,6 +1251,19 @@ struct CustomPinSetupSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .hint)
                 }
+
+                // Save to Apple Passwords Toggle
+                Toggle(isOn: $saveToApplePasswords) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "key.fill")
+                            .foregroundStyle(Palette.accent)
+                            .font(.system(size: 11))
+                        Text("Save to Apple Passwords / iCloud Keychain")
+                            .font(.system(size: 11.5))
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .padding(.top, 2)
 
                 // Show/hide toggle
                 HStack {
@@ -1081,14 +1327,16 @@ struct CustomPinSetupSheet: View {
     }
 
     @ViewBuilder
-    private func pinInputField(placeholder: String, text: Binding<String>) -> some View {
+    private func pinInputField(placeholder: String, text: Binding<String>, isNew: Bool = false) -> some View {
         HStack {
             if showPinText {
                 TextField(placeholder, text: text)
                     .textFieldStyle(.roundedBorder)
+                    .textContentType(isNew ? .newPassword : .password)
             } else {
                 SecureField(placeholder, text: text)
                     .textFieldStyle(.roundedBorder)
+                    .textContentType(isNew ? .newPassword : .password)
             }
         }
     }
@@ -1117,7 +1365,13 @@ struct CustomPinSetupSheet: View {
             return
         }
 
-        store.setCustomPin(newPinInput, hint: hintInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : hintInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        store.setCustomPin(
+            newPinInput,
+            hint: hintInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : hintInput.trimmingCharacters(in: .whitespacesAndNewlines),
+            saveToKeychain: saveToApplePasswords
+        )
+        store.preferences.lockMethod = "customPin"
+        store.showToast(saveToApplePasswords ? "Saved to Apple Passwords & strict lock active" : "Strict custom password active")
         dismiss()
     }
 }
@@ -1390,3 +1644,5 @@ struct EditProfileSheet: View {
         }
     }
 }
+
+

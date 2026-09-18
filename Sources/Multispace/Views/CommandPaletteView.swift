@@ -34,6 +34,19 @@ struct CommandPaletteView: View {
             store.destination = .settings
         })
 
+        // AI Assistant
+        list.append(Item(id: "ai-settings", title: "AI Assistant & Stealth Mode", subtitle: "Manage Google Gemini & ChatGPT web accounts", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: nil) {
+            store.destination = .settings
+        })
+        list.append(Item(id: "ai-switch-gemini", title: "Use Google Gemini for Smart Replies", subtitle: "Set Gemini as primary active AI engine", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: store.preferences.aiProvider == "gemini" ? "Active" : nil) {
+            store.preferences.aiProvider = "gemini"
+            store.showToast("Active AI set to Google Gemini")
+        })
+        list.append(Item(id: "ai-switch-chatgpt", title: "Use OpenAI ChatGPT for Smart Replies", subtitle: "Set ChatGPT as primary active AI engine", category: "AI Assistant", symbol: "bubble.left.and.bubble.right.fill", platform: nil, badge: store.preferences.aiProvider == "chatgpt" ? "Active" : nil) {
+            store.preferences.aiProvider = "chatgpt"
+            store.showToast("Active AI set to OpenAI ChatGPT")
+        })
+
         // Social Platforms
         for platform in store.socialPlatforms {
             let unread = store.accounts(for: platform.id).compactMap { store.platformActivity[$0.id]?.unreadCount }.reduce(0, +)
@@ -234,6 +247,9 @@ struct CommandPaletteView: View {
         }
         .onAppear {
             isSearchFocused = true
+            selectedIndex = 0
+        }
+        .onChange(of: query) { _, _ in
             selectedIndex = 0
         }
         .onKeyPress(.downArrow) {

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 struct Member: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
@@ -237,10 +238,23 @@ struct AppPreferences: Codable, Equatable {
     var customPinSalt: String = ""
     var customPinHint: String = ""
 
+    // MARK: - AI Assistant & Stealth Mode Preferences
+    var aiEnabled: Bool = true
+    var aiProvider: String = "gemini" // "gemini" or "chatgpt"
+    var isGeminiLoggedIn: Bool = false
+    var geminiAccountEmail: String = ""
+    var isChatGptLoggedIn: Bool = false
+    var chatGptAccountEmail: String = ""
+    var stealthModeDefault: Bool = true
+    var defaultReplyTone: String = "Professional"
+    var customAiPrompt: String = ""
+
     enum CodingKeys: String, CodingKey {
         case language, appearance, accent, compactMode, openTo, launchWebsites, launchDelay
         case showWebsiteAlerts, appLockEnabled, autoLockMinutes, tabFreezingEnabled, tabFreezeMinutes
         case lockMethod, customPinHash, customPinSalt, customPinHint
+        case aiEnabled, aiProvider, isGeminiLoggedIn, geminiAccountEmail, isChatGptLoggedIn, chatGptAccountEmail
+        case stealthModeDefault, defaultReplyTone, customAiPrompt
     }
 
     init() {}
@@ -263,7 +277,158 @@ struct AppPreferences: Codable, Equatable {
         customPinHash = try c.decodeIfPresent(String.self, forKey: .customPinHash) ?? ""
         customPinSalt = try c.decodeIfPresent(String.self, forKey: .customPinSalt) ?? ""
         customPinHint = try c.decodeIfPresent(String.self, forKey: .customPinHint) ?? ""
+        aiEnabled = try c.decodeIfPresent(Bool.self, forKey: .aiEnabled) ?? true
+        aiProvider = try c.decodeIfPresent(String.self, forKey: .aiProvider) ?? "gemini"
+        isGeminiLoggedIn = try c.decodeIfPresent(Bool.self, forKey: .isGeminiLoggedIn) ?? false
+        geminiAccountEmail = try c.decodeIfPresent(String.self, forKey: .geminiAccountEmail) ?? ""
+        isChatGptLoggedIn = try c.decodeIfPresent(Bool.self, forKey: .isChatGptLoggedIn) ?? false
+        chatGptAccountEmail = try c.decodeIfPresent(String.self, forKey: .chatGptAccountEmail) ?? ""
+        stealthModeDefault = try c.decodeIfPresent(Bool.self, forKey: .stealthModeDefault) ?? true
+        defaultReplyTone = try c.decodeIfPresent(String.self, forKey: .defaultReplyTone) ?? "Professional"
+        customAiPrompt = try c.decodeIfPresent(String.self, forKey: .customAiPrompt) ?? ""
     }
+}
+
+enum AIReplyTone: String, CaseIterable, Codable, Identifiable {
+    case professional = "Professional"
+    case friendly = "Friendly"
+    case concise = "Concise"
+    case casual = "Casual"
+    case politeDecline = "Polite Decline"
+    case proposeTime = "Propose Time"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .professional: return "briefcase.fill"
+        case .friendly: return "face.smiling.fill"
+        case .concise: return "bolt.fill"
+        case .casual: return "hand.wave.fill"
+        case .politeDecline: return "hand.raised.fill"
+        case .proposeTime: return "calendar.badge.clock"
+        }
+    }
+}
+
+enum AIMessagePriority: String, CaseIterable, Codable {
+    case urgent = "Urgent Action"
+    case question = "Awaiting Reply"
+    case meeting = "Meeting Request"
+    case review = "Review / Task"
+    case normal = "General Update"
+
+    var icon: String {
+        switch self {
+        case .urgent: return "flame.fill"
+        case .question: return "questionmark.bubble.fill"
+        case .meeting: return "calendar.badge.clock"
+        case .review: return "doc.text.magnifyingglass"
+        case .normal: return "bubble.left"
+        }
+    }
+
+    var shortTag: String {
+        switch self {
+        case .urgent: return "🔥 Urgent"
+        case .question: return "❓ Question"
+        case .meeting: return "📅 Meeting"
+        case .review: return "📝 Review"
+        case .normal: return "💬 Update"
+        }
+    }
+}
+
+struct AICalendarEvent: Identifiable, Equatable, Codable {
+    var id: String = UUID().uuidString
+    let title: String
+    let dateSuggestion: String
+    let startTime: String?
+    let locationOrLink: String?
+    let notes: String
+}
+
+struct AICoPilotMessage: Identifiable, Equatable, Codable {
+    var id: UUID = UUID()
+    let isUser: Bool
+    let text: String
+    var timestamp: Date = .now
+    let modelProvider: String
+}
+
+struct AIReplyOption: Identifiable, Equatable, Codable {
+    var id: String
+    let tone: AIReplyTone
+    let text: String
+}
+
+struct ConversationDailySummary: Identifiable, Equatable, Codable {
+    var id: String
+    let sender: String
+    let platformName: String
+    let accountName: String
+    let summaryDate: Date
+    let headline: String
+    let executiveOverview: String
+    let keyTopics: [String]
+    let decisionsMade: [String]
+    let pendingQuestions: [String]
+    let actionItems: [String]
+    let sentiment: String
+    let relationshipContext: String
+    let providerName: String
+    let messageCount: Int
+}
+
+struct AIAnalysisResult: Equatable, Codable {
+    let sender: String
+    let contextSummary: String
+    let detectedIntent: String
+    let detectedQuestion: String?
+    let actionItem: String?
+    let urgency: SummaryUrgency
+    let sentiment: String
+    let replies: [AIReplyOption]
+    let providerName: String
+    let isStealthMode: Bool
+    let analyzedAt: Date
+    var aiPriority: AIMessagePriority = .normal
+    var detectedCalendarEvent: AICalendarEvent? = nil
+    var detectedLanguage: String? = nil
+    var translatedText: String? = nil
+    var dailySummary: ConversationDailySummary? = nil
+}
+
+enum AIAutoReplySource: String, Codable {
+    case chat = "Chat Message"
+    case alert = "Notification / Alert"
+}
+
+struct AIAutoReplyItem: Identifiable, Equatable, Codable {
+    var id: String
+    let sourceType: AIAutoReplySource
+    let platformID: String
+    let platformName: String
+    let platformColor: String
+    let accountID: UUID
+    let accountName: String
+    let senderOrTitle: String
+    let originalContent: String
+    let detectedContext: String
+    var draftedReply: String
+    var selectedTone: AIReplyTone
+    let directURL: String?
+    var isDispatched: Bool = false
+}
+
+struct AIAlertAnalysisResult: Equatable, Codable {
+    let title: String
+    let alertText: String
+    let category: String
+    let requiresReply: Bool
+    let contextSummary: String
+    let suggestedReplies: [AIReplyOption]
+    let providerName: String
 }
 
 struct UserProfile: Codable, Equatable {
@@ -279,3 +444,56 @@ struct UserProfile: Codable, Equatable {
     var autoCloudSync: Bool = true
     var cloudStorageUsage: String = "1.4 MB of 50 GB used"
 }
+
+// MARK: - Apple Keychain / Passwords Helper
+enum KeychainHelper {
+    static let serviceName = "app.pinggo.desktop"
+    static let defaultAccount = "PINGGO App Lock"
+
+    @discardableResult
+    static func savePassword(_ password: String, service: String = serviceName, account: String = defaultAccount) -> Bool {
+        guard let data = password.data(using: .utf8) else { return false }
+        deletePassword(service: service, account: account)
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrLabel as String: "PINGGO App Lock Password",
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    static func getPassword(service: String = serviceName, account: String = defaultAccount) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    static func deletePassword(service: String = serviceName, account: String = defaultAccount) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+}
+

@@ -10,11 +10,11 @@ struct LockScreenView: View {
     @FocusState private var isPinFocused: Bool
 
     private var usesPin: Bool {
-        (store.preferences.lockMethod == "customPin" || store.preferences.lockMethod == "both") && store.hasCustomPin
+        store.hasCustomPin || store.preferences.lockMethod == "customPin"
     }
 
     private var allowsBiometric: Bool {
-        store.preferences.lockMethod == "biometric" || store.preferences.lockMethod == "both" || !store.hasCustomPin
+        !store.hasCustomPin && store.preferences.lockMethod == "biometric"
     }
 
     var body: some View {
@@ -72,14 +72,24 @@ struct LockScreenView: View {
                 }
 
                 if usesPin {
+                    // Associated account context for Apple Passwords & AutoFill
+                    TextField("Account", text: .constant(store.userProfile.email.isEmpty ? "PINGGO Security Lock" : store.userProfile.email))
+                        .textContentType(.username)
+                        .frame(width: 0, height: 0)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+
                     // PIN / Password Input Box
                     VStack(spacing: 12) {
                         HStack(spacing: 8) {
                             Group {
                                 if showPinText {
                                     TextField("Enter PIN or Password", text: $pinInput)
+                                        .textContentType(.password)
                                 } else {
                                     SecureField("Enter PIN or Password", text: $pinInput)
+                                        .textContentType(.password)
                                 }
                             }
                             .textFieldStyle(.plain)
@@ -97,6 +107,17 @@ struct LockScreenView: View {
                                     .font(.system(size: 13))
                             }
                             .buttonStyle(.plain)
+                            .help(showPinText ? "Hide Password" : "Show Password")
+
+                            Button {
+                                autofillFromKeychain()
+                            } label: {
+                                Image(systemName: "key.fill")
+                                    .foregroundStyle(Palette.accent)
+                                    .font(.system(size: 12))
+                            }
+                            .buttonStyle(.plain)
+                            .help("AutoFill with Apple Passwords / Keychain")
 
                             Button {
                                 submitPin()
@@ -115,38 +136,25 @@ struct LockScreenView: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(Palette.card, lineWidth: 1)
                         )
-                        .frame(width: 260)
+                        .frame(width: 280)
 
-                        // Action button or Touch ID trigger
-                        if allowsBiometric {
-                            Button {
-                                triggerBiometricUnlock()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "touchid")
-                                        .font(.system(size: 14))
-                                    Text("Unlock with Touch ID")
-                                        .font(.system(size: 12.5, weight: .medium))
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Palette.accent)
-                            .padding(.top, 4)
-                        }
-
-                        // Forgot PIN / Admin recovery
+                        // 1-Click Apple Passwords Fill Action
                         Button {
-                            triggerAdminRecovery()
+                            autofillFromKeychain()
                         } label: {
-                            Text("Forgot PIN? Unlock with Mac Admin")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.muted)
+                            HStack(spacing: 5) {
+                                Image(systemName: "key.fill")
+                                    .font(.system(size: 11))
+                                Text("Fill from Apple Passwords")
+                                    .font(.system(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(Palette.accent)
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 2)
                     }
                 } else {
-                    // Biometric Unlock Only
+                    // Biometric Unlock Only (When no custom password is set)
                     Button {
                         triggerBiometricUnlock()
                     } label: {
@@ -182,9 +190,7 @@ struct LockScreenView: View {
     }
 
     private var subtitleText: String {
-        if usesPin && allowsBiometric {
-            return "Enter your PINGGO PIN or unlock with Touch ID."
-        } else if usesPin {
+        if usesPin {
             return "Enter your PINGGO PIN or password to unlock."
         } else {
             return "Touch ID or your Mac password is required to access your social accounts."
@@ -206,8 +212,23 @@ struct LockScreenView: View {
         }
     }
 
+    private func autofillFromKeychain() {
+        if let saved = KeychainHelper.getPassword() {
+            pinInput = saved
+            submitPin()
+        } else {
+            // Open Apple Passwords app or Settings so user can view/copy saved passwords
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Passwords") {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            } else if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+            store.showToast("Opening Apple Passwords...")
+        }
+    }
+
     private func triggerBiometricUnlock() {
-        guard !isAuthenticating else { return }
+        guard allowsBiometric && !isAuthenticating else { return }
         isAuthenticating = true
         errorMessage = nil
         Task { @MainActor in
@@ -215,19 +236,6 @@ struct LockScreenView: View {
             isAuthenticating = false
             if !success {
                 errorMessage = "Authentication failed. Click to try again."
-            }
-        }
-    }
-
-    private func triggerAdminRecovery() {
-        guard !isAuthenticating else { return }
-        isAuthenticating = true
-        errorMessage = nil
-        Task { @MainActor in
-            let success = await store.unlockWithDeviceOwnerFallback()
-            isAuthenticating = false
-            if !success {
-                errorMessage = "Mac administrator authentication failed."
             }
         }
     }

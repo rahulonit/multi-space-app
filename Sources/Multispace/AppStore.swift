@@ -242,6 +242,9 @@ final class AppStore: ObservableObject {
         if selectedAccountIDs[account.platformID] == id {
             selectedAccountIDs[account.platformID] = accounts(for: account.platformID).first?.id
         }
+        if splitAccountIDs[account.platformID] == id {
+            splitAccountIDs[account.platformID] = accounts(for: account.platformID).first(where: { $0.id != selectedAccountIDs[account.platformID] })?.id
+        }
         saveAccounts()
         updateDockBadge()
     }
@@ -589,12 +592,16 @@ final class AppStore: ObservableObject {
         !preferences.customPinHash.isEmpty && !preferences.customPinSalt.isEmpty
     }
 
-    func setCustomPin(_ newPin: String, hint: String? = nil) {
+    func setCustomPin(_ newPin: String, hint: String? = nil, saveToKeychain: Bool = true) {
         let salt = UUID().uuidString
         let hash = hashPin(newPin, salt: salt)
         preferences.customPinSalt = salt
         preferences.customPinHash = hash
         preferences.customPinHint = hint ?? ""
+        preferences.lockMethod = "customPin"
+        if saveToKeychain {
+            KeychainHelper.savePassword(newPin)
+        }
         objectWillChange.send()
     }
 
@@ -602,9 +609,8 @@ final class AppStore: ObservableObject {
         preferences.customPinSalt = ""
         preferences.customPinHash = ""
         preferences.customPinHint = ""
-        if preferences.lockMethod == "customPin" {
-            preferences.lockMethod = "biometric"
-        }
+        preferences.lockMethod = "biometric"
+        KeychainHelper.deletePassword()
         objectWillChange.send()
     }
 
@@ -623,13 +629,26 @@ final class AppStore: ObservableObject {
         return false
     }
 
-    func unlockWithDeviceOwnerFallback() async -> Bool {
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+    func unlockWithSavedKeychainPassword() -> Bool {
+        guard hasCustomPin else { return false }
+        if let saved = KeychainHelper.getPassword(), verifyCustomPin(saved) {
             isAppLocked = false
             recordActivity()
             return true
+        }
+        return false
+    }
+
+    func unlockWithDeviceOwnerFallback() async -> Bool {
+        // Strict privacy: If a custom password is set, Mac admin credentials MUST NOT unlock the app!
+        if hasCustomPin || preferences.lockMethod == "customPin" {
+            return false
+        }
+
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            return false
         }
 
         do {
@@ -648,19 +667,15 @@ final class AppStore: ObservableObject {
     }
 
     func unlockApp() async -> Bool {
-        if preferences.lockMethod == "customPin" {
+        // Strict privacy: If a custom password is set, Touch ID / biometric / system pass MUST NOT unlock the app!
+        if hasCustomPin || preferences.lockMethod == "customPin" {
             return false
         }
 
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            if hasCustomPin {
-                return false
-            }
-            isAppLocked = false
-            recordActivity()
-            return true
+            return false
         }
 
         do {
@@ -920,6 +935,7 @@ final class AppStore: ObservableObject {
     }
 
     func handleDeepLink(_ url: URL) {
+        guard !isAppLocked else { return }
         guard let scheme = url.scheme?.lowercased(), scheme == "multispace" || scheme == "pinggo" else { return }
         let hostAction = url.host?.lowercased() ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }

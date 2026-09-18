@@ -267,6 +267,13 @@ struct PasskeyLoginAssistantSheet: View {
                     title: "Hardware Security Keys (YubiKey)",
                     desc: "Plug your USB-C security key directly into your Mac for instant hardware passkey authentication."
                 )
+
+                methodRow(
+                    icon: "key.fill",
+                    color: .purple,
+                    title: "Apple Passwords AutoFill",
+                    desc: "Right-click any username or password field on the login page and choose AutoFill -> Passwords to fill saved credentials from iCloud Keychain."
+                )
             }
 
             if let msg = passkeyStatusMessage {
@@ -282,7 +289,24 @@ struct PasskeyLoginAssistantSheet: View {
             }
 
             // Quick actions
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button {
+                    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Passwords") {
+                        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                    } else if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    store.showToast("Opening Apple Passwords...")
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "key.fill")
+                        Text("Open Apple Passwords")
+                    }
+                    .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
                 Button {
                     isCheckingPasskey = true
                     Task {
@@ -303,9 +327,9 @@ struct PasskeyLoginAssistantSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles")
-                        Text(isCheckingPasskey ? "Checking..." : "Verify Passkey Readiness")
+                        Text(isCheckingPasskey ? "Checking..." : "Verify Readiness")
                     }
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -317,9 +341,9 @@ struct PasskeyLoginAssistantSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
-                        Text("Reload Login Page")
+                        Text("Reload Page")
                     }
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -859,8 +883,13 @@ private struct AccountNameSheet: View {
 private struct PortalWebView: NSViewRepresentable {
     @ObservedObject var session: PortalSession
 
-    func makeNSView(context: Context) -> WKWebView { session.webView }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func makeNSView(context: Context) -> WKWebView {
+        session.webView.alphaValue = 1.0
+        return session.webView
+    }
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        nsView.alphaValue = 1.0
+    }
 }
 
 @MainActor
@@ -903,8 +932,7 @@ final class PortalSessionRegistry {
         let browser = sessions.removeValue(forKey: account.id)
         browser?.stop()
         if !account.usesLegacyStore {
-            let dataStore = browser?.webView.configuration.websiteDataStore ?? WKWebsiteDataStore(forIdentifier: account.id)
-            dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
+            WKWebsiteDataStore.remove(forIdentifier: account.id) { _ in }
         }
     }
 
@@ -986,6 +1014,19 @@ final class PortalSessionRegistry {
     }
 }
 
+private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+
+    init(delegate: WKScriptMessageHandler) {
+        self.delegate = delegate
+        super.init()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.userContentController(userContentController, didReceive: message)
+    }
+}
+
 @MainActor
 final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate {
     @Published var canGoBack = false
@@ -1020,8 +1061,9 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                                                                        forMainFrameOnly: false))
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: configuration)
         super.init()
-        configuration.userContentController.add(self, name: "pinggoActivity")
-        configuration.userContentController.add(self, name: "multispaceActivity")
+        let weakHandler = WeakScriptMessageHandler(delegate: self)
+        configuration.userContentController.add(weakHandler, name: "pinggoActivity")
+        configuration.userContentController.add(weakHandler, name: "multispaceActivity")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -1100,6 +1142,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     }
 
     func wake() {
+        webView.alphaValue = 1.0
         guard isHibernated else { return }
         isHibernated = false
         lastAccessedAt = .now
@@ -1636,33 +1679,21 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       if (window.__pinggoPasskeyInjected) return;
       window.__pinggoPasskeyInjected = true;
 
-      // Polyfill / guarantee PublicKeyCredential platform authenticator & conditional mediation checks
+      // Ensure platform authenticator availability for Touch ID & Passkeys
       if (window.PublicKeyCredential) {
         if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
           const origIsAvailable = PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable.bind(PublicKeyCredential);
           PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async function() {
             try {
               const avail = await origIsAvailable();
-              if (avail) return true;
-            } catch (e) {}
-            return true;
+              return avail;
+            } catch (e) {
+              return true;
+            }
           };
-        } else {
-          PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
         }
-
-        if (typeof PublicKeyCredential.isConditionalMediationAvailable === 'function') {
-          const origIsCond = PublicKeyCredential.isConditionalMediationAvailable.bind(PublicKeyCredential);
-          PublicKeyCredential.isConditionalMediationAvailable = async function() {
-            try {
-              const cond = await origIsCond();
-              if (cond) return true;
-            } catch (e) {}
-            return true;
-          };
-        } else {
-          PublicKeyCredential.isConditionalMediationAvailable = async () => true;
-        }
+        // Note: We do NOT force isConditionalMediationAvailable = true because in embedded WKWebView,
+        // doing so intercepts and suppresses standard HTML username/password AutoFill (Apple Passwords / iCloud Keychain).
       }
     })();
     """#

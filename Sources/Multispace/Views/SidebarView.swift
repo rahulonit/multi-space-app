@@ -185,6 +185,18 @@ struct SidebarView: View {
                 if !compact {
                     Text(title).font(.system(size: 13, weight: store.destination == destination ? .semibold : .medium))
                     Spacer()
+                    if destination == .inbox && store.totalUnreadCount > 0 {
+                        Text("\(store.totalUnreadCount)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Palette.accent, in: Capsule())
+                    }
+                } else if destination == .inbox && store.totalUnreadCount > 0 {
+                    Circle()
+                        .fill(Palette.accent)
+                        .frame(width: 6, height: 6)
                 }
             }
             .foregroundStyle(store.destination == destination ? .white : Palette.muted)

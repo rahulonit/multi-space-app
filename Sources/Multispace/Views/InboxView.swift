@@ -18,6 +18,7 @@ private enum InboxFolder: String, CaseIterable {
 private enum SummarySubTab: String, CaseIterable {
     case overview = "Briefing"
     case actions = "Action Items"
+    case calendar = "Calendar"
     case threads = "Contacts"
 }
 
@@ -96,6 +97,11 @@ struct UnifiedAlertItem: Identifiable, Equatable {
     }
 }
 
+private enum ConversationViewMode: String, CaseIterable {
+    case stealth = "Stealth Peek"
+    case live = "Live Portal"
+}
+
 struct InboxView: View {
     @EnvironmentObject private var store: AppStore
 
@@ -106,6 +112,28 @@ struct InboxView: View {
     @State private var selectedAlertID: String? = nil
     @State private var selectedAlertCategory: AlertCategoryType = .all
 
+    // Stealth Mode & AI Assistant State
+    @State private var conversationViewMode: ConversationViewMode = .stealth
+    @State private var customPromptInput: String = ""
+    @State private var isDraftingReply: Bool = false
+    @State private var draftedReplyText: String? = nil
+    @State private var selectedReplyTone: AIReplyTone = .professional
+    @State private var selectedAIPriorityFilter: AIMessagePriority? = nil
+    @State private var loginProviderItem: AILoginProviderItem? = nil
+    @State private var coPilotInput: String = ""
+    @State private var coPilotResponse: String? = nil
+    @State private var isCoPilotThinking: Bool = false
+    @State private var showTranslation: Bool = true
+
+    // Cross-Platform Auto-Reply Queue & Alert Responder State
+    @State private var isShowingAutoReplyQueue: Bool = false
+    @State private var isGeneratingQueue: Bool = false
+    @State private var autoReplyQueue: [AIAutoReplyItem] = []
+    @State private var alertDraftedReply: String? = nil
+    @State private var isDraftingAlertReply: Bool = false
+    @State private var alertCustomPrompt: String = ""
+    @State private var selectedAlertTone: AIReplyTone = .professional
+
     // Filter & Search State
     @State private var searchQuery: String = ""
     @State private var selectedIntentFilter: String? = nil
@@ -114,6 +142,7 @@ struct InboxView: View {
     @State private var completedActionItems: Set<String> = []
     @State private var isRefreshing: Bool = false
     @State private var isRegenerating: Bool = false
+    @State private var showDailySummarySheet: Bool = false
     @State private var copiedNotice: Bool = false
     @State private var copiedAlertURL: Bool = false
     @State private var copiedReplyIndex: Int? = nil
@@ -168,6 +197,19 @@ struct InboxView: View {
             // Platform filter
             if let selectedPlatformID, item.platform.id != selectedPlatformID {
                 return false
+            }
+            // AI Priority filter
+            if let priorityFilter = selectedAIPriorityFilter {
+                let ai = AIService.shared.analyzeChat(
+                    sender: item.message.sender,
+                    messageText: item.message.text,
+                    platformName: item.platform.name,
+                    accountName: item.accountName,
+                    preferences: store.preferences
+                )
+                if ai.aiPriority != priorityFilter {
+                    return false
+                }
             }
             // Intent chip filter
             if let filter = selectedIntentFilter {
@@ -396,6 +438,24 @@ struct InboxView: View {
             if selectedMessageID == nil {
                 selectedMessageID = filteredMessages.first?.id
             }
+            conversationViewMode = store.preferences.stealthModeDefault ? .stealth : .live
+        }
+        .onChange(of: selectedMessageID) { _, _ in
+            conversationViewMode = store.preferences.stealthModeDefault ? .stealth : .live
+            draftedReplyText = nil
+            customPromptInput = ""
+            coPilotResponse = nil
+            coPilotInput = ""
+        }
+        .onChange(of: selectedAlertID) { _, _ in
+            alertDraftedReply = nil
+            alertCustomPrompt = ""
+        }
+        .sheet(item: $loginProviderItem) { item in
+            AILoginWebSheet(provider: item.id)
+        }
+        .sheet(isPresented: $isShowingAutoReplyQueue) {
+            autoReplyQueueSheet
         }
     }
 
@@ -646,7 +706,13 @@ struct InboxView: View {
     // MARK: - PANE 2: Message Stream (Linear / Apple Mail style)
     private var inboxMessageStreamPane: some View {
         VStack(spacing: 0) {
-            // Clean Search Bar & Intent Filters
+            // Top AI Intelligence Bar
+            aiIntelligenceHeaderBar
+
+            Divider()
+                .background(Palette.border)
+
+            // Search Bar & AI Triage Filter Chips
             VStack(spacing: 8) {
                 // Integrated Search Field
                 HStack(spacing: 6) {
@@ -671,20 +737,20 @@ struct InboxView: View {
                 .padding(.vertical, 6)
                 .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
 
-                // Compact Intent Filter Chips
+                // AI Triage Filter Chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 5) {
-                        intentChip(title: "All", filter: nil)
-                        intentChip(title: "Meetings", filter: "Meeting")
-                        intentChip(title: "Actions", filter: "Review")
-                        intentChip(title: "Urgent", filter: "Urgent")
-                        intentChip(title: "Business", filter: "Business")
+                        aiTriageChip(title: "All", priority: nil)
+                        aiTriageChip(title: "🔥 Urgent", priority: .urgent)
+                        aiTriageChip(title: "📅 Meetings", priority: .meeting)
+                        aiTriageChip(title: "❓ Questions", priority: .question)
+                        aiTriageChip(title: "📝 Tasks", priority: .review)
                     }
                     .padding(.vertical, 1)
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.top, 10)
             .padding(.bottom, 8)
             .background(Palette.panel)
 
@@ -816,6 +882,19 @@ struct InboxView: View {
                                             .padding(.vertical, 1)
                                             .background(Color.orange, in: Capsule())
                                     }
+                                    if tab == .calendar {
+                                        let calCount = unreadUnifiedMessages.filter { msg in
+                                            AIService.shared.extractCalendarEvent(sender: msg.message.sender, messageText: msg.message.text, platformName: msg.platform.name) != nil
+                                        }.count
+                                        if calCount > 0 {
+                                            Text("\(calCount)")
+                                                .font(.system(size: 9, weight: .bold))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 1)
+                                                .background(Color.purple, in: Capsule())
+                                        }
+                                    }
                                 }
                                 .font(.system(size: 10, weight: summarySubTab == tab ? .semibold : .regular))
                                 .padding(.horizontal, 8)
@@ -907,6 +986,52 @@ struct InboxView: View {
                             }
                         }
 
+                    case .calendar:
+                        let events: [(item: UnifiedMessageItem, event: AICalendarEvent)] = unreadUnifiedMessages.compactMap { msg in
+                            if let ev = AIService.shared.extractCalendarEvent(sender: msg.message.sender, messageText: msg.message.text, platformName: msg.platform.name) {
+                                return (item: msg, event: ev)
+                            }
+                            return nil
+                        }
+
+                        if events.isEmpty {
+                            Text("No meetings detected in unread messages.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted)
+                                .padding(.vertical, 4)
+                        } else {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(events, id: \.item.id) { pair in
+                                    HStack(spacing: 7) {
+                                        Image(systemName: "calendar.badge.clock")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(Color.purple)
+
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(pair.event.title)
+                                                .font(.system(size: 10.5, weight: .semibold))
+                                                .lineLimit(1)
+                                            Text("\(pair.event.dateSuggestion) · \(pair.event.startTime ?? "") · \(pair.event.locationOrLink ?? "")")
+                                                .font(.system(size: 9.5))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+
+                                        Spacer()
+
+                                        Button {
+                                            AIService.shared.openInAppleCalendar(event: pair.event, store: store)
+                                        } label: {
+                                            Text("Add to Cal")
+                                                .font(.system(size: 9.5, weight: .semibold))
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+
                     case .threads:
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(summary.threads.prefix(3)) { thread in
@@ -935,6 +1060,156 @@ struct InboxView: View {
         }
     }
 
+    // MARK: - Top AI Intelligence Bar
+    private var aiIntelligenceHeaderBar: some View {
+        let isGemini = store.preferences.aiProvider == "gemini"
+        let isChatGpt = store.preferences.aiProvider == "chatgpt"
+        let activeLoggedIn = isGemini ? store.preferences.isGeminiLoggedIn : store.preferences.isChatGptLoggedIn
+
+        return HStack(spacing: 6) {
+            // Gemini Toggle
+            Button {
+                store.preferences.aiProvider = "gemini"
+                if !store.preferences.isGeminiLoggedIn {
+                    loginProviderItem = AILoginProviderItem(id: "gemini")
+                } else {
+                    store.showToast("Active AI: Google Gemini")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Gemini")
+                        .font(.system(size: 11, weight: isGemini ? .bold : .medium))
+                    if store.preferences.isGeminiLoggedIn {
+                        Circle().fill(Color.green).frame(width: 5, height: 5)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    isGemini ? Color(red: 0.26, green: 0.52, blue: 0.96).opacity(0.18) : Palette.card.opacity(0.5),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().stroke(
+                        isGemini ? Color(red: 0.26, green: 0.52, blue: 0.96).opacity(0.5) : Color.clear,
+                        lineWidth: 1
+                    )
+                )
+                .foregroundStyle(isGemini ? Color(red: 0.26, green: 0.52, blue: 0.96) : Palette.muted)
+            }
+            .buttonStyle(.plain)
+
+            // ChatGPT Toggle
+            Button {
+                store.preferences.aiProvider = "chatgpt"
+                if !store.preferences.isChatGptLoggedIn {
+                    loginProviderItem = AILoginProviderItem(id: "chatgpt")
+                } else {
+                    store.showToast("Active AI: OpenAI ChatGPT")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "bubble.left.and.sparkles")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("ChatGPT")
+                        .font(.system(size: 11, weight: isChatGpt ? .bold : .medium))
+                    if store.preferences.isChatGptLoggedIn {
+                        Circle().fill(Color.green).frame(width: 5, height: 5)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    isChatGpt ? Color(red: 0.06, green: 0.65, blue: 0.53).opacity(0.18) : Palette.card.opacity(0.5),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().stroke(
+                        isChatGpt ? Color(red: 0.06, green: 0.65, blue: 0.53).opacity(0.5) : Color.clear,
+                        lineWidth: 1
+                    )
+                )
+                .foregroundStyle(isChatGpt ? Color(red: 0.06, green: 0.65, blue: 0.53) : Palette.muted)
+            }
+            .buttonStyle(.plain)
+
+            // Batch Auto-Reply Trigger
+            Button {
+                generateQueue()
+            } label: {
+                HStack(spacing: 4) {
+                    if isGeneratingQueue {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "sparkles")
+                    }
+                    Text("Draft All")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(Color.purple.opacity(0.18), in: Capsule())
+                .overlay(Capsule().stroke(Color.purple.opacity(0.5), lineWidth: 1))
+                .foregroundStyle(Color.purple)
+            }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingQueue)
+            .help("AI reads all unread messages and alerts and drafts replies in a review queue")
+
+            Spacer()
+
+            // Account Login / Status Button
+            Button {
+                loginProviderItem = AILoginProviderItem(id: store.preferences.aiProvider)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: activeLoggedIn ? "person.crop.circle.badge.checkmark" : "arrow.right.square")
+                        .font(.system(size: 9.5))
+                    Text(activeLoggedIn ? "Connected" : "Log In")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(activeLoggedIn ? Color.green.opacity(0.12) : Palette.accent.opacity(0.12), in: Capsule())
+                .foregroundStyle(activeLoggedIn ? Color.green : Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Open Web Account Login for \(store.preferences.aiProvider == "gemini" ? "Google Gemini" : "ChatGPT")")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Palette.panel)
+    }
+
+    private func aiTriageChip(title: String, priority: AIMessagePriority?) -> some View {
+        let isSelected = selectedAIPriorityFilter == priority
+
+        return Button {
+            selectedAIPriorityFilter = isSelected ? nil : priority
+            selectedMessageID = filteredMessages.first?.id
+        } label: {
+            Text(title)
+                .font(.system(size: 10, weight: isSelected ? .bold : .regular))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3.5)
+                .background(isSelected ? Palette.accent.opacity(0.18) : Palette.card.opacity(0.5), in: Capsule())
+                .foregroundStyle(isSelected ? Palette.accent : Palette.muted)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func priorityColor(_ priority: AIMessagePriority) -> Color {
+        switch priority {
+        case .urgent: return Color.red
+        case .question: return Color.orange
+        case .meeting: return Color.purple
+        case .review: return Color.blue
+        case .normal: return Color.gray
+        }
+    }
+
     private func intentChip(title: String, filter: String?) -> some View {
         let isSelected = selectedIntentFilter == filter
 
@@ -951,10 +1226,16 @@ struct InboxView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Clean Message Row (Apple Mail / Linear style)
+    // MARK: - Clean Message Row (Apple Mail / Linear style with AI Priority)
     private func cleanMessageRow(_ item: UnifiedMessageItem) -> some View {
         let isSelected = selectedMessageID == item.id
-        let analysis = ConversationSummaryService.shared.analyzeMessage(item.message)
+        let aiResult = AIService.shared.analyzeChat(
+            sender: item.message.sender,
+            messageText: item.message.text,
+            platformName: item.platform.name,
+            accountName: item.accountName,
+            preferences: store.preferences
+        )
 
         return Button {
             selectedMessageID = item.id
@@ -1013,15 +1294,19 @@ struct InboxView: View {
                         }
                     }
 
-                    // Line 2: Intent Badge (if urgent/action) + Preview Snippet
+                    // Line 2: AI Priority Pill + Preview Snippet
                     HStack(spacing: 5) {
-                        if analysis.urgency == .high || analysis.urgency == .medium {
-                            Text(analysis.detectedIntent)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(analysis.urgency == .high ? Color.red : Color.orange)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background((analysis.urgency == .high ? Color.red : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                        if aiResult.aiPriority != .normal {
+                            HStack(spacing: 3) {
+                                Image(systemName: aiResult.aiPriority.icon)
+                                    .font(.system(size: 8))
+                                Text(aiResult.aiPriority.shortTag)
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundStyle(priorityColor(aiResult.aiPriority))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(priorityColor(aiResult.aiPriority).opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                         }
 
                         Text(item.message.text)
@@ -1029,6 +1314,19 @@ struct InboxView: View {
                             .foregroundStyle(isSelected ? Color.primary.opacity(0.9) : Palette.muted)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
+                    }
+
+                    // Line 3: If question or meeting detected, show micro callout
+                    if let q = aiResult.detectedQuestion {
+                        Text("❓ \"\(q)\"")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(Color.orange)
+                            .lineLimit(1)
+                    } else if let cal = aiResult.detectedCalendarEvent {
+                        Text("📅 \(cal.dateSuggestion) · \(cal.startTime ?? "")")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(Color.purple)
+                            .lineLimit(1)
                     }
                 }
             }
@@ -1192,7 +1490,6 @@ struct InboxView: View {
 
     private func conversationDetailPane(_ item: UnifiedMessageItem) -> some View {
         let platformColor = spaceColor(item.platform.color)
-        let analysis = ConversationSummaryService.shared.analyzeMessage(item.message)
 
         return VStack(spacing: 0) {
             // Clean Toolbar Header
@@ -1240,8 +1537,79 @@ struct InboxView: View {
 
                 Spacer()
 
+                // Stealth Peek vs Live Portal Mode Switcher
+                HStack(spacing: 0) {
+                    Button {
+                        conversationViewMode = .stealth
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "eye.slash.fill")
+                                .font(.system(size: 11))
+                            Text("Stealth AI Peek")
+                                .font(.system(size: 11, weight: conversationViewMode == .stealth ? .semibold : .medium))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(conversationViewMode == .stealth ? Palette.accent.opacity(0.22) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(conversationViewMode == .stealth ? Palette.accent : Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Inspect message & AI analysis without triggering read receipts or blue ticks")
+
+                    Button {
+                        conversationViewMode = .live
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "globe")
+                                .font(.system(size: 11))
+                            Text("Live Portal")
+                                .font(.system(size: 11, weight: conversationViewMode == .live ? .semibold : .medium))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(conversationViewMode == .live ? platformColor.opacity(0.22) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(conversationViewMode == .live ? platformColor : Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open interactive web chat portal")
+                }
+                .padding(2)
+                .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+
                 // Focused Action Buttons
                 HStack(spacing: 6) {
+                    Button {
+                        showDailySummarySheet.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                            Text("Daily Summary")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Inspect AI Daily Summary for this conversation")
+                    .popover(isPresented: $showDailySummarySheet, arrowEdge: .bottom) {
+                        let threadMessages = store.platformActivity[item.accountID]?.messages.filter {
+                            $0.sender.lowercased() == item.message.sender.lowercased()
+                        } ?? [item.message]
+                        let aiResult = AIService.shared.analyzeChat(
+                            sender: item.message.sender,
+                            messageText: item.message.text,
+                            platformName: item.platform.name,
+                            accountName: item.accountName,
+                            preferences: store.preferences,
+                            threadMessages: threadMessages
+                        )
+                        ScrollView {
+                            dailyConversationSummaryCard(summary: aiResult.dailySummary, item: item, platformColor: platformColor)
+                                .padding(16)
+                        }
+                        .frame(width: 480, height: 440)
+                    }
+
                     Button {
                         store.openInSplitView(platformID: item.platform.id, accountID: item.accountID)
                     } label: {
@@ -1296,68 +1664,1114 @@ struct InboxView: View {
             Divider()
                 .background(Palette.border)
 
-            // Streamlined AI Conversation Briefing Strip
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(platformColor)
+            if conversationViewMode == .stealth {
+                stealthConversationView(item: item, platformColor: platformColor)
+            } else {
+                livePortalConversationView(item: item, platformColor: platformColor)
+            }
+        }
+    }
 
-                Text(analysis.contextSummary)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.primary.opacity(0.9))
-                    .lineLimit(1)
+    private func stealthConversationView(item: UnifiedMessageItem, platformColor: Color) -> some View {
+        let threadMessages = store.platformActivity[item.accountID]?.messages.filter {
+            $0.sender.lowercased() == item.message.sender.lowercased()
+        } ?? [item.message]
 
-                Spacer()
+        let aiResult = AIService.shared.analyzeChat(
+            sender: item.message.sender,
+            messageText: item.message.text,
+            platformName: item.platform.name,
+            accountName: item.accountName,
+            preferences: store.preferences,
+            threadMessages: threadMessages
+        )
 
-                // Quick Replies Pills
-                if !analysis.suggestedReplies.isEmpty {
-                    HStack(spacing: 5) {
-                        ForEach(Array(analysis.suggestedReplies.prefix(2).enumerated()), id: \.offset) { idx, reply in
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(reply, forType: .string)
-                                copiedReplyIndex = idx
-                                store.showToast("Copied: \"\(reply)\" — paste into chat!")
-                                Task {
-                                    try? await Task.sleep(for: .seconds(1.5))
-                                    if copiedReplyIndex == idx {
-                                        copiedReplyIndex = nil
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // 1. Stealth / Ghost Reading Privacy Shield Banner
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.18))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "shield.lefthalf.filled.badge.checkmark")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Color.green)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Stealth Ghost Reading Active")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color.primary)
+                            Text("100% Incognito")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.18), in: Capsule())
+                                .foregroundStyle(Color.green)
+                        }
+                        Text("You can read, analyze, and draft responses safely. No read receipts, 'Seen' status, or blue checkmarks are sent to \(item.message.sender).")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        conversationViewMode = .live
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Open Live Portal")
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(14)
+                .background(Color.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.2), lineWidth: 1))
+
+                // 1b. Daily Conversation Summary Card (AI Synthesized)
+                dailyConversationSummaryCard(summary: aiResult.dailySummary, item: item, platformColor: platformColor)
+
+                // 2. Incoming Message Transcript Card (Stealth Thread View)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(platformColor)
+                            Text(threadMessages.count > 1 ? "Stealth Conversation Thread (\(threadMessages.count) Messages)" : "Intercepted Message Preview")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Palette.muted)
+                                .textCase(.uppercase)
+                        }
+
+                        Spacer()
+
+                        if let time = item.message.time, !time.isEmpty {
+                            Text(time)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        Button {
+                            let fullText = threadMessages.map { "\($0.sender) (\($0.time ?? "recent")):\n\($0.text)" }.joined(separator: "\n\n")
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(fullText, forType: .string)
+                            store.showToast("Conversation thread copied to clipboard")
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                Text(threadMessages.count > 1 ? "Copy Thread" : "Copy")
+                            }
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if threadMessages.count > 1 {
+                        VStack(spacing: 8) {
+                            ForEach(threadMessages) { msg in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Text(msg.sender)
+                                            .font(.system(size: 11.5, weight: .bold))
+                                            .foregroundStyle(platformColor)
+                                        Spacer()
+                                        if let t = msg.time {
+                                            Text(t)
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                    }
+                                    Text(msg.text)
+                                        .font(.system(size: 13.5))
+                                        .lineSpacing(4)
+                                        .foregroundStyle(Color.primary)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                            }
+                        }
+                    } else {
+                        Text(item.message.text)
+                            .font(.system(size: 14.5))
+                            .lineSpacing(5)
+                            .foregroundStyle(Color.primary)
+                            .textSelection(.enabled)
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.card, lineWidth: 1))
+                    }
+                }
+
+                // 2b. Inline Language Translation (if foreign language detected)
+                if let lang = aiResult.detectedLanguage, let trans = aiResult.translatedText {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            HStack(spacing: 5) {
+                                Image(systemName: "character.bubble.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.teal)
+                                Text("Inline Translation (\(lang) ➔ English)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .textCase(.uppercase)
+                            }
+                            Spacer()
+                            Button(showTranslation ? "Hide Translation" : "Show Translation") {
+                                showTranslation.toggle()
+                            }
+                            .font(.system(size: 10.5))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Palette.accent)
+                        }
+                        if showTranslation {
+                            Text(trans)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.primary)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.teal.opacity(0.2), lineWidth: 1))
+                        }
+                    }
+                    .padding(14)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.card, lineWidth: 1))
+                }
+
+                // 2c. Detected Calendar Event Card (if meeting/schedule detected)
+                if let event = aiResult.detectedCalendarEvent {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            HStack(spacing: 6) {
+                                Image(systemName: "calendar.badge.clock")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color.purple)
+                                Text("Detected Meeting & Schedule")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .textCase(.uppercase)
+                            }
+                            Spacer()
+                            Text("AI Extracted")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.14), in: Capsule())
+                                .foregroundStyle(Color.purple)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(event.title)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color.primary)
+
+                            HStack(spacing: 12) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "clock.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Palette.muted)
+                                    Text("\(event.dateSuggestion) · \(event.startTime ?? "2:00 PM")")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Palette.muted)
+                                }
+
+                                if let loc = event.locationOrLink {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "video.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Palette.muted)
+                                        Text(loc)
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Palette.muted)
                                     }
                                 }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: copiedReplyIndex == idx ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 8))
-                                    Text(reply)
-                                        .font(.system(size: 9.5))
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(copiedReplyIndex == idx ? Color.green.opacity(0.18) : Palette.card.opacity(0.6), in: Capsule())
-                                .foregroundStyle(copiedReplyIndex == idx ? Color.green : Color.primary.opacity(0.8))
                             }
-                            .buttonStyle(.plain)
-                            .help("Click to copy quick reply to clipboard")
+                        }
+
+                        HStack(spacing: 8) {
+                            Button {
+                                AIService.shared.openInAppleCalendar(event: event, store: store)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "calendar.badge.plus")
+                                    Text("Add to Apple Calendar")
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.purple)
+                            .controlSize(.small)
+
+                            Button {
+                                let invite = "\(event.title)\nDate: \(event.dateSuggestion) at \(event.startTime ?? "2:00 PM")\nLocation: \(event.locationOrLink ?? "Video Call")"
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(invite, forType: .string)
+                                store.showToast("Copied meeting invite")
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.doc")
+                                    Text("Copy Details")
+                                }
+                                .font(.system(size: 11))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.25), lineWidth: 1))
+                }
+
+                // 3. AI Deep Analysis Deck
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                            Text("AI Thread Analysis")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+
+                        Spacer()
+
+                        Text(aiResult.providerName)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Palette.accent.opacity(0.12), in: Capsule())
+                    }
+
+                    // Key Badges
+                    HStack(spacing: 8) {
+                        Text(aiResult.detectedIntent)
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Palette.card, in: Capsule())
+                            .foregroundStyle(Color.primary)
+
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(aiResult.urgency == .high ? Color.red : (aiResult.urgency == .medium ? Color.orange : Color.blue))
+                                .frame(width: 6, height: 6)
+                            Text(aiResult.urgency.rawValue)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(aiResult.urgency == .high ? Color.red : (aiResult.urgency == .medium ? Color.orange : Color.blue))
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background((aiResult.urgency == .high ? Color.red : (aiResult.urgency == .medium ? Color.orange : Color.blue)).opacity(0.12), in: Capsule())
+
+                        Text(aiResult.sentiment)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Palette.card.opacity(0.6), in: Capsule())
+                    }
+
+                    // Context Summary
+                    Text(aiResult.contextSummary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.primary.opacity(0.95))
+                        .padding(.vertical, 2)
+
+                    // Detected Question (if any)
+                    if let q = aiResult.detectedQuestion {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "questionmark.circle.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Awaiting Response to Question:")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .textCase(.uppercase)
+                                Text("\"\(q)\"")
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(Color.primary)
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // Action Item (if any)
+                    if let action = aiResult.actionItem {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                            Text(action)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(Color.primary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+                .padding(16)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.card, lineWidth: 1))
+
+                // 4. AI Smart Reply Studio
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pencil.and.outline")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                            Text("Smart Reply Studio")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+
+                        Spacer()
+
+                        // Tone Selector
+                        HStack(spacing: 4) {
+                            ForEach(AIReplyTone.allCases) { tone in
+                                Button {
+                                    selectedReplyTone = tone
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: tone.symbol)
+                                            .font(.system(size: 9))
+                                        Text(tone.rawValue)
+                                            .font(.system(size: 10.5, weight: selectedReplyTone == tone ? .semibold : .regular))
+                                    }
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3.5)
+                                    .background(selectedReplyTone == tone ? Palette.accent : Palette.card, in: Capsule())
+                                    .foregroundStyle(selectedReplyTone == tone ? .white : Palette.muted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // Contextual Suggestions for Selected Tone
+                    let toneReplies = aiResult.replies.filter { $0.tone == selectedReplyTone }
+                    let displayedReplies = toneReplies.isEmpty ? aiResult.replies : toneReplies
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(displayedReplies) { replyOption in
+                            HStack(spacing: 10) {
+                                Image(systemName: "bubble.left.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.accent)
+
+                                Text(replyOption.text)
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(Color.primary)
+                                    .multilineTextAlignment(.leading)
+                                    .textSelection(.enabled)
+
+                                Spacer()
+
+                                HStack(spacing: 6) {
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(replyOption.text, forType: .string)
+                                        store.showToast("Copied reply to clipboard!")
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("Copy")
+                                        }
+                                        .font(.system(size: 10.5, weight: .medium))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(Palette.card, in: RoundedRectangle(cornerRadius: 6))
+                                        .foregroundStyle(Palette.muted)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(replyOption.text, forType: .string)
+                                        conversationViewMode = .live
+                                        store.showToast("Copied reply! Switched to Live Portal — paste to send.")
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "paperplane.fill")
+                                            Text("Use in Chat")
+                                        }
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(platformColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+                                        .foregroundStyle(platformColor)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(12)
+                            .background(Palette.background.opacity(0.8), in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                        }
+                    }
+
+                    Divider()
+
+                    // Draft Custom Reply on Demand
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Draft Custom Reply with AI")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(Palette.muted)
+
+                        HStack(spacing: 8) {
+                            TextField("Ask Gemini/ChatGPT (e.g. tell them I can meet tomorrow 4pm instead)...", text: $customPromptInput)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                                .onSubmit { triggerCustomDraft(item: item) }
+
+                            Button {
+                                triggerCustomDraft(item: item)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if isDraftingReply {
+                                        ProgressView().controlSize(.small)
+                                    } else {
+                                        Image(systemName: "sparkles")
+                                    }
+                                    Text("Draft")
+                                }
+                                .font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Palette.accent)
+                            .controlSize(.small)
+                            .disabled(customPromptInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDraftingReply)
+                        }
+
+                        // Generated Draft Box
+                        if let draft = draftedReplyText {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Drafted Response:")
+                                        .font(.system(size: 10.5, weight: .bold))
+                                        .foregroundStyle(Palette.accent)
+                                        .textCase(.uppercase)
+                                    Spacer()
+                                }
+
+                                Text(draft)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.primary)
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Palette.card.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
+
+                                HStack(spacing: 8) {
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(draft, forType: .string)
+                                        store.showToast("Draft copied to clipboard!")
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("Copy to Clipboard")
+                                        }
+                                        .font(.system(size: 11, weight: .medium))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(draft, forType: .string)
+                                        conversationViewMode = .live
+                                        store.showToast("Copied draft! Switched to Live Portal — paste & send.")
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "paperplane.fill")
+                                            Text("Insert into Chat & Open Live Portal")
+                                        }
+                                        .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(platformColor)
+                                    .controlSize(.small)
+                                }
+                            }
+                            .padding(12)
+                            .background(Palette.background, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.accent.opacity(0.3), lineWidth: 1))
                         }
                     }
                 }
+                // 5. Interactive AI Thread Co-Pilot
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "bubble.left.and.sparkles")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                            Text("AI Thread Co-Pilot")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+
+                        Spacer()
+
+                        let providerLabel = store.preferences.aiProvider == "gemini" ? "Google Gemini" : "OpenAI ChatGPT"
+                        Text("Powered by \(providerLabel)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Palette.accent.opacity(0.12), in: Capsule())
+                            .foregroundStyle(Palette.accent)
+                    }
+
+                    Text("Ask questions or draft actions regarding this chat using your connected AI account:")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+
+                    // Quick Action Prompts
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            coPilotPromptPill(title: "⚡ 3-Bullet Summary", prompt: "Summarize this message in 3 clear bullet points", item: item)
+                            coPilotPromptPill(title: "📝 Polite Decline", prompt: "Draft a polite and respectful decline to this request", item: item)
+                            coPilotPromptPill(title: "📅 Propose Meeting", prompt: "Draft a friendly reply proposing a sync tomorrow at 3 PM", item: item)
+                            coPilotPromptPill(title: "🕵️ Analyze Subtext", prompt: "Analyze the tone, subtext, and hidden agenda of the sender", item: item)
+                            coPilotPromptPill(title: "🌐 Translate Message", prompt: "Translate this message or provide foreign language equivalent", item: item)
+                        }
+                        .padding(.vertical, 1)
+                    }
+
+                    // Co-Pilot Chat Prompt Input
+                    HStack(spacing: 8) {
+                        TextField("Ask Gemini or ChatGPT about this chat...", text: $coPilotInput)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .onSubmit { runCoPilot(prompt: coPilotInput, item: item) }
+
+                        Button {
+                            runCoPilot(prompt: coPilotInput, item: item)
+                        } label: {
+                            HStack(spacing: 4) {
+                                if isCoPilotThinking {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "paperplane.fill")
+                                }
+                                Text("Ask")
+                            }
+                            .font(.system(size: 11.5, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.accent)
+                        .controlSize(.small)
+                        .disabled(coPilotInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCoPilotThinking)
+                    }
+
+                    // Co-Pilot Response Container
+                    if let response = coPilotResponse {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Co-Pilot Insight:")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .foregroundStyle(Palette.accent)
+                                    .textCase(.uppercase)
+                                Spacer()
+                                Button("Clear") {
+                                    coPilotResponse = nil
+                                }
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted)
+                                .buttonStyle(.plain)
+                            }
+
+                            Text(response)
+                                .font(.system(size: 12.5))
+                                .lineSpacing(4)
+                                .foregroundStyle(Color.primary)
+                                .textSelection(.enabled)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Palette.background, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.accent.opacity(0.3), lineWidth: 1))
+
+                            HStack(spacing: 8) {
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(response, forType: .string)
+                                    store.showToast("Copied Co-Pilot response!")
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("Copy Response")
+                                    }
+                                    .font(.system(size: 11))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(response, forType: .string)
+                                    conversationViewMode = .live
+                                    store.showToast("Copied to clipboard! Switched to Live Portal.")
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.right.circle.fill")
+                                        Text("Insert into Chat & Open Live Portal")
+                                    }
+                                    .font(.system(size: 11, weight: .semibold))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(platformColor)
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(12)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.card, lineWidth: 1))
+                    }
+                }
+                .padding(16)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.card, lineWidth: 1))
+
+                // 6. Open Live Portal Footer
+                HStack {
+                    Spacer()
+                    Button {
+                        conversationViewMode = .live
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "globe")
+                            Text("Open Live Portal (Marks Conversation as Read)")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(platformColor)
+                    .controlSize(.regular)
+                    Spacer()
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            .padding(20)
+        }
+    }
+
+    private func livePortalConversationView(item: UnifiedMessageItem, platformColor: Color) -> some View {
+        VStack(spacing: 0) {
+            // Live Portal Mode Banner
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                    Text("Live Web Session")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                }
+
+                Text("· Interacting directly with \(item.platform.name)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+
+                Spacer()
+
+                Button {
+                    conversationViewMode = .stealth
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye.slash.fill")
+                        Text("Switch to Stealth Peek")
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(platformColor.opacity(0.04))
+            .background(Palette.panel)
 
             Divider()
                 .background(Palette.border)
 
-            // Embedded Live Portal Web View
+            // Embedded Live Portal Web View with direct conversation thread URL!
             PlatformPortalView(
                 platformID: item.platform.id,
-                explicitAccountID: item.accountID
+                explicitAccountID: item.accountID,
+                customURL: item.message.linkURL.flatMap { URL(string: $0) }
             )
             .id("\(item.accountID):\(item.message.id)")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func triggerCustomDraft(item: UnifiedMessageItem) {
+        let prompt = customPromptInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        isDraftingReply = true
+        Task {
+            let draft = await AIService.shared.draftCustomReply(
+                prompt: prompt,
+                messageContext: item.message.text,
+                sender: item.message.sender,
+                tone: selectedReplyTone,
+                preferences: store.preferences
+            )
+            draftedReplyText = draft
+            isDraftingReply = false
+        }
+    }
+
+    private func runCoPilot(prompt: String, item: UnifiedMessageItem) {
+        let clean = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        isCoPilotThinking = true
+        Task {
+            let result = await AIService.shared.askThreadCoPilot(
+                prompt: clean,
+                messageContext: item.message.text,
+                sender: item.message.sender,
+                platformName: item.platform.name,
+                tone: selectedReplyTone,
+                preferences: store.preferences
+            )
+            coPilotResponse = result
+            isCoPilotThinking = false
+        }
+    }
+
+    // MARK: - Daily Conversation Summary Card
+    private func dailyConversationSummaryCard(summary: ConversationDailySummary?, item: UnifiedMessageItem, platformColor: Color) -> some View {
+        guard let summary else { return AnyView(EmptyView()) }
+
+        let completedCount = summary.actionItems.filter { completedActionItems.contains($0) }.count
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 14) {
+                // Header Strip
+                HStack(alignment: .center, spacing: 8) {
+                    HStack(spacing: 6) {
+                        ZStack {
+                            Circle()
+                                .fill(Palette.accent.opacity(0.18))
+                                .frame(width: 24, height: 24)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                        }
+
+                        Text("Daily Conversation Summary")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.primary)
+
+                        Text("Today")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Color.blue)
+                    }
+
+                    Spacer()
+
+                    Text(summary.providerName)
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Palette.accent.opacity(0.12), in: Capsule())
+                        .foregroundStyle(Palette.accent)
+
+                    // Actions: Regenerate & Copy
+                    HStack(spacing: 6) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isRegenerating = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                withAnimation {
+                                    isRegenerating = false
+                                    store.showToast("Daily summary refreshed with latest conversation context")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.clockwise")
+                                    .rotationEffect(.degrees(isRegenerating ? 360 : 0))
+                                    .animation(isRegenerating ? Animation.linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRegenerating)
+                                Text("Refresh")
+                            }
+                            .font(.system(size: 10.5, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            let briefingText = """
+                            ✦ Daily Conversation Summary: \(summary.sender) (\(summary.platformName))
+                            Date: \(summary.summaryDate.formatted(date: .abbreviated, time: .shortened))
+                            Headline: \(summary.headline)
+                            Overview: \(summary.executiveOverview)
+
+                            Key Topics:
+                            \(summary.keyTopics.map { "• " + $0 }.joined(separator: "\n"))
+
+                            Decisions / Status:
+                            \(summary.decisionsMade.map { "• " + $0 }.joined(separator: "\n"))
+
+                            Action Items:
+                            \(summary.actionItems.map { "• " + $0 }.joined(separator: "\n"))
+                            """
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(briefingText, forType: .string)
+                            store.showToast("Daily Conversation Summary copied to clipboard!")
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "doc.on.doc")
+                                Text("Copy")
+                            }
+                            .font(.system(size: 10.5, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+
+                // Headline & Metadata Tags
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(summary.headline)
+                        .font(.system(size: 13.5, weight: .bold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 9))
+                            Text(summary.relationshipContext)
+                                .font(.system(size: 10.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Palette.card, in: Capsule())
+                        .foregroundStyle(Palette.muted)
+
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(summary.sentiment.contains("Urgent") ? Color.red : Color.green)
+                                .frame(width: 6, height: 6)
+                            Text(summary.sentiment)
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(summary.sentiment.contains("Urgent") ? Color.red : Color.green)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background((summary.sentiment.contains("Urgent") ? Color.red : Color.green).opacity(0.12), in: Capsule())
+
+                        if summary.messageCount > 1 {
+                            Text("\(summary.messageCount) messages synthesized")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.muted)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Palette.card.opacity(0.5), in: Capsule())
+                        }
+                    }
+                }
+
+                // Executive Overview Card
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent.opacity(0.7))
+                        .padding(.top, 2)
+
+                    Text(summary.executiveOverview)
+                        .font(.system(size: 12.5))
+                        .lineSpacing(3.5)
+                        .foregroundStyle(Color.primary.opacity(0.95))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(Palette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+
+                // Key Topics Chips
+                if !summary.keyTopics.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Topics Discussed Today:")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Palette.muted)
+                            .textCase(.uppercase)
+
+                        HStack(spacing: 6) {
+                            ForEach(summary.keyTopics, id: \.self) { topic in
+                                Text(topic)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 6))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.card, lineWidth: 1))
+                                    .foregroundStyle(Color.primary)
+                            }
+                        }
+                    }
+                }
+
+                // Two-Column Grid: Decisions & Pending Questions
+                HStack(alignment: .top, spacing: 12) {
+                    // Decisions Made
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.green)
+                            Text("Decisions & Discussion State")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Palette.muted)
+                                .textCase(.uppercase)
+                        }
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(summary.decisionsMade, id: \.self) { dec in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("•")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Color.green)
+                                    Text(dec)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Color.primary)
+                                        .lineLimit(3)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.green.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.15), lineWidth: 1))
+
+                    // Pending Questions
+                    if !summary.pendingQuestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "questionmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.orange)
+                                Text("Pending Questions")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .textCase(.uppercase)
+                            }
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(summary.pendingQuestions, id: \.self) { q in
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Text("?")
+                                            .font(.system(size: 10.5, weight: .bold))
+                                            .foregroundStyle(Color.orange)
+                                        Text(q)
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Color.primary)
+                                            .lineLimit(3)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(Color.orange.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+                    }
+                }
+
+                // Interactive Action Items Checklist
+                if !summary.actionItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            HStack(spacing: 5) {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Palette.accent)
+                                Text("Action Items for Today")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .textCase(.uppercase)
+                            }
+
+                            Spacer()
+
+                            Text("\(completedCount)/\(summary.actionItems.count) completed")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(summary.actionItems, id: \.self) { action in
+                                let isDone = completedActionItems.contains(action)
+                                Button {
+                                    if isDone {
+                                        completedActionItems.remove(action)
+                                    } else {
+                                        completedActionItems.insert(action)
+                                    }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: isDone ? "checkmark.square.fill" : "square")
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(isDone ? Color.green : Palette.muted)
+
+                                        Text(action)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .strikethrough(isDone, color: Palette.muted)
+                                            .foregroundStyle(isDone ? Palette.muted : Color.primary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                }
+            }
+            .padding(16)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.accent.opacity(0.25), lineWidth: 1.5))
+        )
+    }
+
+    private func coPilotPromptPill(title: String, prompt: String, item: UnifiedMessageItem) -> some View {
+        Button {
+            coPilotInput = prompt
+            runCoPilot(prompt: prompt, item: item)
+        } label: {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(Palette.card, in: Capsule())
+                .foregroundStyle(Palette.muted)
+        }
+        .buttonStyle(.plain)
     }
 
     private var alertDetailPane: some View {
@@ -1462,22 +2876,8 @@ struct InboxView: View {
                 Divider()
                     .background(Palette.border)
 
-                // Brief Context Advice Bar
-                HStack(spacing: 6) {
-                    Image(systemName: alert.categoryType.icon)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(catColor)
-
-                    Text(alertContextAdvice(for: alert))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                .background(catColor.opacity(0.04))
+                // AI Alert Notice Responder
+                aiAlertResponderSection(alert: alert)
 
                 Divider()
                     .background(Palette.border)
@@ -1612,5 +3012,632 @@ struct InboxView: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    // MARK: - AI Alert Notice Responder
+    @ViewBuilder
+    private func aiAlertResponderSection(alert: UnifiedAlertItem) -> some View {
+        let analysis = AIService.shared.analyzeAlert(
+            title: alert.title,
+            alertText: alert.alertText,
+            category: alert.category,
+            platformName: alert.platform.name,
+            preferences: store.preferences
+        )
+
+        VStack(spacing: 8) {
+            // Header & Context Row
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.purple)
+
+                Text(analysis.providerName)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.primary)
+
+                if analysis.requiresReply {
+                    Text("Reply Recommended")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Color.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.12), in: Capsule())
+                }
+
+                Text("·")
+                    .foregroundStyle(Palette.muted.opacity(0.5))
+
+                Text(analysis.contextSummary)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+
+                Spacer()
+
+                let currentDraft = alertDraftedReply ?? analysis.suggestedReplies.first?.text ?? ""
+                if !currentDraft.isEmpty {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(currentDraft, forType: .string)
+                        store.showToast("Copied active draft to clipboard! (⌘V)")
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                            Text("Copy Draft")
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+            }
+
+            // Suggested Multi-Tone Reply Pills
+            if !analysis.suggestedReplies.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(analysis.suggestedReplies) { opt in
+                            let isSelected = (alertDraftedReply == opt.text) || (alertDraftedReply == nil && opt == analysis.suggestedReplies.first)
+                            Button {
+                                alertDraftedReply = opt.text
+                                selectedAlertTone = opt.tone
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(opt.text, forType: .string)
+                                store.showToast("Selected \(opt.tone.rawValue) & copied to clipboard!")
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(opt.tone.rawValue)
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text("— \(opt.text)")
+                                        .font(.system(size: 10))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3.5)
+                                .background(
+                                    isSelected ? Color.purple.opacity(0.18) : Palette.card,
+                                    in: Capsule()
+                                )
+                                .overlay(
+                                    Capsule().stroke(
+                                        isSelected ? Color.purple.opacity(0.6) : Palette.border,
+                                        lineWidth: 1
+                                    )
+                                )
+                                .foregroundStyle(isSelected ? Color.purple : Color.primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            // Editable Draft & Refine Input Row
+            HStack(spacing: 8) {
+                TextField("AI Drafted reply...", text: Binding(
+                    get: { alertDraftedReply ?? analysis.suggestedReplies.first?.text ?? "" },
+                    set: { alertDraftedReply = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.border, lineWidth: 1))
+
+                // Quick Ask / Refine
+                HStack(spacing: 4) {
+                    TextField("Tweak instructions (e.g. say unavailable until Friday)...", text: $alertCustomPrompt)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10.5))
+                        .onSubmit {
+                            refineAlertReply(alert: alert)
+                        }
+
+                    Button {
+                        refineAlertReply(alert: alert)
+                    } label: {
+                        if isDraftingAlertReply {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 10))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDraftingAlertReply || alertCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Palette.card.opacity(0.7), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.border.opacity(0.6), lineWidth: 1))
+                .frame(maxWidth: 240)
+
+                Button {
+                    let textToInsert = alertDraftedReply ?? analysis.suggestedReplies.first?.text ?? ""
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(textToInsert, forType: .string)
+                    store.showToast("Copied to clipboard! Paste directly into thread below (⌘V)")
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.doc.fill")
+                        Text("Copy to Thread")
+                    }
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.purple.opacity(0.04))
+    }
+
+    private func refineAlertReply(alert: UnifiedAlertItem) {
+        let prompt = alertCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        isDraftingAlertReply = true
+        Task {
+            let refined = await AIService.shared.askThreadCoPilot(
+                prompt: prompt,
+                messageContext: alert.alertText,
+                sender: alert.title,
+                platformName: alert.platform.name,
+                tone: selectedAlertTone,
+                preferences: store.preferences
+            )
+            await MainActor.run {
+                self.alertDraftedReply = refined
+                self.isDraftingAlertReply = false
+                self.alertCustomPrompt = ""
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(refined, forType: .string)
+                self.store.showToast("Refined reply & copied to clipboard!")
+            }
+        }
+    }
+
+    // MARK: - Batch Auto-Reply Queue Generator
+    private func generateQueue() {
+        isGeneratingQueue = true
+        Task {
+            let unreadMsgs = unreadUnifiedMessages
+            let actionableAlerts = allAlerts
+            let generated = await AIService.shared.generateAutoReplyQueue(
+                messages: unreadMsgs,
+                alerts: actionableAlerts,
+                preferences: store.preferences
+            )
+            await MainActor.run {
+                self.autoReplyQueue = generated
+                self.isGeneratingQueue = false
+                self.isShowingAutoReplyQueue = true
+            }
+        }
+    }
+
+    // MARK: - Auto-Reply Queue Review Sheet
+    private var autoReplyQueueSheet: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.purple.opacity(0.15))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.purple)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("AI Auto-Reply Queue")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color.primary)
+
+                        let isGemini = store.preferences.aiProvider == "gemini"
+                        let isLoggedIn = isGemini ? store.preferences.isGeminiLoggedIn : store.preferences.isChatGptLoggedIn
+                        let providerName = isGemini ? "Google Gemini" : "OpenAI ChatGPT"
+
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(isLoggedIn ? Color.green : Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text(isLoggedIn ? "\(providerName) Connected" : "\(providerName) Session")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Palette.card, in: Capsule())
+                    }
+
+                    Text("AI synthesized drafts for \(autoReplyQueue.count) unread messages & mentions across platforms.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Spacer()
+
+                Button {
+                    isShowingAutoReplyQueue = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(Palette.panel)
+
+            Divider().background(Palette.border)
+
+            // Toolbar
+            HStack(spacing: 8) {
+                Text("Global Tone:")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+
+                ForEach([AIReplyTone.professional, .friendly, .concise, .casual], id: \.self) { tone in
+                    Button {
+                        applyGlobalTone(tone)
+                    } label: {
+                        Text(tone.rawValue)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3.5)
+                            .background(Palette.card, in: Capsule())
+                            .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button {
+                    copyAllReplies()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                        Text("Copy All (\(autoReplyQueue.count))")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(autoReplyQueue.isEmpty)
+
+                Button {
+                    generateQueue()
+                } label: {
+                    HStack(spacing: 4) {
+                        if isGeneratingQueue {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text("Regenerate")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isGeneratingQueue)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 9)
+            .background(Palette.background)
+
+            Divider().background(Palette.border)
+
+            // Body List
+            if autoReplyQueue.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "tray.fill")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Palette.muted.opacity(0.4))
+                    Text("No Pending Drafts in Queue")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("All unread messages and notifications are caught up, or no actionable items detected.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach($autoReplyQueue) { $item in
+                            autoReplyQueueCard(item: $item)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .frame(minWidth: 720, idealWidth: 800, minHeight: 520, idealHeight: 620)
+        .background(Palette.background)
+    }
+
+    // MARK: - Auto-Reply Queue Item Card
+    private func autoReplyQueueCard(item: Binding<AIAutoReplyItem>) -> some View {
+        let val = item.wrappedValue
+        return VStack(alignment: .leading, spacing: 10) {
+            // Top Row
+            HStack(spacing: 8) {
+                // Source badge
+                HStack(spacing: 4) {
+                    Image(systemName: val.sourceType == .chat ? "bubble.left.fill" : "bell.badge.fill")
+                        .font(.system(size: 9))
+                    Text(val.sourceType == .chat ? "Chat" : "Notice")
+                        .font(.system(size: 9.5, weight: .bold))
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    (val.sourceType == .chat ? Color.blue : Color.orange).opacity(0.12),
+                    in: Capsule()
+                )
+                .foregroundStyle(val.sourceType == .chat ? Color.blue : Color.orange)
+
+                // Platform badge
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(spaceColor(val.platformColor))
+                        .frame(width: 6, height: 6)
+                    Text(val.platformName)
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text("·")
+                        .foregroundStyle(Palette.muted.opacity(0.5))
+                    Text(val.accountName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Spacer()
+
+                if val.isDispatched {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 9.5))
+                        Text("Dispatched")
+                            .font(.system(size: 9.5, weight: .bold))
+                    }
+                    .foregroundStyle(Color.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.12), in: Capsule())
+                }
+
+                Button {
+                    if let idx = autoReplyQueue.firstIndex(where: { $0.id == val.id }) {
+                        autoReplyQueue.remove(at: idx)
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss from queue")
+            }
+
+            // Sender & Context
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(val.senderOrTitle)
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(Color.primary)
+
+                    Text(val.detectedContext)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Palette.accent.opacity(0.1), in: Capsule())
+                }
+
+                Text(val.originalContent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(2)
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            // Tone Switcher Chips for this item
+            HStack(spacing: 5) {
+                Text("Tone:")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+
+                ForEach([AIReplyTone.professional, .friendly, .concise, .casual, .politeDecline], id: \.self) { tone in
+                    let isCurrent = val.selectedTone == tone
+                    Button {
+                        regenerateSingleItem(id: val.id, tone: tone)
+                    } label: {
+                        Text(tone.rawValue)
+                            .font(.system(size: 9.5, weight: isCurrent ? .bold : .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                isCurrent ? Color.purple.opacity(0.2) : Palette.panel,
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule().stroke(
+                                    isCurrent ? Color.purple.opacity(0.6) : Palette.border.opacity(0.6),
+                                    lineWidth: 1
+                                )
+                            )
+                            .foregroundStyle(isCurrent ? Color.purple : Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // Draft Editor
+            TextEditor(text: item.draftedReply)
+                .font(.system(size: 11.5))
+                .scrollContentBackground(.hidden)
+                .background(Palette.background)
+                .frame(minHeight: 52, maxHeight: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.border, lineWidth: 1))
+
+            // Action Buttons
+            HStack(spacing: 8) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(val.draftedReply, forType: .string)
+                    item.isDispatched.wrappedValue = true
+                    store.showToast("Copied reply for \(val.senderOrTitle)!")
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                        Text("Copy Reply")
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    dispatchAutoReplyItem(val)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: val.sourceType == .chat ? "arrow.up.right.bubble.fill" : "arrow.up.right.app.fill")
+                        Text(val.sourceType == .chat ? "Open Chat & Paste" : "Open Thread & Paste")
+                    }
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.border, lineWidth: 1))
+    }
+
+    private func dispatchAutoReplyItem(_ val: AIAutoReplyItem) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(val.draftedReply, forType: .string)
+
+        if let idx = autoReplyQueue.firstIndex(where: { $0.id == val.id }) {
+            autoReplyQueue[idx].isDispatched = true
+        }
+
+        isShowingAutoReplyQueue = false
+
+        if val.sourceType == .chat {
+            let msgID = val.id.replacingOccurrences(of: "msg-", with: "")
+            selectedFolder = .all
+            selectedMessageID = msgID
+            draftedReplyText = val.draftedReply
+            store.selectAccount(val.accountID, navigate: true)
+            store.showToast("Opened chat with \(val.senderOrTitle) · Reply copied to clipboard (⌘V)")
+        } else {
+            selectedFolder = .alerts
+            let alertID = val.id.replacingOccurrences(of: "alert-", with: "")
+            selectedAlertID = alertID
+            alertDraftedReply = val.draftedReply
+            if let direct = val.directURL {
+                store.openPlatformNotifications(accountID: val.accountID, notificationURL: direct)
+            } else {
+                store.selectAccount(val.accountID, navigate: true)
+            }
+            store.showToast("Opened notice · Reply copied to clipboard (⌘V)")
+        }
+    }
+
+    private func applyGlobalTone(_ tone: AIReplyTone) {
+        for idx in autoReplyQueue.indices {
+            autoReplyQueue[idx].selectedTone = tone
+            if autoReplyQueue[idx].sourceType == .chat {
+                let analysis = AIService.shared.analyzeChat(
+                    sender: autoReplyQueue[idx].senderOrTitle,
+                    messageText: autoReplyQueue[idx].originalContent,
+                    platformName: autoReplyQueue[idx].platformName,
+                    accountName: autoReplyQueue[idx].accountName,
+                    preferences: store.preferences
+                )
+                if let matched = analysis.replies.first(where: { $0.tone == tone })?.text {
+                    autoReplyQueue[idx].draftedReply = matched
+                }
+            } else {
+                let analysis = AIService.shared.analyzeAlert(
+                    title: autoReplyQueue[idx].senderOrTitle,
+                    alertText: autoReplyQueue[idx].originalContent,
+                    category: "mention",
+                    platformName: autoReplyQueue[idx].platformName,
+                    preferences: store.preferences
+                )
+                if let matched = analysis.suggestedReplies.first(where: { $0.tone == tone })?.text {
+                    autoReplyQueue[idx].draftedReply = matched
+                }
+            }
+        }
+        store.showToast("Switched all drafts to \(tone.rawValue) tone")
+    }
+
+    private func copyAllReplies() {
+        guard !autoReplyQueue.isEmpty else { return }
+        var combined = "=== PINGGO AI AUTO-REPLY DRAFTS ===\n\n"
+        for item in autoReplyQueue {
+            combined += "[\(item.platformName) - \(item.senderOrTitle)] (\(item.sourceType.rawValue))\n"
+            combined += "Context: \(item.detectedContext)\n"
+            combined += "Reply:\n\(item.draftedReply)\n\n"
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(combined, forType: .string)
+        for idx in autoReplyQueue.indices {
+            autoReplyQueue[idx].isDispatched = true
+        }
+        store.showToast("Copied all \(autoReplyQueue.count) drafts to clipboard!")
+    }
+
+    private func regenerateSingleItem(id: String, tone: AIReplyTone) {
+        guard let idx = autoReplyQueue.firstIndex(where: { $0.id == id }) else { return }
+        autoReplyQueue[idx].selectedTone = tone
+        if autoReplyQueue[idx].sourceType == .chat {
+            let analysis = AIService.shared.analyzeChat(
+                sender: autoReplyQueue[idx].senderOrTitle,
+                messageText: autoReplyQueue[idx].originalContent,
+                platformName: autoReplyQueue[idx].platformName,
+                accountName: autoReplyQueue[idx].accountName,
+                preferences: store.preferences
+            )
+            if let matched = analysis.replies.first(where: { $0.tone == tone })?.text {
+                autoReplyQueue[idx].draftedReply = matched
+            }
+        } else {
+            let analysis = AIService.shared.analyzeAlert(
+                title: autoReplyQueue[idx].senderOrTitle,
+                alertText: autoReplyQueue[idx].originalContent,
+                category: "mention",
+                platformName: autoReplyQueue[idx].platformName,
+                preferences: store.preferences
+            )
+            if let matched = analysis.suggestedReplies.first(where: { $0.tone == tone })?.text {
+                autoReplyQueue[idx].draftedReply = matched
+            }
+        }
     }
 }
