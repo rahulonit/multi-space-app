@@ -1,0 +1,78 @@
+<UserControl
+    x:Class="PINGGO.Views.HomeControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:PINGGO.Models">
+
+    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="32">
+        <StackPanel Spacing="28" MaxWidth="960" HorizontalAlignment="Left">
+            <!-- Welcome Banner -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Workspaces Overview" FontSize="26" FontWeight="Bold" Foreground="White" />
+                <TextBlock Text="Unified command center for all your messaging, communities, and AI services" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+            </StackPanel>
+
+            <!-- Metrics Cards Row -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Card 1 -->
+                <Border Grid.Column="0" Background="{StaticResource AppPanelBrush}" CornerRadius="12" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="18" Margin="0,0,12,0">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="CONNECTED PLATFORMS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="16 Social Services" FontSize="20" FontWeight="Bold" Foreground="White" />
+                        <TextBlock Text="WhatsApp, Telegram, Discord, Slack..." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Card 2 -->
+                <Border Grid.Column="1" Background="{StaticResource AppPanelBrush}" CornerRadius="12" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="18" Margin="6,0,6,0">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="SANDBOXED PROFILES" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="100% Isolated" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />
+                        <TextBlock Text="Unique Edge WebView2 user data stores" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Card 3 -->
+                <Border Grid.Column="2" Background="{StaticResource AppPanelBrush}" CornerRadius="12" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="18" Margin="12,0,0,0">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="AI ASSISTANT STATUS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="Copilot Ready" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Gemini &amp; ChatGPT smart replies enabled" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Quick Launch Platform Grid -->
+            <StackPanel Spacing="14">
+                <TextBlock Text="ACTIVE WORKSPACES" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                <GridView x:Name="PlatformsGrid" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnPlatformCardClicked">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="models:SocialPlatform">
+                            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Width="210" Height="100" Padding="16" Margin="0,0,12,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="10" Background="{StaticResource AppCardBrush}" Margin="0,0,12,0">
+                                        <FontIcon Glyph="&#xE774;" FontSize="18" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{x:Bind Name}" FontSize="14" FontWeight="SemiBold" Foreground="White" />
+                                        <TextBlock Text="Active Session" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

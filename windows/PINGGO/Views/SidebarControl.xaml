@@ -1,0 +1,71 @@
+<UserControl
+    x:Class="PINGGO.Views.SidebarControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:PINGGO.Models">
+
+    <Grid Width="220" Background="{StaticResource AppSidebarBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,1,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Top Section: Section title + Add platform button -->
+        <Grid Grid.Row="0" Padding="14,16,14,8">
+            <TextBlock Text="SOCIAL PLATFORMS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" />
+            <Button HorizontalAlignment="Right" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" Click="OnAddPlatformClicked" ToolTipService.ToolTip="Add Social App">
+                <FontIcon Glyph="&#xE710;" FontSize="11" />
+            </Button>
+        </Grid>
+
+        <!-- Platform List -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsRepeater x:Name="PlatformItemsRepeater" ItemsSource="{x:Bind ViewModel.Platforms}">
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="models:SocialPlatform">
+                        <Button Click="OnPlatformItemClicked" Tag="{x:Bind Id}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Background="Transparent" BorderThickness="0" CornerRadius="8"
+                                Margin="8,2" Padding="10,8">
+                            <Grid HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="{StaticResource AppCardBrush}" Margin="0,0,10,0">
+                                    <FontIcon Glyph="&#xE774;" FontSize="13" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+
+                                <TextBlock Grid.Column="1" Text="{x:Bind Name}" FontSize="13" FontWeight="Medium" VerticalAlignment="Center" Foreground="White" />
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <!-- Bottom Section: Settings & App Lock -->
+        <Border Grid.Row="2" Padding="10,12" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,1,0,0">
+            <StackPanel Spacing="6">
+                <Button Click="OnSettingsClicked" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                        Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="10,8">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE713;" FontSize="14" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="Settings &amp; Accounts" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+                </Button>
+
+                <Button Click="OnLockClicked" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                        Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="10,8">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE72E;" FontSize="14" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="Lock PINGGO" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

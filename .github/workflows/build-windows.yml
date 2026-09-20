@@ -1,0 +1,50 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/build-windows.yml"
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish PINGGO
+        shell: pwsh
+        run: >-
+          dotnet publish windows/PINGGO/PINGGO.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:Platform=x64
+          --output dist/windows
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/windows/PINGGO.exe")) {
+            throw "dist/windows/PINGGO.exe was not created"
+          }
+          Get-Item "dist/windows/PINGGO.exe" | Format-List Name, Length, LastWriteTime
+
+      - name: Package Windows build
+        shell: pwsh
+        run: Compress-Archive -Path "dist/windows/*" -DestinationPath "dist/PINGGO-windows-x64.zip" -Force
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PINGGO-windows-x64
+          path: dist/PINGGO-windows-x64.zip
+          if-no-files-found: error
