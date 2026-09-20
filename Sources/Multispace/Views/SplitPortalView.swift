@@ -51,6 +51,7 @@ struct SplitPortalView: View {
                 }
                 Divider()
                 Button("Inbox") { store.splitDestination = .inbox }
+                Button("Browser") { store.splitDestination = .browser }
             } label: {
                 HStack(spacing: 4) {
                     Text(title(for: store.splitDestination))
@@ -122,6 +123,22 @@ struct SplitPortalView: View {
             Spacer()
 
             Button {
+                let primary = store.destination
+                if let sec = store.splitDestination {
+                    store.destination = sec
+                    store.splitDestination = primary
+                }
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 22, height: 22)
+                    .background(Palette.panel, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Swap primary and secondary panes")
+
+            Button {
                 store.closeSplitView()
             } label: {
                 Image(systemName: "xmark")
@@ -146,6 +163,7 @@ struct SplitPortalView: View {
         switch destination {
         case .home: HomeView()
         case .inbox: InboxView()
+        case .browser: BrowserView()
         case .platform(let id):
             if isSplitPane {
                 PlatformPortalView(
@@ -177,6 +195,7 @@ struct SplitPortalView: View {
         switch destination {
         case .home: return "Home"
         case .inbox: return "Inbox"
+        case .browser: return "Browser"
         case .platform(let id):
             return store.platform(id)?.name ?? "Platform"
         case .settings: return "Settings"

@@ -42,6 +42,11 @@ struct SettingsView: View {
     @State private var selectedSocialLoginProvider: String? = nil
     @State private var activeAILoginProvider: String? = nil
     @State private var showingEditProfileSheet = false
+    @State private var showGeminiApiKey = false
+    @State private var showOpenAiApiKey = false
+    @State private var testingAiConnection = false
+    @State private var aiTestResult: (success: Bool, message: String)? = nil
+    @State private var keychainDiagnosticResult: String? = nil
 
     var body: some View {
         GeometryReader { geometry in
@@ -669,6 +674,144 @@ struct SettingsView: View {
                     provider: "chatgpt"
                 )
             }
+
+            // Direct API Keys & Models
+            settingsCard("API Keys & Direct Integration", symbol: "key.horizontal.fill", color: .blue) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Optional Direct API Access")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Provide your personal API keys for direct REST API communication. If left empty, PINGGO uses the local Apple ML Smart Engine or your logged-in web partition.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                Divider()
+
+                // Google Gemini Key
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                        Text("Google Gemini API Key")
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Spacer()
+                        Picker("Model", selection: $store.preferences.aiModelTier) {
+                            Text("gemini-1.5-flash").tag("gemini-1.5-flash")
+                            Text("gemini-1.5-pro").tag("gemini-1.5-pro")
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
+
+                    HStack(spacing: 8) {
+                        Group {
+                            if showGeminiApiKey {
+                                TextField("AIzaSy...", text: $store.preferences.geminiApiKey)
+                            } else {
+                                SecureField("AIzaSy...", text: $store.preferences.geminiApiKey)
+                            }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+
+                        Button {
+                            showGeminiApiKey.toggle()
+                        } label: {
+                            Image(systemName: showGeminiApiKey ? "eye.slash" : "eye")
+                                .foregroundStyle(Palette.muted)
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button("Test Key") {
+                            testingAiConnection = true
+                            aiTestResult = nil
+                            Task {
+                                let res = await AIService.shared.testAPIConnection(
+                                    provider: "gemini",
+                                    apiKey: store.preferences.geminiApiKey,
+                                    model: store.preferences.aiModelTier
+                                )
+                                testingAiConnection = false
+                                aiTestResult = res
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(store.preferences.geminiApiKey.isEmpty || testingAiConnection)
+                    }
+                }
+
+                Divider()
+
+                // OpenAI ChatGPT Key
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .foregroundStyle(Color(red: 0.06, green: 0.65, blue: 0.53))
+                        Text("OpenAI ChatGPT API Key")
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Spacer()
+                        Picker("Model", selection: $store.preferences.aiModelTier) {
+                            Text("gpt-4o-mini").tag("gpt-4o-mini")
+                            Text("gpt-4o").tag("gpt-4o")
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
+
+                    HStack(spacing: 8) {
+                        Group {
+                            if showOpenAiApiKey {
+                                TextField("sk-proj-...", text: $store.preferences.openAiApiKey)
+                            } else {
+                                SecureField("sk-proj-...", text: $store.preferences.openAiApiKey)
+                            }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+
+                        Button {
+                            showOpenAiApiKey.toggle()
+                        } label: {
+                            Image(systemName: showOpenAiApiKey ? "eye.slash" : "eye")
+                                .foregroundStyle(Palette.muted)
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button("Test Key") {
+                            testingAiConnection = true
+                            aiTestResult = nil
+                            Task {
+                                let res = await AIService.shared.testAPIConnection(
+                                    provider: "chatgpt",
+                                    apiKey: store.preferences.openAiApiKey,
+                                    model: store.preferences.aiModelTier
+                                )
+                                testingAiConnection = false
+                                aiTestResult = res
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(store.preferences.openAiApiKey.isEmpty || testingAiConnection)
+                    }
+                }
+
+                if let res = aiTestResult {
+                    HStack(spacing: 8) {
+                        Image(systemName: res.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(res.success ? .green : .red)
+                        Text(res.message)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(res.success ? .green : .red)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background((res.success ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
         }
     }
 
@@ -933,6 +1076,82 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                }
+            }
+
+            // Apple Keychain & Passwords Diagnostics
+            settingsCard("Apple Keychain & Passwords Diagnostics", symbol: "key.fill", color: .green) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("iCloud Keychain Status")
+                                .font(.system(size: 13, weight: .semibold))
+                            if KeychainHelper.getPassword() != nil {
+                                HStack(spacing: 3) {
+                                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                                    Text("Password Stored in Keychain")
+                                        .foregroundStyle(.green)
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.12), in: Capsule())
+                            } else {
+                                HStack(spacing: 3) {
+                                    Circle().fill(Color.secondary).frame(width: 6, height: 6)
+                                    Text("No Password in Keychain")
+                                        .foregroundStyle(Palette.muted)
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Palette.card, in: Capsule())
+                            }
+                        }
+                        Text("PINGGO App Lock credentials can be synced with Apple Passwords and macOS Keychain for biometric autofill.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        Button("Verify Keychain") {
+                            if let saved = KeychainHelper.getPassword() {
+                                keychainDiagnosticResult = "✅ Keychain verified! Stored password (\(saved.count) chars) retrieved successfully."
+                            } else {
+                                keychainDiagnosticResult = "ℹ️ No App Lock password is currently stored in Apple Keychain."
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Passwords") {
+                                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                            } else if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            store.showToast("Opening Apple Passwords...")
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.forward.app")
+                                Text("Open Passwords")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(Palette.accent)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                if let diag = keychainDiagnosticResult {
+                    Text(diag)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.card, in: RoundedRectangle(cornerRadius: 6))
                 }
             }
         }

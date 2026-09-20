@@ -29,6 +29,9 @@ struct PinggoApp: App {
                 Button("Inbox") { store.destination = .inbox }
                     .keyboardShortcut("2", modifiers: .command)
                     .disabled(store.isAppLocked)
+                Button("Browser") { store.destination = .browser }
+                    .keyboardShortcut("3", modifiers: .command)
+                    .disabled(store.isAppLocked)
                 Button("Settings…") { store.destination = .settings }
                     .keyboardShortcut(",", modifiers: .command)
                     .disabled(store.isAppLocked)

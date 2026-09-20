@@ -27,6 +27,9 @@ struct CommandPaletteView: View {
         list.append(Item(id: "nav-inbox", title: "Inbox", subtitle: "Cross-platform message previews", category: "Navigation", symbol: "bubble.left.and.bubble.right.fill", platform: nil, badge: "⌘2") {
             store.destination = .inbox
         })
+        list.append(Item(id: "nav-browser", title: "Browser", subtitle: "Private web browser with AdBlocker", category: "Navigation", symbol: "globe.americas.fill", platform: nil, badge: "⌘3") {
+            store.destination = .browser
+        })
         list.append(Item(id: "nav-profile", title: "Profile & Cloud Account", subtitle: "Subscription, cloud sync & Google/Apple/Microsoft login", category: "Navigation", symbol: "person.crop.circle.fill", platform: nil, badge: nil) {
             store.destination = .profile
         })

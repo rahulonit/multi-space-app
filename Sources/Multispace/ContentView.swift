@@ -7,18 +7,37 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 820 || sidebarCollapsed
-            if store.destination == .settings || store.destination == .profile {
-                SettingsView(initialPage: store.destination == .profile ? .profile : .general)
-            } else {
-                HStack(spacing: 0) {
-                    SidebarView(
-                        compact: compact,
-                        canExpand: geometry.size.width >= 820,
-                        sidebarCollapsed: $sidebarCollapsed,
-                        showingAddPlatform: $showingAddPlatform
-                    )
-                    mainContent
+            let isInboxScreen = store.destination == .inbox
+            let compact = (isInboxScreen && geometry.size.width < 1280) || geometry.size.width < 820 || sidebarCollapsed
+            VStack(spacing: 0) {
+                // Standardized 64px Global Header
+                GlobalHeaderView(windowWidth: geometry.size.width)
+                    .frame(height: 64)
+
+                Divider()
+                    .background(Palette.border)
+
+                // Main body area
+                if store.destination == .settings || store.destination == .profile {
+                    SettingsView(initialPage: store.destination == .profile ? .profile : .general)
+                } else {
+                    HStack(spacing: 0) {
+                        SidebarView(
+                            compact: compact,
+                            canExpand: geometry.size.width >= 820,
+                            sidebarCollapsed: $sidebarCollapsed,
+                            showingAddPlatform: $showingAddPlatform
+                        )
+                        mainContent
+                    }
+                }
+
+                // Mobile Bottom Nav (< 768px)
+                if geometry.size.width < 768 {
+                    Divider()
+                        .background(Palette.border)
+                    MobileBottomNavView()
+                        .frame(height: 52)
                 }
             }
         }
@@ -90,6 +109,7 @@ struct ContentView: View {
                 switch store.destination {
                 case .home: HomeView()
                 case .inbox: InboxView()
+                case .browser: BrowserView()
                 case .platform(let id): PlatformPortalView(platformID: id)
                 case .channel, .conversation, .profile, .settings:
                     SettingsView(initialPage: store.destination == .profile ? .profile : .general)

@@ -1492,105 +1492,124 @@ struct InboxView: View {
         let platformColor = spaceColor(item.platform.color)
 
         return VStack(spacing: 0) {
-            // Clean Toolbar Header
-            HStack(spacing: 10) {
-                // Sender Info
+            // Contextual Conversation Header (64px)
+            HStack(spacing: 12) {
+                // Sender Avatar
                 Circle()
                     .fill(avatarGradient(for: item.message.sender, colorName: item.platform.color))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 36, height: 36)
                     .overlay(
                         Text(initials(for: item.message.sender))
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
                     )
 
-                VStack(alignment: .leading, spacing: 1) {
+                // Sender Info (Name 15–16px bold + Subtitle: 🟢 Online · Platform · 🔒 End-to-end encrypted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.message.sender)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+
                     HStack(spacing: 6) {
-                        Text(item.message.sender)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color.primary)
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 7, height: 7)
+                        Text("Online")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Color.green)
 
                         Text("·")
+                            .font(.system(size: 11))
                             .foregroundStyle(Palette.muted.opacity(0.6))
 
-                        HStack(spacing: 3) {
-                            PlatformLogo(platform: item.platform, size: 10)
+                        HStack(spacing: 3.5) {
+                            PlatformLogo(platform: item.platform, size: 11)
                             Text(item.platform.name)
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(platformColor)
                         }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(platformColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                        .foregroundStyle(platformColor)
 
-                        Text(item.accountName)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.muted)
-                    }
+                        Text("·")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted.opacity(0.6))
 
-                    if let time = item.message.time, !time.isEmpty {
-                        Text("Active \(time)")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(Palette.muted)
+                        HStack(spacing: 3.5) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 9.5))
+                            Text("End-to-end encrypted")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(Palette.muted)
                     }
                 }
 
                 Spacer()
 
-                // Stealth Peek vs Live Portal Mode Switcher
-                HStack(spacing: 0) {
-                    Button {
-                        conversationViewMode = .stealth
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "eye.slash.fill")
-                                .font(.system(size: 11))
-                            Text("Stealth AI Peek")
-                                .font(.system(size: 11, weight: conversationViewMode == .stealth ? .semibold : .medium))
+                // Action Controls: [ 🕶️ Stealth | 🌐 Live Chat ] | [ ✦ Chat Insights ] | 📞 Audio call | 🎥 Video call | ⋮ More options
+                HStack(spacing: 8) {
+                    // 1-Click Stealth Peek vs Live Portal Toggle
+                    HStack(spacing: 2) {
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                conversationViewMode = .stealth
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "eye.slash.fill")
+                                    .font(.system(size: 10))
+                                Text("Stealth")
+                                    .font(.system(size: 11, weight: conversationViewMode == .stealth ? .semibold : .medium))
+                            }
+                            .padding(.horizontal, 9)
+                            .frame(height: 28)
+                            .background(conversationViewMode == .stealth ? Color.green.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(conversationViewMode == .stealth ? Color.green : Palette.muted)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(conversationViewMode == .stealth ? Palette.accent.opacity(0.22) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(conversationViewMode == .stealth ? Palette.accent : Palette.muted)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Inspect message & AI analysis without triggering read receipts or blue ticks")
+                        .buttonStyle(.plain)
+                        .help("Incognito reading: zero read receipts or blue ticks")
 
-                    Button {
-                        conversationViewMode = .live
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 11))
-                            Text("Live Portal")
-                                .font(.system(size: 11, weight: conversationViewMode == .live ? .semibold : .medium))
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                conversationViewMode = .live
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "globe")
+                                    .font(.system(size: 10))
+                                Text("Live Chat")
+                                    .font(.system(size: 11, weight: conversationViewMode == .live ? .semibold : .medium))
+                            }
+                            .padding(.horizontal, 9)
+                            .frame(height: 28)
+                            .background(conversationViewMode == .live ? platformColor.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(conversationViewMode == .live ? platformColor : Palette.muted)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(conversationViewMode == .live ? platformColor.opacity(0.22) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(conversationViewMode == .live ? platformColor : Palette.muted)
+                        .buttonStyle(.plain)
+                        .help("Open interactive web portal to reply live")
                     }
-                    .buttonStyle(.plain)
-                    .help("Open interactive web chat portal")
-                }
-                .padding(2)
-                .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(3)
+                    .background(Palette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
 
-                // Focused Action Buttons
-                HStack(spacing: 6) {
+                    // Chat Insights Button
                     Button {
                         showDailySummarySheet.toggle()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 5) {
                             Image(systemName: "sparkles")
-                            Text("Daily Summary")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Chat Insights")
+                                .font(.system(size: 12, weight: .semibold))
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(Palette.accent.opacity(0.15), in: Capsule())
+                        .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 1))
                         .foregroundStyle(Palette.accent)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Inspect AI Daily Summary for this conversation")
+                    .buttonStyle(.plain)
+                    .help("AI Chat Insights & Daily Conversation Summary")
                     .popover(isPresented: $showDailySummarySheet, arrowEdge: .bottom) {
                         let threadMessages = store.platformActivity[item.accountID]?.messages.filter {
                             $0.sender.lowercased() == item.message.sender.lowercased()
@@ -1610,55 +1629,108 @@ struct InboxView: View {
                         .frame(width: 480, height: 440)
                     }
 
-                    Button {
-                        store.openInSplitView(platformID: item.platform.id, accountID: item.accountID)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "rectangle.split.2x1")
-                            Text("Split View")
-                        }
-                        .font(.system(size: 11))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Open platform in Split View alongside your active space")
+                    // Calling Controls (Platform-Aware)
+                    let supportsCalling = item.platform.id.lowercased() == "whatsapp" || item.platform.id.lowercased() == "discord"
 
+                    // Audio Call (📞)
                     Button {
-                        store.openPlatformInbox(accountID: item.accountID, messageURL: item.message.linkURL)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("Open in Tab")
-                            Image(systemName: "arrow.up.forward.app")
+                        if supportsCalling {
+                            store.showToast("Initiating audio call with \(item.message.sender) via \(item.platform.name)…")
+                            store.openPlatformInbox(accountID: item.accountID, messageURL: item.message.linkURL)
+                        } else {
+                            store.showToast("Voice calling not supported on \(item.platform.name) Web.")
                         }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(platformColor)
+                    } label: {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(supportsCalling ? Color.primary.opacity(0.85) : Palette.muted.opacity(0.6))
+                            .frame(width: 34, height: 34)
+                            .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Open in full platform tab")
+                    .buttonStyle(.plain)
+                    .help(supportsCalling ? "Audio call on \(item.platform.name)" : "Voice calling not supported on \(item.platform.name) Web")
 
-                    // Context Menu for secondary actions
+                    // Video Call (🎥)
+                    Button {
+                        if supportsCalling {
+                            store.showToast("Initiating video call with \(item.message.sender) via \(item.platform.name)…")
+                            store.openPlatformInbox(accountID: item.accountID, messageURL: item.message.linkURL)
+                        } else {
+                            store.showToast("Video calling not supported on \(item.platform.name) Web.")
+                        }
+                    } label: {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(supportsCalling ? Color.primary.opacity(0.85) : Palette.muted.opacity(0.6))
+                            .frame(width: 34, height: 34)
+                            .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help(supportsCalling ? "Video call on \(item.platform.name)" : "Video calling not supported on \(item.platform.name) Web")
+
+                    // More Options (⋮)
                     Menu {
-                        if let link = item.message.linkURL, !link.isEmpty {
-                            Button("Copy Conversation Link") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(link, forType: .string)
-                                store.showToast("Copied conversation link")
+                        Section("Reading Mode") {
+                            Button {
+                                conversationViewMode = .stealth
+                            } label: {
+                                Label("Stealth AI Peek (Incognito)", systemImage: conversationViewMode == .stealth ? "checkmark.circle.fill" : "eye.slash")
+                            }
+                            Button {
+                                conversationViewMode = .live
+                            } label: {
+                                Label("Live Interactive Portal", systemImage: conversationViewMode == .live ? "checkmark.circle.fill" : "globe")
                             }
                         }
-                        Button("Refresh Portal") {
-                            store.refreshAllPortals()
+
+                        Divider()
+
+                        Section("Actions") {
+                            Button {
+                                store.openInSplitView(platformID: item.platform.id, accountID: item.accountID)
+                            } label: {
+                                Label("Open in Split View", systemImage: "rectangle.split.2x1")
+                            }
+
+                            Button {
+                                store.openPlatformInbox(accountID: item.accountID, messageURL: item.message.linkURL)
+                            } label: {
+                                Label("Open in Full Tab", systemImage: "arrow.up.forward.app")
+                            }
+
+                            if let link = item.message.linkURL, !link.isEmpty {
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(link, forType: .string)
+                                    store.showToast("Copied conversation link")
+                                } label: {
+                                    Label("Copy Conversation Link", systemImage: "link")
+                                }
+                            }
+
+                            Button {
+                                store.refreshAllPortals()
+                            } label: {
+                                Label("Refresh Portal", systemImage: "arrow.clockwise")
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 11))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.primary.opacity(0.85))
+                            .frame(width: 34, height: 34)
+                            .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 34, height: 34)
+                    .help("More conversation options")
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 22)
+            .frame(height: 64)
             .background(Palette.panel)
 
             Divider()

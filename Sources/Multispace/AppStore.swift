@@ -37,6 +37,7 @@ final class AppStore: ObservableObject {
     @Published var isAppLocked: Bool = false
     @Published var lastActiveTime: Date = .now
     @Published var toastMessage: String?
+    @Published var browserRequestedURL: URL? = nil
 
     private var cancellables = Set<AnyCancellable>()
     private let fileURL: URL
@@ -526,6 +527,17 @@ final class AppStore: ObservableObject {
 
     func closeSplitView() {
         isSplitView = false
+    }
+
+    func openBrowser(url: URL? = nil) {
+        if let url {
+            browserRequestedURL = url
+        }
+        destination = .browser
+    }
+
+    var browserState: BrowserState {
+        BrowserState.shared
     }
 
     var currentActiveAccountIDs: [UUID] {

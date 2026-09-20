@@ -10,94 +10,55 @@ struct SidebarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if compact {
-                Button { if canExpand { sidebarCollapsed = false } } label: {
-                    AppLogo(size: 24)
-                        .frame(maxWidth: .infinity)
+                VStack(spacing: 10) {
+                    Button { if canExpand { sidebarCollapsed = false } } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .help(canExpand ? "Expand sidebar" : "Sidebar")
+
+                    Button { showingAddPlatform = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Palette.accent)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add social app")
                 }
-                .buttonStyle(.plain)
-                .help(canExpand ? "Expand sidebar" : "PINGGO")
-                .padding(.top, 31)
-                .padding(.bottom, 26)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
             } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 10) {
-                        AppLogo(size: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("PINGGO")
-                                .font(.system(size: 18, weight: .bold))
-                            Text("All your social apps, one place")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.muted)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Button { sidebarCollapsed = true } label: {
-                            Image(systemName: "sidebar.left")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Collapse sidebar")
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 31)
-                .padding(.bottom, 24)
-            }
-
-            // Command Palette (⌘K) trigger
-            Button {
-                store.showingCommandPalette = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                    if !compact {
-                        Text("Search or jump to…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
-                        Spacer()
-                        Text("⌘K")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 4))
-                    }
-                }
-                .padding(.horizontal, compact ? 12 : 10)
-                .frame(height: 32)
-                .frame(maxWidth: .infinity)
-                .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .help("Command Palette (⌘K)")
-            .padding(.horizontal, compact ? 8 : 10)
-            .padding(.bottom, 8)
-
-            VStack(spacing: 4) {
-                navButton("Home", symbol: "house.fill", destination: .home)
-                navButton("Inbox", symbol: "bubble.left.and.bubble.right.fill", destination: .inbox)
-            }
-            .padding(.horizontal, compact ? 8 : 10)
-
-            HStack {
-                if !compact {
+                HStack {
                     Text("SOCIAL APPS")
                         .font(.system(size: 10, weight: .bold))
                         .tracking(1.5)
                         .foregroundStyle(Palette.muted)
                     Spacer()
+                    Button { showingAddPlatform = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add social app")
+
+                    Button { sidebarCollapsed = true } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Collapse sidebar")
+                    .padding(.leading, 6)
                 }
-                Button { showingAddPlatform = true } label: {
-                    Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: compact ? .infinity : nil)
-                }
-                .buttonStyle(.plain)
-                .help("Add social app")
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, compact ? 8 : 20)
-            .padding(.top, 32)
-            .padding(.bottom, 10)
 
             ScrollView {
                 VStack(spacing: 4) {

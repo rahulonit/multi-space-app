@@ -213,6 +213,7 @@ struct AppData: Codable {
 enum AppDestination: Hashable {
     case home
     case inbox
+    case browser
     case platform(String)
     case channel(UUID)
     case conversation(UUID)
@@ -245,16 +246,26 @@ struct AppPreferences: Codable, Equatable {
     var geminiAccountEmail: String = ""
     var isChatGptLoggedIn: Bool = false
     var chatGptAccountEmail: String = ""
+    var geminiApiKey: String = ""
+    var openAiApiKey: String = ""
+    var aiModelTier: String = "gemini-1.5-flash"
     var stealthModeDefault: Bool = true
     var defaultReplyTone: String = "Professional"
     var customAiPrompt: String = ""
+
+    // MARK: - Browser & AdBlock Preferences
+    var adBlockBlockAds: Bool = true
+    var adBlockBlockTrackers: Bool = true
+    var adBlockBlockCookieBanners: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case language, appearance, accent, compactMode, openTo, launchWebsites, launchDelay
         case showWebsiteAlerts, appLockEnabled, autoLockMinutes, tabFreezingEnabled, tabFreezeMinutes
         case lockMethod, customPinHash, customPinSalt, customPinHint
         case aiEnabled, aiProvider, isGeminiLoggedIn, geminiAccountEmail, isChatGptLoggedIn, chatGptAccountEmail
+        case geminiApiKey, openAiApiKey, aiModelTier
         case stealthModeDefault, defaultReplyTone, customAiPrompt
+        case adBlockBlockAds, adBlockBlockTrackers, adBlockBlockCookieBanners
     }
 
     init() {}
@@ -283,9 +294,15 @@ struct AppPreferences: Codable, Equatable {
         geminiAccountEmail = try c.decodeIfPresent(String.self, forKey: .geminiAccountEmail) ?? ""
         isChatGptLoggedIn = try c.decodeIfPresent(Bool.self, forKey: .isChatGptLoggedIn) ?? false
         chatGptAccountEmail = try c.decodeIfPresent(String.self, forKey: .chatGptAccountEmail) ?? ""
+        geminiApiKey = try c.decodeIfPresent(String.self, forKey: .geminiApiKey) ?? ""
+        openAiApiKey = try c.decodeIfPresent(String.self, forKey: .openAiApiKey) ?? ""
+        aiModelTier = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-1.5-flash"
         stealthModeDefault = try c.decodeIfPresent(Bool.self, forKey: .stealthModeDefault) ?? true
         defaultReplyTone = try c.decodeIfPresent(String.self, forKey: .defaultReplyTone) ?? "Professional"
         customAiPrompt = try c.decodeIfPresent(String.self, forKey: .customAiPrompt) ?? ""
+        adBlockBlockAds = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockAds) ?? true
+        adBlockBlockTrackers = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockTrackers) ?? true
+        adBlockBlockCookieBanners = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockCookieBanners) ?? true
     }
 }
 

@@ -626,13 +626,33 @@ private struct PortalBrowser: View {
                 toolbarButton("square.on.square", help: "Open in browser", enabled: true) {
                     NSWorkspace.shared.open(session.currentURL ?? url)
                 }
-                toolbarButton(
-                    "key.fill",
-                    help: "Passkey & Fast Login Assistant",
-                    enabled: true,
-                    tint: isAuthenticationPage ? .orange : Palette.accent
-                ) {
-                    showingPasskeyAssistant = true
+                if isAuthenticationPage {
+                    Button {
+                        showingPasskeyAssistant = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "key.fill")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("Passkey Ready")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15), in: Capsule())
+                        .overlay(Capsule().stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Fast Passkey & Login Assistant available")
+                } else {
+                    toolbarButton(
+                        "key.fill",
+                        help: "Passkey & Fast Login Assistant",
+                        enabled: true,
+                        tint: Palette.accent
+                    ) {
+                        showingPasskeyAssistant = true
+                    }
                 }
                 toolbarButton(
                     session.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
