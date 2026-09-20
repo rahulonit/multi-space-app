@@ -1,0 +1,27 @@
+<UserControl
+    x:Class="PINGGO.Views.CommandPaletteControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="#B3000000" Tapped="OnBackdropTapped">
+        <Border Width="560" MaxHeight="460" VerticalAlignment="Top" Margin="0,80,0,0"
+                Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}"
+                BorderThickness="1" CornerRadius="14" Padding="14">
+            <StackPanel Spacing="10">
+                <!-- Search Box -->
+                <Grid Height="44">
+                    <TextBox x:Name="PaletteSearchBox" PlaceholderText="Type a command or jump to workspace..."
+                             Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}"
+                             CornerRadius="10" Padding="38,10,12,10" FontSize="14"
+                             TextChanged="OnSearchTextChanged" KeyDown="OnSearchKeyDown" />
+                    <FontIcon Glyph="&#xE721;" FontSize="14" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Left" Margin="12,0,0,0" VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Commands / Results List -->
+                <ListView x:Name="ResultsListView" SelectionMode="Single" ItemClick="OnCommandItemClicked" IsItemClickEnabled="True" MaxHeight="320">
+                    <!-- Populated dynamically -->
+                </ListView>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 import SwiftUI
 @preconcurrency import WebKit
 
@@ -566,6 +567,8 @@ private struct PortalBrowser: View {
     @ObservedObject private var session: PortalSession
     @State private var showingAddAccount = false
     @State private var showingRenameAccount = false
+    @State private var showingDeleteAccountConfirmation = false
+    @State private var documentToPreview: PortalDownloadedDocument?
     @State private var showingPasskeyAssistant = false
     @State private var dismissedPasskeyBanner = false
 
@@ -609,9 +612,9 @@ private struct PortalBrowser: View {
                     Divider()
                     Button("Add account…", systemImage: "plus") { showingAddAccount = true }
                     Button("Rename this account…", systemImage: "pencil") { showingRenameAccount = true }
-                    if !account.usesLegacyStore {
-                        Button("Remove this account", systemImage: "minus.circle", role: .destructive) {
-                            store.removeAccount(account.id)
+                    if store.canRemoveAccount(account.id) {
+                        Button("Delete this account…", systemImage: "trash", role: .destructive) {
+                            showingDeleteAccountConfirmation = true
                         }
                     }
                 } label: {
@@ -830,6 +833,49 @@ private struct PortalBrowser: View {
                 store.renameAccount(account.id, to: name)
             }
         }
+        .confirmationDialog(
+            "Delete \(account.name)?",
+            isPresented: $showingDeleteAccountConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete account", role: .destructive) {
+                store.removeAccount(account.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the account from PINGGO and clears its separate website session. Your account on \(platform.name) is not deleted.")
+        }
+        .confirmationDialog(
+            "Document downloaded",
+            isPresented: Binding(
+                get: { session.completedDownload != nil },
+                set: { if !$0 { session.completedDownload = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let document = session.completedDownload {
+                Button("Open in Pinggo") {
+                    documentToPreview = document
+                    session.completedDownload = nil
+                }
+                Button("Open with Default App") {
+                    NSWorkspace.shared.open(document.url)
+                    session.completedDownload = nil
+                }
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([document.url])
+                    session.completedDownload = nil
+                }
+            }
+            Button("Not Now", role: .cancel) { session.completedDownload = nil }
+        } message: {
+            if let document = session.completedDownload {
+                Text("\(document.url.lastPathComponent) is ready. Choose where you want to open it.")
+            }
+        }
+        .sheet(item: $documentToPreview) { document in
+            PinggoDocumentPreview(document: document)
+        }
         .sheet(isPresented: Binding(
             get: { session.popupWebView != nil },
             set: { if !$0 { session.closePopup() } }
@@ -869,6 +915,63 @@ private struct PortalBrowser: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .help(help)
+    }
+}
+
+struct PortalDownloadedDocument: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct PinggoDocumentPreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let document: PortalDownloadedDocument
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.fill")
+                    .foregroundStyle(Palette.accent)
+                Text(document.url.lastPathComponent)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([document.url])
+                }
+                Button("Open with Default App") {
+                    NSWorkspace.shared.open(document.url)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+                Button("Done") { dismiss() }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 54)
+            .background(Palette.panel)
+
+            Divider()
+
+            QuickLookDocumentView(url: document.url)
+                .frame(minWidth: 720, minHeight: 520)
+        }
+        .frame(minWidth: 760, minHeight: 580)
+    }
+}
+
+private struct QuickLookDocumentView: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> QLPreviewView {
+        let preview = QLPreviewView(frame: .zero, style: .normal)!
+        preview.autostarts = true
+        preview.previewItem = url as NSURL
+        return preview
+    }
+
+    func updateNSView(_ preview: QLPreviewView, context: Context) {
+        preview.previewItem = url as NSURL
+        preview.refreshPreviewItem()
     }
 }
 
@@ -948,11 +1051,35 @@ final class PortalSessionRegistry {
         }
     }
 
-    func forget(_ account: PlatformAccount) {
+    func forget(_ account: PlatformAccount, platform: SocialPlatform? = nil) {
         let browser = sessions.removeValue(forKey: account.id)
         browser?.stop()
         if !account.usesLegacyStore {
             WKWebsiteDataStore.remove(forIdentifier: account.id) { _ in }
+        } else if let host = platform?.resolvedWebsiteURL?.host?.lowercased() {
+            // Older Personal accounts used WebKit's shared default store. Remove only
+            // records belonging to this platform so other Personal accounts stay signed in.
+            let normalizedHost = host.replacingOccurrences(
+                of: "^(www|web)\\.",
+                with: "",
+                options: .regularExpression
+            )
+            let dataStore = WKWebsiteDataStore.default()
+            let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+            dataStore.fetchDataRecords(ofTypes: dataTypes) { records in
+                let matchingRecords = records.filter { record in
+                    let recordHost = record.displayName.lowercased().replacingOccurrences(
+                        of: "^(www|web)\\.",
+                        with: "",
+                        options: .regularExpression
+                    )
+                    return recordHost == normalizedHost ||
+                           recordHost.hasSuffix(".\(normalizedHost)") ||
+                           normalizedHost.hasSuffix(".\(recordHost)")
+                }
+                guard !matchingRecords.isEmpty else { return }
+                dataStore.removeData(ofTypes: dataTypes, for: matchingRecords) {}
+            }
         }
     }
 
@@ -1057,11 +1184,13 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var popupWebView: WKWebView?
     @Published var currentURL: URL?
     @Published var error: String?
+    @Published var completedDownload: PortalDownloadedDocument?
     var lastAccessedAt: Date = .now
     let webView: WKWebView
     let homeURL: URL
     let accountID: UUID
     var activityHandler: ((String, [[String: String]], [String], [[String: String]]) -> Void)?
+    private var downloadDestinations: [ObjectIdentifier: URL] = [:]
 
     init(account: PlatformAccount, url: URL) {
         accountID = account.id
@@ -1391,12 +1520,17 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             destinationURL = downloadsDir.appendingPathComponent(candidate)
             counter += 1
         }
+        downloadDestinations[ObjectIdentifier(download)] = destinationURL
         completionHandler(destinationURL)
     }
 
-    func downloadDidFinish(_ download: WKDownload) {}
+    func downloadDidFinish(_ download: WKDownload) {
+        guard let destinationURL = downloadDestinations.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        completedDownload = PortalDownloadedDocument(url: destinationURL)
+    }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
         report(error)
     }
 

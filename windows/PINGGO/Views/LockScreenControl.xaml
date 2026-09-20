@@ -1,0 +1,41 @@
+<UserControl
+    x:Class="PINGGO.Views.LockScreenControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="#E60B0C10">
+        <Border Width="380" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="18" Padding="32" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Spacing="20" HorizontalAlignment="Center">
+                <!-- App Logo -->
+                <Border Width="60" Height="60" CornerRadius="18" Background="{StaticResource AppAccentBrush}" HorizontalAlignment="Center">
+                    <FontIcon Glyph="&#xE72E;" FontSize="26" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+
+                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                    <TextBlock Text="PINGGO Locked" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" />
+                    <TextBlock Text="Authenticate to access your workspaces" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Windows Hello Button -->
+                <Button Click="OnWindowsHelloClicked" HorizontalAlignment="Stretch" Background="{StaticResource AppAccentBrush}" BorderThickness="0" CornerRadius="10" Height="40">
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                        <FontIcon Glyph="&#xE72E;" FontSize="14" Foreground="White" />
+                        <TextBlock Text="Unlock with Windows Hello" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                    </StackPanel>
+                </Button>
+
+                <TextBlock Text="— OR ENTER PIN —" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Center" />
+
+                <!-- PIN Input -->
+                <StackPanel Spacing="10">
+                    <PasswordBox x:Name="PinBox" PlaceholderText="Enter Security PIN" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="10" KeyDown="OnPinKeyDown" />
+                    <Button Click="OnUnlockWithPinClicked" HorizontalAlignment="Stretch" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" Height="36">
+                        <TextBlock Text="Unlock" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                    </Button>
+                </StackPanel>
+
+                <TextBlock x:Name="ErrorText" Visibility="Collapsed" Text="Incorrect PIN. Please try again." FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppErrorColor}" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

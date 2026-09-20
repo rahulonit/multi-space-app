@@ -24,6 +24,8 @@ struct GlobalHeaderView: View {
     let windowWidth: CGFloat
     @State private var showingSecurityPopover = false
 
+    private var usesCompactHeaderControls: Bool { windowWidth < 1100 }
+
     private var activeTab: HeaderNavTab {
         switch store.destination {
         case .browser:
@@ -43,7 +45,7 @@ struct GlobalHeaderView: View {
         HStack(spacing: 12) {
             // Brand Area: 220–260 px (Pinggo logo + name)
             brandArea
-                .frame(width: 220, alignment: .leading)
+                .frame(width: usesCompactHeaderControls ? 44 : 220, alignment: .leading)
 
             if windowWidth > 1200 {
                 // Centered Navigation Pill layout
@@ -83,6 +85,9 @@ struct GlobalHeaderView: View {
                 Text("Pinggo")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .opacity(usesCompactHeaderControls ? 0 : 1)
+                    .frame(width: usesCompactHeaderControls ? 0 : nil)
             }
         }
         .buttonStyle(.plain)
@@ -102,6 +107,8 @@ struct GlobalHeaderView: View {
                             .font(.system(size: 12, weight: .semibold))
                         Text(tab.rawValue)
                             .font(.system(size: 13, weight: isActive ? .semibold : .medium))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                         
                         if tab == .inbox && store.totalUnreadCount > 0 {
                             Text("\(store.totalUnreadCount)")
@@ -110,8 +117,10 @@ struct GlobalHeaderView: View {
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
                                 .background(isActive ? Color.black.opacity(0.18) : Color.red, in: Capsule())
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 14)
                     .frame(height: 32)
                     .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 18))
@@ -128,6 +137,8 @@ struct GlobalHeaderView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(Palette.border, lineWidth: 1)
         )
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
     }
 
     private func selectTab(_ tab: HeaderNavTab) {
@@ -157,7 +168,7 @@ struct GlobalHeaderView: View {
     private var rightControls: some View {
         HStack(spacing: 10) {
             // Security Status (80–100 px)
-            if windowWidth >= 768 {
+            if !usesCompactHeaderControls {
                 securityPill
             }
 
@@ -389,6 +400,8 @@ struct MobileBottomNavView: View {
                             .font(.system(size: 13, weight: .semibold))
                         Text(tab.rawValue)
                             .font(.system(size: 13, weight: isActive ? .semibold : .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
 
                         if tab == .inbox && store.totalUnreadCount > 0 {
                             Text("\(store.totalUnreadCount)")
@@ -397,8 +410,10 @@ struct MobileBottomNavView: View {
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(isActive ? Color.black.opacity(0.18) : Color.red, in: Capsule())
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
                     .frame(height: 38)
                     .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 18))

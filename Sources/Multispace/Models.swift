@@ -451,15 +451,15 @@ struct AIAlertAnalysisResult: Equatable, Codable {
 struct UserProfile: Codable, Equatable {
     var isSignedIn: Bool = false
     var provider: String? = nil // "Apple", "Google", "Microsoft"
-    var email: String = "local.user@pinggo.internal"
-    var displayName: String = "Nikita"
+    var email: String = ""
+    var displayName: String = "You"
     var avatarColor: String = "indigo"
     var subscriptionTier: String = "Free"
     var subscriptionStatus: String = "Active"
     var subscriptionRenewsAt: Date = Date().addingTimeInterval(86400 * 365)
     var lastCloudBackup: Date? = nil
     var autoCloudSync: Bool = true
-    var cloudStorageUsage: String = "1.4 MB of 50 GB used"
+    var cloudStorageUsage: String = "0 B of 50 GB used"
 }
 
 // MARK: - Apple Keychain / Passwords Helper
@@ -513,4 +513,3 @@ enum KeychainHelper {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 }
-

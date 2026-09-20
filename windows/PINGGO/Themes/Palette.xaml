@@ -1,0 +1,49 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Dark Theme Modern Color Palette -->
+    <Color x:Key="AppBackgroundColor">#0B0C10</Color>
+    <Color x:Key="AppPanelColor">#13151B</Color>
+    <Color x:Key="AppSidebarColor">#0F1117</Color>
+    <Color x:Key="AppCardColor">#1A1D26</Color>
+    <Color x:Key="AppHoverColor">#222634</Color>
+    <Color x:Key="AppBorderColor">#2E3346</Color>
+    <Color x:Key="AppAccentColor">#6366F1</Color>
+    <Color x:Key="AppSuccessColor">#22C55E</Color>
+    <Color x:Key="AppWarningColor">#F59E0B</Color>
+    <Color x:Key="AppErrorColor">#EF4444</Color>
+    <Color x:Key="AppTextMutedColor">#94A3B8</Color>
+
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource AppBackgroundColor}" />
+    <SolidColorBrush x:Key="AppPanelBrush" Color="{StaticResource AppPanelColor}" />
+    <SolidColorBrush x:Key="AppSidebarBrush" Color="{StaticResource AppSidebarColor}" />
+    <SolidColorBrush x:Key="AppCardBrush" Color="{StaticResource AppCardColor}" />
+    <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource AppHoverColor}" />
+    <SolidColorBrush x:Key="AppBorderBrush" Color="{StaticResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource AppAccentColor}" />
+    <SolidColorBrush x:Key="AppSuccessBrush" Color="{StaticResource AppSuccessColor}" />
+    <SolidColorBrush x:Key="AppTextMutedBrush" Color="{StaticResource AppTextMutedColor}" />
+
+    <!-- Control Styles -->
+    <Style x:Key="PillNavButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource AppTextMutedBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style x:Key="IconButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="#1A1D26" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+</ResourceDictionary>

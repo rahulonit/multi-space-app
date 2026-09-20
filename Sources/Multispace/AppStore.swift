@@ -234,10 +234,14 @@ final class AppStore: ObservableObject {
         saveAccounts()
     }
 
+    func canRemoveAccount(_ id: UUID) -> Bool {
+        guard let account = account(id) else { return false }
+        return accounts(for: account.platformID).count > 1
+    }
+
     func removeAccount(_ id: UUID) {
-        guard let account = account(id), !account.usesLegacyStore,
-              accounts(for: account.platformID).count > 1 else { return }
-        PortalSessionRegistry.shared.forget(account)
+        guard let account = account(id), canRemoveAccount(id) else { return }
+        PortalSessionRegistry.shared.forget(account, platform: platform(account.platformID))
         platformAccounts.removeAll { $0.id == id }
         platformActivity.removeValue(forKey: id)
         if selectedAccountIDs[account.platformID] == id {
@@ -295,10 +299,11 @@ final class AppStore: ObservableObject {
     }
 
     func removePlatform(_ id: String) {
+        let removedPlatform = platform(id)
         socialPlatforms.removeAll { $0.id == id }
         for account in accounts(for: id) {
             platformActivity.removeValue(forKey: account.id)
-            PortalSessionRegistry.shared.forget(account)
+            PortalSessionRegistry.shared.forget(account, platform: removedPlatform)
         }
         platformAccounts.removeAll { $0.platformID == id }
         selectedAccountIDs.removeValue(forKey: id)

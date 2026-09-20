@@ -6,6 +6,7 @@ struct SidebarView: View {
     let canExpand: Bool
     @Binding var sidebarCollapsed: Bool
     @Binding var showingAddPlatform: Bool
+    @State private var accountPendingDeletion: PlatformAccount?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -135,6 +136,26 @@ struct SidebarView: View {
         }
         .frame(width: compact ? 68 : (store.preferences.compactMode ? 190 : 224))
         .background(Palette.sidebar)
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: Binding(
+                get: { accountPendingDeletion != nil },
+                set: { if !$0 { accountPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let account = accountPendingDeletion {
+                Button("Delete \(account.name)", role: .destructive) {
+                    store.removeAccount(account.id)
+                    accountPendingDeletion = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { accountPendingDeletion = nil }
+        } message: {
+            if let account = accountPendingDeletion {
+                Text("This removes \(account.name) from PINGGO and clears its separate website session. Your account on the social platform is not deleted.")
+            }
+        }
     }
 
     private func navButton(_ title: String, symbol: String, destination: AppDestination) -> some View {
@@ -212,6 +233,17 @@ struct SidebarView: View {
                         }
                     }
                     Divider()
+                    let removableAccounts = accounts.filter { store.canRemoveAccount($0.id) }
+                    if !removableAccounts.isEmpty {
+                        Menu("Delete account…", systemImage: "trash") {
+                            ForEach(removableAccounts) { account in
+                                Button(account.name, role: .destructive) {
+                                    accountPendingDeletion = account
+                                }
+                            }
+                        }
+                        Divider()
+                    }
                 }
                 Button("Edit…", systemImage: "pencil") { store.editingPlatform = platform }
                 Button("Remove from sidebar", systemImage: "minus.circle", role: .destructive) {
@@ -220,26 +252,53 @@ struct SidebarView: View {
             }
             if !compact && accounts.count > 1 {
                 ForEach(accounts) { account in
-                    Button { store.selectAccount(account.id) } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: active?.id == account.id ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 11))
-                                .foregroundStyle(active?.id == account.id ? Palette.accent : Palette.muted)
-                            Text(account.name).font(.system(size: 11, weight: active?.id == account.id ? .semibold : .regular))
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            if let unread = store.platformActivity[account.id]?.unreadCount, unread > 0 {
-                                Text("\(unread)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    HStack(spacing: 4) {
+                        Button { store.selectAccount(account.id) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: active?.id == account.id ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(active?.id == account.id ? Palette.accent : Palette.muted)
+                                Text(account.name).font(.system(size: 11, weight: active?.id == account.id ? .semibold : .regular))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                if let unread = store.platformActivity[account.id]?.unreadCount, unread > 0 {
+                                    Text("\(unread)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Switch to \(platform.name) · \(account.name)")
+
+                        if store.canRemoveAccount(account.id) {
+                            Menu {
+                                Button("Delete \(account.name)…", systemImage: "trash", role: .destructive) {
+                                    accountPendingDeletion = account
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Palette.muted)
+                                    .frame(width: 22, height: 22)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .frame(width: 22)
+                            .help("Account options")
+                        }
+                    }
+                    .padding(.leading, 31)
+                    .padding(.trailing, 8)
+                    .frame(height: 28)
+                    .background(active?.id == account.id ? Palette.accent.opacity(0.10) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
+                    .contextMenu {
+                        if store.canRemoveAccount(account.id) {
+                            Button("Delete \(account.name)…", systemImage: "trash", role: .destructive) {
+                                accountPendingDeletion = account
                             }
                         }
-                        .padding(.leading, 31)
-                        .padding(.trailing, 10)
-                        .frame(height: 28)
-                        .background(active?.id == account.id ? Palette.accent.opacity(0.10) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 7))
                     }
-                    .buttonStyle(.plain)
-                    .help("Switch to \(platform.name) · \(account.name)")
                 }
             }
         }

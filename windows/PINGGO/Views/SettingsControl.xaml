@@ -1,0 +1,98 @@
+<UserControl
+    x:Class="PINGGO.Views.SettingsControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="32">
+        <StackPanel Spacing="24" MaxWidth="760" HorizontalAlignment="Left">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Settings &amp; Preferences" FontSize="24" FontWeight="Bold" Foreground="White" />
+                <TextBlock Text="Customize AI integration, Windows Hello security, ad blocking, and appearance" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+            </StackPanel>
+
+            <!-- 1. AI API Keys Card -->
+            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="AI CO-PILOT DIRECT API INTEGRATION" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Keys are stored locally in %AppData%\PINGGO\data.json and sent directly to endpoints." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+
+                    <!-- Google Gemini API Key -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Google Gemini API Key:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="GeminiKeyBox" Grid.Column="0" PlaceholderText="AIzaSy..." Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" />
+                            <Button Grid.Column="1" Click="OnTestGeminiClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,6" Margin="10,0,0,0">
+                                <TextBlock Text="Test Key" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- OpenAI ChatGPT API Key -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="OpenAI ChatGPT API Key:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="OpenAiKeyBox" Grid.Column="0" PlaceholderText="sk-..." Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" />
+                            <Button Grid.Column="1" Click="OnTestOpenAiClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,6" Margin="10,0,0,0">
+                                <TextBlock Text="Test Key" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Status Notification Banner -->
+                    <TextBlock x:Name="AiStatusText" Visibility="Collapsed" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppSuccessBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 2. Security & Windows Hello Card -->
+            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="SECURITY &amp; WINDOWS HELLO" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+
+                    <ToggleSwitch x:Name="AppLockToggle" Header="Enable App Lock" Toggled="OnAppLockToggled" />
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Set Custom PIN Fallback:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="PinBox" Grid.Column="0" PlaceholderText="4-8 digit PIN" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" />
+                            <Button Grid.Column="1" Click="OnSavePinClicked" Background="{StaticResource AppAccentBrush}" BorderThickness="0" CornerRadius="8" Padding="14,6" Margin="10,0,0,0">
+                                <TextBlock Text="Save PIN" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+
+                    <Button Click="OnVerifyWindowsHelloClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE72E;" FontSize="13" Foreground="{StaticResource AppSuccessBrush}" />
+                            <TextBlock Text="Verify Windows Hello Availability" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- 3. AdBlocker Filters Card -->
+            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="NATIVE WEBVIEW2 ADBLOCKER CATEGORIES" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />
+
+                    <ToggleSwitch x:Name="BlockAdsToggle" Header="Block Banner Ads &amp; Popups" IsOn="True" Toggled="OnSavePreferences" />
+                    <ToggleSwitch x:Name="BlockTrackersToggle" Header="Block Telemetry &amp; Trackers" IsOn="True" Toggled="OnSavePreferences" />
+                    <ToggleSwitch x:Name="BlockCookiesToggle" Header="Suppress Cookie Consent Overlays" IsOn="True" Toggled="OnSavePreferences" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

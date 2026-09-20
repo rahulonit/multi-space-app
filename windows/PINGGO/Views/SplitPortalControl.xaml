@@ -1,0 +1,60 @@
+<UserControl
+    x:Class="PINGGO.Views.SplitPortalControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PINGGO.Views">
+
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <!-- Secondary Header (38px) -->
+            <RowDefinition Height="38" />
+            <RowDefinition Height="1" />
+            <!-- Dual Panes -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Top Header for Split View -->
+        <Grid Grid.Row="0" Background="{StaticResource AppSidebarBrush}" Padding="16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left pane indicator -->
+            <TextBlock x:Name="LeftPaneTitle" Grid.Column="0" Text="Left Workspace" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
+
+            <!-- Center Controls: 1-Click Swap Button -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Click="OnSwapClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,4" ToolTipService.ToolTip="Swap left and right panes">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE8AB;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Swap Panes ⇄" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                    </StackPanel>
+                </Button>
+
+                <Button Click="OnCloseSplitClicked" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" ToolTipService.ToolTip="Exit Split View">
+                    <FontIcon Glyph="&#xE711;" FontSize="11" />
+                </Button>
+            </StackPanel>
+
+            <!-- Right pane indicator -->
+            <TextBlock x:Name="RightPaneTitle" Grid.Column="2" HorizontalAlignment="Right" Text="Right Workspace" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
+        </Grid>
+
+        <Border Grid.Row="1" Background="{StaticResource AppBorderBrush}" />
+
+        <!-- Side-by-Side Panes -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="1" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <local:PortalViewControl x:Name="LeftPortal" Grid.Column="0" />
+            <Border Grid.Column="1" Background="{StaticResource AppBorderBrush}" />
+            <local:PortalViewControl x:Name="RightPortal" Grid.Column="2" />
+        </Grid>
+    </Grid>
+</UserControl>
