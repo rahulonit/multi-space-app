@@ -15,6 +15,24 @@ namespace PINGGO.ViewModels
         public static BrowserViewModel Shared => _instance.Value;
 
         private readonly string _sessionFilePath;
+        private readonly string _whitelistFilePath;
+
+        public HashSet<string> WhitelistedDomains { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        [ObservableProperty]
+        private bool _isCurrentDomainWhitelisted = false;
+
+        public string? CurrentHost
+        {
+            get
+            {
+                if (Uri.TryCreate(UrlInput, UriKind.Absolute, out var uri))
+                {
+                    return uri.Host.ToLowerInvariant();
+                }
+                return null;
+            }
+        }
 
         public ObservableCollection<BrowserTabItem> Tabs { get; } = new();
 
@@ -64,8 +82,76 @@ namespace PINGGO.ViewModels
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             _sessionFilePath = Path.Combine(appData, "PINGGO", "browser_session.json");
+            _whitelistFilePath = Path.Combine(appData, "PINGGO", "whitelisted_domains.json");
 
+            RestoreWhitelist();
             RestoreSessionOrInitDefault();
+        }
+
+        private void RestoreWhitelist()
+        {
+            try
+            {
+                if (File.Exists(_whitelistFilePath))
+                {
+                    var json = File.ReadAllText(_whitelistFilePath);
+                    var list = JsonSerializer.Deserialize<List<string>>(json);
+                    if (list != null)
+                    {
+                        foreach (var d in list) WhitelistedDomains.Add(d);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveWhitelist()
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(WhitelistedDomains.ToList(), new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_whitelistFilePath, json);
+            }
+            catch { }
+        }
+
+        public void UpdateCurrentWhitelistedState()
+        {
+            var host = CurrentHost;
+            IsCurrentDomainWhitelisted = !string.IsNullOrEmpty(host) && WhitelistedDomains.Contains(host);
+        }
+
+        [RelayCommand]
+        public void ToggleWhitelistCurrentDomain()
+        {
+            var host = CurrentHost;
+            if (string.IsNullOrEmpty(host)) return;
+
+            if (WhitelistedDomains.Contains(host))
+            {
+                WhitelistedDomains.Remove(host);
+            }
+            else
+            {
+                WhitelistedDomains.Add(host);
+            }
+
+            SaveWhitelist();
+            UpdateCurrentWhitelistedState();
+            Reload();
+        }
+
+        public void ReorderTab(Guid sourceId, Guid targetId)
+        {
+            if (sourceId == targetId) return;
+            var source = Tabs.FirstOrDefault(t => t.Id == sourceId);
+            var target = Tabs.FirstOrDefault(t => t.Id == targetId);
+            if (source == null || target == null) return;
+
+            var oldIndex = Tabs.IndexOf(source);
+            var newIndex = Tabs.IndexOf(target);
+            Tabs.Move(oldIndex, newIndex);
+            SaveSession();
         }
 
         private void RestoreSessionOrInitDefault()
@@ -87,7 +173,8 @@ namespace PINGGO.ViewModels
                                 UrlString = saved.UrlString,
                                 PageTitle = saved.PageTitle,
                                 BlockedAdsCount = saved.BlockedAdsCount,
-                                IsReaderModeActive = saved.IsReaderModeActive
+                                IsReaderModeActive = saved.IsReaderModeActive,
+                                FaviconUrl = saved.FaviconUrl ?? (!string.IsNullOrEmpty(saved.UrlString) && Uri.TryCreate(saved.UrlString, UriKind.Absolute, out var u) ? $"https://www.google.com/s2/favicons?domain={u.Host}&sz=64" : null)
                             });
                         }
 
@@ -124,7 +211,8 @@ namespace PINGGO.ViewModels
                         UrlString = t.UrlString,
                         PageTitle = t.PageTitle,
                         BlockedAdsCount = t.BlockedAdsCount,
-                        IsReaderModeActive = t.IsReaderModeActive
+                        IsReaderModeActive = t.IsReaderModeActive,
+                        FaviconUrl = t.FaviconUrl
                     }).ToList()
                 };
 

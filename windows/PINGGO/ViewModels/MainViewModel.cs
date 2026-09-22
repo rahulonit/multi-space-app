@@ -50,9 +50,13 @@ namespace PINGGO.ViewModels
         [ObservableProperty]
         private int _totalUnreadCount = 0;
 
+        [ObservableProperty]
+        private ActiveThreadContext? _activeThreadContext;
+
         public ObservableCollection<SocialPlatform> Platforms { get; } = new();
         public ObservableCollection<PlatformAccount> Accounts { get; } = new();
         private readonly Dictionary<string, Guid> _selectedAccountIds = new();
+        public Dictionary<Guid, ActiveThreadContext> AccountThreadContexts { get; } = new();
 
         public MainViewModel()
         {
@@ -64,6 +68,18 @@ namespace PINGGO.ViewModels
                 {
                     UpdateUnreadCounts();
                 });
+            };
+
+            PortalSessionManager.Shared.OnActiveThreadUpdated += (accountId, ctx) =>
+            {
+                AccountThreadContexts[accountId] = ctx;
+                if (ActiveAccountId == accountId)
+                {
+                    App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
+                    {
+                        ActiveThreadContext = ctx;
+                    });
+                }
             };
 
             SecurityService.Shared.OnLockStateChanged += () =>

@@ -32,6 +32,7 @@ namespace PINGGO.Models
         public int BlockedAdsCount { get; set; } = 0;
         public bool IsReaderModeActive { get; set; } = false;
         public string? ReaderContent { get; set; }
+        public string? FaviconUrl { get; set; }
     }
 
     public class SavedBrowserTab
@@ -53,6 +54,9 @@ namespace PINGGO.Models
 
         [JsonPropertyName("blockedAdsCount")]
         public int BlockedAdsCount { get; set; }
+
+        [JsonPropertyName("faviconUrl")]
+        public string? FaviconUrl { get; set; }
     }
 
     public class SavedBrowserSession

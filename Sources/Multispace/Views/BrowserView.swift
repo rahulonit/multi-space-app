@@ -113,6 +113,7 @@ struct SavedBrowserTab: Codable {
     let pageTitle: String
     let isReaderModeActive: Bool
     let blockedAdsCount: Int
+    var faviconURLString: String? = nil
 }
 
 struct SavedBrowserSession: Codable {
@@ -134,6 +135,7 @@ struct BrowserTabItem: Identifiable, Equatable {
     var blockedAdsCount: Int
     var isReaderModeActive: Bool
     var readerContent: String?
+    var faviconURL: URL? = nil
 }
 
 // MARK: - Dedicated Tab WKWebView Subclass
@@ -158,9 +160,11 @@ final class BrowserState: ObservableObject {
 
     private let sessionKey = "pinggo.browser.saved_session"
     private let bookmarksKey = "pinggo.browser.saved_bookmarks"
+    private let whitelistKey = "pinggo.browser.whitelisted_domains"
 
     @Published var tabs: [BrowserTabItem] = []
     @Published var activeTabID: UUID = UUID()
+    @Published var whitelistedDomains: Set<String> = []
 
     @Published var urlInput: String = ""
     @Published var currentURL: URL? = nil
@@ -206,6 +210,15 @@ final class BrowserState: ObservableObject {
         activeWebView
     }
 
+    var currentHost: String? {
+        currentURL?.host?.lowercased()
+    }
+
+    var isCurrentDomainWhitelisted: Bool {
+        guard let host = currentHost else { return false }
+        return whitelistedDomains.contains(host)
+    }
+
     init() {
         // 1. Restore bookmarks if previously customized
         if let bData = UserDefaults.standard.data(forKey: bookmarksKey),
@@ -214,13 +227,20 @@ final class BrowserState: ObservableObject {
             self.bookmarks = bDecoded
         }
 
-        // 2. Restore saved session or fallback to blank New Tab
+        // 2. Restore whitelisted AdBlock domains
+        if let wData = UserDefaults.standard.data(forKey: whitelistKey),
+           let wDecoded = try? JSONDecoder().decode([String].self, from: wData) {
+            self.whitelistedDomains = Set(wDecoded)
+        }
+
+        // 3. Restore saved session or fallback to blank New Tab
         if let data = UserDefaults.standard.data(forKey: sessionKey),
            let session = try? JSONDecoder().decode(SavedBrowserSession.self, from: data),
            !session.tabs.isEmpty {
             var restoredTabs: [BrowserTabItem] = []
             for saved in session.tabs {
                 let currentURL = saved.urlString.isEmpty ? nil : URL(string: saved.urlString)
+                let favURL = saved.faviconURLString.flatMap { URL(string: $0) } ?? (currentURL?.host.flatMap { URL(string: "https://www.google.com/s2/favicons?domain=\($0)&sz=64") })
                 restoredTabs.append(BrowserTabItem(
                     id: saved.id,
                     title: saved.title.isEmpty ? (currentURL?.host ?? "New Tab") : saved.title,
@@ -233,7 +253,8 @@ final class BrowserState: ObservableObject {
                     canGoForward: false,
                     blockedAdsCount: saved.blockedAdsCount,
                     isReaderModeActive: saved.isReaderModeActive,
-                    readerContent: nil
+                    readerContent: nil,
+                    faviconURL: favURL
                 ))
             }
             self.tabs = restoredTabs
@@ -261,7 +282,8 @@ final class BrowserState: ObservableObject {
                     canGoForward: false,
                     blockedAdsCount: 0,
                     isReaderModeActive: false,
-                    readerContent: nil
+                    readerContent: nil,
+                    faviconURL: nil
                 )
             ]
         }
@@ -269,11 +291,7 @@ final class BrowserState: ObservableObject {
         AdBlockEngine.compileRuleList { [weak self] list in
             guard let self = self else { return }
             self.contentRuleList = list
-            if self.isAdBlockerActive, let list = list {
-                for (_, wv) in self.tabWebViews {
-                    wv.configuration.userContentController.add(list)
-                }
-            }
+            self.applyAdBlockerState()
         }
     }
 
@@ -286,7 +304,8 @@ final class BrowserState: ObservableObject {
                 urlString: tab.urlString,
                 pageTitle: tab.pageTitle,
                 isReaderModeActive: tab.isReaderModeActive,
-                blockedAdsCount: tab.blockedAdsCount
+                blockedAdsCount: tab.blockedAdsCount,
+                faviconURLString: tab.faviconURL?.absoluteString
             )
         }
         let session = SavedBrowserSession(tabs: savedTabs, activeTabID: activeTabID)
@@ -315,7 +334,10 @@ final class BrowserState: ObservableObject {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        if let ruleList = contentRuleList, isAdBlockerActive {
+        let tab = tabs.first(where: { $0.id == tabID })
+        let host = tab?.currentURL?.host?.lowercased()
+        let isWhitelisted = host != nil && whitelistedDomains.contains(host!)
+        if let ruleList = contentRuleList, isAdBlockerActive && !isWhitelisted {
             configuration.userContentController.add(ruleList)
         }
 
@@ -502,18 +524,47 @@ final class BrowserState: ObservableObject {
         saveSession()
     }
 
-    func toggleAdBlocker() {
-        isAdBlockerActive.toggle()
+    func applyAdBlockerState() {
         guard let ruleList = contentRuleList else { return }
-        for (_, wv) in tabWebViews {
+        for (tabID, wv) in tabWebViews {
             let ucc = wv.configuration.userContentController
-            if isAdBlockerActive {
+            ucc.remove(ruleList)
+            let tab = tabs.first(where: { $0.id == tabID })
+            let host = tab?.currentURL?.host?.lowercased()
+            let isWhitelisted = host != nil && whitelistedDomains.contains(host!)
+            if isAdBlockerActive && !isWhitelisted {
                 ucc.add(ruleList)
-            } else {
-                ucc.remove(ruleList)
             }
         }
+    }
+
+    func toggleAdBlocker() {
+        isAdBlockerActive.toggle()
+        applyAdBlockerState()
         activeWebView?.reload()
+    }
+
+    func toggleWhitelistCurrentDomain() {
+        guard let host = currentHost, !host.isEmpty else { return }
+        if whitelistedDomains.contains(host) {
+            whitelistedDomains.remove(host)
+        } else {
+            whitelistedDomains.insert(host)
+        }
+        if let data = try? JSONEncoder().encode(Array(whitelistedDomains)) {
+            UserDefaults.standard.set(data, forKey: whitelistKey)
+        }
+        applyAdBlockerState()
+        activeWebView?.reload()
+    }
+
+    func reorderTab(draggedID: UUID, targetID: UUID) {
+        guard draggedID != targetID,
+              let fromIndex = tabs.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        let item = tabs.remove(at: fromIndex)
+        tabs.insert(item, at: toIndex)
+        saveSession()
     }
 
     func toggleBookmark() {
@@ -593,6 +644,9 @@ final class BrowserState: ObservableObject {
         if let idx = tabs.firstIndex(where: { $0.id == id }) {
             tabs[idx].currentURL = url
             tabs[idx].urlString = url.absoluteString
+            if let host = url.host, !host.isEmpty {
+                tabs[idx].faviconURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
+            }
             if tabs[idx].title.isEmpty || tabs[idx].title == "New Tab" {
                 tabs[idx].title = url.host ?? url.absoluteString
             }
@@ -600,6 +654,7 @@ final class BrowserState: ObservableObject {
         if id == activeTabID {
             self.currentURL = url
             self.urlInput = url.absoluteString
+            applyAdBlockerState()
         }
         saveSession()
     }
@@ -630,6 +685,7 @@ struct BrowserView: View {
     @State private var showingAdBlockPopover: Bool = false
     @State private var showingBookmarksPopover: Bool = false
     @State private var showingDownloadsPopover: Bool = false
+    @State private var draggedTabID: UUID? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -695,6 +751,21 @@ struct BrowserView: View {
                                 ProgressView()
                                     .controlSize(.mini)
                                     .frame(width: 12, height: 12)
+                            } else if let fav = tab.faviconURL {
+                                AsyncImage(url: fav) { phase in
+                                    switch phase {
+                                    case .success(let img):
+                                        img.resizable()
+                                            .scaledToFit()
+                                            .frame(width: 12, height: 12)
+                                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                                    default:
+                                        Image(systemName: "globe")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(isActive ? Palette.accent : Palette.muted)
+                                    }
+                                }
+                                .frame(width: 12, height: 12)
                             } else {
                                 Image(systemName: "globe")
                                     .font(.system(size: 10))
@@ -732,6 +803,16 @@ struct BrowserView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             browserState.selectTab(id: tab.id)
+                        }
+                        .onDrag {
+                            self.draggedTabID = tab.id
+                            return NSItemProvider(object: tab.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text], isTargeted: nil) { _ in
+                            guard let dragged = self.draggedTabID, dragged != tab.id else { return false }
+                            browserState.reorderTab(draggedID: dragged, targetID: tab.id)
+                            self.draggedTabID = nil
+                            return true
                         }
                     }
                 }
@@ -962,32 +1043,46 @@ struct BrowserView: View {
             showingAdBlockPopover.toggle()
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: browserState.isAdBlockerActive ? "shield.checkered" : "shield.slash")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(browserState.isAdBlockerActive ? Color.green : Palette.muted)
+                if browserState.isCurrentDomainWhitelisted {
+                    Image(systemName: "shield.slash.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.orange)
 
-                Text(browserState.isAdBlockerActive ? "AdBlock" : "Off")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(browserState.isAdBlockerActive ? Color.green : Palette.muted)
+                    Text("Paused")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                } else {
+                    Image(systemName: browserState.isAdBlockerActive ? "shield.checkered" : "shield.slash")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(browserState.isAdBlockerActive ? Color.green : Palette.muted)
 
-                if browserState.isAdBlockerActive && browserState.blockedAdsCount > 0 {
-                    Text("\(browserState.blockedAdsCount)")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4.5)
-                        .padding(.vertical, 1)
-                        .background(Color.green.opacity(0.85), in: Capsule())
+                    Text(browserState.isAdBlockerActive ? "AdBlock" : "Off")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(browserState.isAdBlockerActive ? Color.green : Palette.muted)
+
+                    if browserState.isAdBlockerActive && browserState.blockedAdsCount > 0 {
+                        Text("\(browserState.blockedAdsCount)")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1)
+                            .background(Color.green.opacity(0.85), in: Capsule())
+                    }
                 }
             }
             .padding(.horizontal, 10)
             .frame(height: 32)
             .background(
-                browserState.isAdBlockerActive ? Color.green.opacity(0.12) : Palette.card.opacity(0.5),
+                browserState.isCurrentDomainWhitelisted
+                    ? Color.orange.opacity(0.12)
+                    : (browserState.isAdBlockerActive ? Color.green.opacity(0.12) : Palette.card.opacity(0.5)),
                 in: Capsule()
             )
             .overlay(
                 Capsule().stroke(
-                    browserState.isAdBlockerActive ? Color.green.opacity(0.3) : Palette.border,
+                    browserState.isCurrentDomainWhitelisted
+                        ? Color.orange.opacity(0.3)
+                        : (browserState.isAdBlockerActive ? Color.green.opacity(0.3) : Palette.border),
                     lineWidth: 1
                 )
             )
@@ -1003,14 +1098,14 @@ struct BrowserView: View {
     private var adBlockerPopoverContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Image(systemName: "shield.fill")
+                Image(systemName: browserState.isCurrentDomainWhitelisted ? "shield.slash.fill" : "shield.fill")
                     .font(.system(size: 20))
-                    .foregroundStyle(browserState.isAdBlockerActive ? Color.green : Palette.muted)
+                    .foregroundStyle(browserState.isCurrentDomainWhitelisted ? Color.orange : (browserState.isAdBlockerActive ? Color.green : Palette.muted))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("PINGGO AdBlocker Shield")
                         .font(.system(size: 13, weight: .bold))
-                    Text(browserState.isAdBlockerActive ? "Actively blocking third-party ads & trackers" : "Protection paused")
+                    Text(browserState.isCurrentDomainWhitelisted ? "Domain Whitelisted" : (browserState.isAdBlockerActive ? "Actively blocking third-party ads & trackers" : "Protection paused"))
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.muted)
                 }
@@ -1023,6 +1118,34 @@ struct BrowserView: View {
                 ))
                 .toggleStyle(.switch)
                 .labelsHidden()
+            }
+
+            // Per-site Whitelisting Section
+            if let host = browserState.currentHost, !host.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(host)
+                                .font(.system(size: 11.5, weight: .bold))
+                                .lineLimit(1)
+                            Text(browserState.isCurrentDomainWhitelisted ? "AdBlock paused for this site" : "AdBlock active for this site")
+                                .font(.system(size: 10))
+                                .foregroundStyle(browserState.isCurrentDomainWhitelisted ? Color.orange : Color.green)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { browserState.isCurrentDomainWhitelisted },
+                            set: { _ in browserState.toggleWhitelistCurrentDomain() }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    }
+                    Text("Whitelist site to support creators or if a website is broken.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(10)
+                .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
             }
 
             Divider()

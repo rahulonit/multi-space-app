@@ -74,6 +74,12 @@ namespace PINGGO
             }
         }
 
+        public void BringToFront()
+        {
+            _appWindow?.Show();
+            this.Activate();
+        }
+
         private void UpdateContentVisibility()
         {
             HomeViewHost.Visibility = Visibility.Collapsed;

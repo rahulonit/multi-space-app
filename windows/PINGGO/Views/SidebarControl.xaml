@@ -24,27 +24,31 @@
             <ItemsRepeater x:Name="PlatformItemsRepeater" ItemsSource="{x:Bind ViewModel.Platforms}">
                 <ItemsRepeater.ItemTemplate>
                     <DataTemplate x:DataType="models:SocialPlatform">
-                        <Grid Margin="8,2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="32" />
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Click="OnPlatformItemClicked" Tag="{x:Bind Id}"
-                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                    Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="10,8">
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <Border Width="28" Height="28" CornerRadius="6" Background="{StaticResource AppCardBrush}">
-                                        <FontIcon Glyph="&#xE774;" FontSize="13" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                    <TextBlock Text="{x:Bind Name}" FontSize="13" FontWeight="Medium" VerticalAlignment="Center" Foreground="White" TextWrapping="NoWrap" />
-                                </StackPanel>
-                            </Button>
-                            <Button Grid.Column="1" Click="OnAccountMenuClicked" Tag="{x:Bind Id}"
-                                    Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
-                                    VerticalAlignment="Center" ToolTipService.ToolTip="Account options">
-                                <FontIcon Glyph="&#xE712;" FontSize="11" />
-                            </Button>
-                        </Grid>
+                        <StackPanel Margin="8,2" Loaded="OnPlatformRowLoaded" Tag="{x:Bind Id}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="32" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Click="OnPlatformItemClicked" Tag="{x:Bind Id}"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                        Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="10,8">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Width="28" Height="28" CornerRadius="6" Background="{StaticResource AppCardBrush}">
+                                            <FontIcon Glyph="&#xE774;" FontSize="13" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{x:Bind Name}" FontSize="13" FontWeight="Medium" VerticalAlignment="Center" Foreground="White" TextWrapping="NoWrap" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="1" Click="OnAccountMenuClicked" Tag="{x:Bind Id}"
+                                        Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                        VerticalAlignment="Center" ToolTipService.ToolTip="Account options">
+                                    <FontIcon Glyph="&#xE712;" FontSize="11" />
+                                </Button>
+                            </Grid>
+                            <!-- Mini Multi-Account Switching Chips -->
+                            <StackPanel x:Name="AccountChipsPanel" Orientation="Horizontal" Spacing="4" Margin="38,0,8,6" Visibility="Collapsed" />
+                        </StackPanel>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>
             </ItemsRepeater>

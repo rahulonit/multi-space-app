@@ -14,8 +14,30 @@
             <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="AI CO-PILOT DIRECT API INTEGRATION" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
-                        <TextBlock Text="Keys are stored locally in %AppData%\PINGGO\data.json and sent directly to endpoints." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="AI CO-PILOT DIRECT API &amp; LOCAL INFERENCE" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Configure cloud LLM APIs or run privacy-first local models via Ollama. Preferences stored locally." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                    </StackPanel>
+
+                    <!-- Active AI Engine -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Active AI Engine:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <ComboBox x:Name="AiEngineCombo" SelectionChanged="OnAiEngineChanged" Width="280" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}">
+                            <ComboBoxItem Content="Google Gemini" Tag="gemini" />
+                            <ComboBoxItem Content="OpenAI ChatGPT" Tag="chatgpt" />
+                            <ComboBoxItem Content="Local LLM (Ollama)" Tag="ollama" />
+                            <ComboBoxItem Content="Smart Engine (Built-in)" Tag="smart" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- Persona Writing Style -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Personal Persona Style:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <ComboBox x:Name="PersonaStyleCombo" SelectionChanged="OnPersonaStyleChanged" Width="280" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}">
+                            <ComboBoxItem Content="Direct &amp; Crisp" />
+                            <ComboBoxItem Content="Casual &amp; Warm" />
+                            <ComboBoxItem Content="Executive &amp; Formal" />
+                            <ComboBoxItem Content="Technical &amp; Precise" />
+                        </ComboBox>
                     </StackPanel>
 
                     <!-- Google Gemini API Key -->
@@ -44,6 +66,23 @@
                             <PasswordBox x:Name="OpenAiKeyBox" Grid.Column="0" PlaceholderText="sk-..." Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" />
                             <Button Grid.Column="1" Click="OnTestOpenAiClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,6" Margin="10,0,0,0">
                                 <TextBlock Text="Test Key" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Ollama Local LLM -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Ollama Local LLM (Offline / Privacy-First):" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="OllamaEndpointBox" Grid.Column="0" PlaceholderText="http://localhost:11434" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" />
+                            <TextBox x:Name="OllamaModelBox" Grid.Column="1" PlaceholderText="llama3.2" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" CornerRadius="8" Margin="8,0,0,0" />
+                            <Button Grid.Column="2" Click="OnTestOllamaClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,6" Margin="8,0,0,0">
+                                <TextBlock Text="Test Server" FontSize="12" FontWeight="SemiBold" Foreground="White" />
                             </Button>
                         </Grid>
                     </StackPanel>

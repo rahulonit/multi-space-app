@@ -30,15 +30,15 @@
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate x:DataType="models:BrowserTabItem">
-                            <Border Background="{StaticResource AppCardBrush}" CornerRadius="8" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="10,4">
+                            <Button Click="OnTabSelected" Tag="{x:Bind Id}" Background="{StaticResource AppCardBrush}" CornerRadius="8" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="8,4">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <FontIcon Glyph="&#xE774;" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                                    <Image Source="{x:Bind FaviconUrl}" Width="14" Height="14" />
                                     <TextBlock Text="{x:Bind Title}" FontSize="11" FontWeight="Medium" Foreground="White" MaxWidth="130" TextTrimming="CharacterEllipsis" />
                                     <Button Click="OnCloseTabClicked" Tag="{x:Bind Id}" Background="Transparent" BorderThickness="0" Padding="2" Width="18" Height="18" ToolTipService.ToolTip="Close Tab">
                                         <FontIcon Glyph="&#xE711;" FontSize="9" Foreground="{StaticResource AppTextMutedBrush}" />
                                     </Button>
                                 </StackPanel>
-                            </Border>
+                            </Button>
                         </DataTemplate>
                     </ItemsRepeater.ItemTemplate>
                 </ItemsRepeater>
@@ -78,10 +78,10 @@
 
             <!-- Smart Omnibar (Centered) -->
             <Grid Grid.Column="1" Margin="14,0" Height="36" VerticalAlignment="Center">
-                <TextBox x:Name="OmnibarBox" PlaceholderText="Search or enter web address..."
-                         Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}"
-                         CornerRadius="10" Padding="32,6,70,6" KeyDown="OnOmnibarKeyDown" />
-                <FontIcon Glyph="&#xE72E;" FontSize="11" Foreground="{StaticResource AppSuccessBrush}" HorizontalAlignment="Left" Margin="10,0,0,0" VerticalAlignment="Center" />
+                <Border Background="{StaticResource AppBackgroundBrush}" CornerRadius="8" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" />
+                <TextBox x:Name="OmnibarBox" PlaceholderText="Search with DuckDuckGo or enter URL…"
+                         Background="Transparent" BorderThickness="0" Padding="12,7" FontSize="13" Foreground="White"
+                         KeyDown="OnOmnibarKeyDown" VerticalAlignment="Center" />
 
                 <!-- Star Bookmark & Reader Mode icons on right inside Omnibar -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4" Margin="0,0,8,0" VerticalAlignment="Center">
@@ -94,9 +94,35 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Right Controls: AdBlocker Status Pill -->
+            <!-- Right Controls: AdBlocker Status Pill with Whitelisting Flyout -->
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Button Click="OnAdBlockShieldClicked" Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1" CornerRadius="16" Padding="10,5">
+                <Button Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1" CornerRadius="16" Padding="10,5">
+                    <Button.Flyout>
+                        <Flyout Placement="Bottom">
+                            <StackPanel Width="280" Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE72E;" FontSize="18" Foreground="{StaticResource AppSuccessBrush}" />
+                                    <StackPanel>
+                                        <TextBlock Text="PINGGO AdBlock Shield" FontSize="13" FontWeight="Bold" Foreground="White" />
+                                        <TextBlock Text="Local request &amp; cosmetic filtering" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10">
+                                    <StackPanel Spacing="6">
+                                        <Grid>
+                                            <TextBlock Text="Current Site" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                            <TextBlock x:Name="CurrentHostText" HorizontalAlignment="Right" Text="{x:Bind ViewModel.CurrentHost, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                                        </Grid>
+                                        <ToggleSwitch x:Name="WhitelistSwitch" Header="Pause AdBlock on this site" IsOn="{x:Bind ViewModel.IsCurrentDomainWhitelisted, Mode=TwoWay}" Toggled="OnWhitelistToggled" FontSize="11" />
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Blocked items:" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    <TextBlock Text="{x:Bind ViewModel.BlockedAdsCount, Mode=OneWay}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE72E;" FontSize="11" Foreground="{StaticResource AppSuccessBrush}" />
                         <TextBlock Text="AdBlock" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />

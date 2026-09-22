@@ -62,6 +62,14 @@
                     <FontIcon x:Name="MuteIcon" Glyph="&#xE767;" FontSize="12" />
                 </Button>
 
+                <!-- AI Co-Pilot Toggle Button -->
+                <Button x:Name="CopilotToggleBtn" Click="OnToggleCopilotDrawer" Background="#1A3B82F6" BorderBrush="#4D3B82F6" BorderThickness="1" CornerRadius="12" Padding="8,3" ToolTipService.ToolTip="AI Chat Co-Pilot">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <FontIcon Glyph="&#xE728;" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Co-Pilot" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                    </StackPanel>
+                </Button>
+
                 <!-- Split View Button -->
                 <Button Click="OnSplitViewClicked" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Toggle Split View">
                     <FontIcon Glyph="&#xE78A;" FontSize="12" />
@@ -76,7 +84,208 @@
 
         <Border Grid.Row="1" Background="{StaticResource AppBorderBrush}" />
 
-        <!-- WebView2 Control -->
-        <Grid x:Name="WebViewHost" Grid.Row="2" />
+        <!-- WebView2 Canvas & Slide-over AI Drawer -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- WebView2 Control Host -->
+            <Grid x:Name="WebViewHost" Grid.Column="0" />
+
+            <!-- AI Co-Pilot Slide-Over Drawer (330px) -->
+            <Border x:Name="CopilotDrawer" Grid.Column="1" Width="330" Visibility="Collapsed"
+                    Background="{StaticResource AppPanelBrush}"
+                    BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <!-- Header (48px) -->
+                        <RowDefinition Height="48" />
+                        <RowDefinition Height="1" />
+                        <!-- Content -->
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Drawer Header -->
+                    <Grid Grid.Row="0" Padding="14,0">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <FontIcon Glyph="&#xE728;" FontSize="13" Foreground="{StaticResource AppAccentBrush}" />
+                            <TextBlock Text="Co-Pilot" FontSize="14" FontWeight="Bold" Foreground="White" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <!-- Provider Badge -->
+                            <Border Background="{StaticResource AppCardBrush}" CornerRadius="10" Padding="7,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Ellipse x:Name="ProviderIndicatorDot" Width="6" Height="6" Fill="{StaticResource AppSuccessBrush}" />
+                                    <TextBlock x:Name="ProviderBadgeText" Text="Smart Engine" FontSize="10" FontWeight="Medium" Foreground="{StaticResource AppTextMutedBrush}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Button Click="OnCloseCopilotDrawer" Style="{StaticResource IconButtonStyle}" Width="26" Height="26">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="{StaticResource AppBorderBrush}" />
+
+                    <!-- Drawer Scrollable Body -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="14">
+                        <StackPanel Spacing="14">
+                            <!-- 1. Active Thread Context & Sentiment Card -->
+                            <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <Grid>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="ACTIVE CHAT" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                            <TextBlock x:Name="CopilotContactName" Text="WhatsApp" FontSize="14" FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Border x:Name="UrgencyBadge" HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="10" Padding="8,3" Background="#263B82F6">
+                                            <TextBlock x:Name="UrgencyBadgeText" Text="💬 Normal" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Sentiment Gauge Bar -->
+                                    <StackPanel Spacing="4">
+                                        <Grid>
+                                            <TextBlock x:Name="SentimentClassificationText" Text="Sentiment: Neutral" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                                            <TextBlock x:Name="SentimentScoreText" Text="+0.0" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <ProgressBar x:Name="SentimentGauge" Value="50" Maximum="100" Height="5" CornerRadius="2.5" Foreground="{StaticResource AppAccentBrush}" Background="{StaticResource AppPanelBrush}" />
+                                    </StackPanel>
+
+                                    <!-- Latest Incoming Message Snippet -->
+                                    <Border x:Name="LatestMessageSnippetContainer" Background="{StaticResource AppPanelBrush}" CornerRadius="6" Padding="8" Visibility="Collapsed">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Latest message:" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                            <TextBlock x:Name="LatestMessageSnippetText" Text="" FontSize="11.5" Foreground="White" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 2. Smart Reply Tone Pills (6 Tones) -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="SMART REPLIES" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="8" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Row="0" Grid.Column="0" Click="OnSmartToneClicked" Tag="Professional" HorizontalAlignment="Stretch" Margin="0,0,0,6" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE821;" FontSize="11" />
+                                            <TextBlock Text="Professional" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Row="0" Grid.Column="2" Click="OnSmartToneClicked" Tag="Friendly" HorizontalAlignment="Stretch" Margin="0,0,0,6" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE899;" FontSize="11" />
+                                            <TextBlock Text="Friendly" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Row="1" Grid.Column="0" Click="OnSmartToneClicked" Tag="Concise" HorizontalAlignment="Stretch" Margin="0,0,0,6" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE7C1;" FontSize="11" />
+                                            <TextBlock Text="Concise" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Row="1" Grid.Column="2" Click="OnSmartToneClicked" Tag="Casual" HorizontalAlignment="Stretch" Margin="0,0,0,6" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE734;" FontSize="11" />
+                                            <TextBlock Text="Casual" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Row="2" Grid.Column="0" Click="OnSmartToneClicked" Tag="Decline" HorizontalAlignment="Stretch" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE711;" FontSize="11" />
+                                            <TextBlock Text="Decline" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Row="2" Grid.Column="2" Click="OnSmartToneClicked" Tag="Propose Time" HorizontalAlignment="Stretch" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE787;" FontSize="11" />
+                                            <TextBlock Text="Propose Time" FontSize="11" FontWeight="Medium" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- 2.5 Multi-turn Dialogue Memory -->
+                            <Border x:Name="CopilotHistoryContainer" Background="#1A3B82F6" BorderBrush="#333B82F6" BorderThickness="1" CornerRadius="8" Padding="10" Visibility="Collapsed">
+                                <StackPanel Spacing="8">
+                                    <Grid>
+                                        <TextBlock x:Name="CopilotHistoryHeader" Text="CONVERSATION MEMORY" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                        <Button Click="OnResetCopilotHistory" Style="{StaticResource IconButtonStyle}" Width="22" Height="22" HorizontalAlignment="Right" ToolTipService.ToolTip="Reset conversation memory">
+                                            <FontIcon Glyph="&#xE72C;" FontSize="10" />
+                                        </Button>
+                                    </Grid>
+                                    <StackPanel x:Name="CopilotHistoryList" Spacing="6" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 3. Generated Reply Draft & Action Controls -->
+                            <StackPanel x:Name="DraftCard" Spacing="8" Visibility="Collapsed">
+                                <Grid>
+                                    <TextBlock x:Name="DraftToneHeader" Text="REPLY DRAFT" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    <ProgressRing x:Name="DraftGeneratingRing" IsActive="False" Width="14" Height="14" HorizontalAlignment="Right" />
+                                </Grid>
+
+                                <TextBox x:Name="DraftContentBox" TextWrapping="Wrap" AcceptsReturn="True" IsReadOnly="False" FontSize="12" MinHeight="70" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10" />
+
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="InsertIntoChatBtn" Click="OnInsertDraftIntoChat" Background="{StaticResource AppAccentBrush}" CornerRadius="6" Padding="10,6">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon x:Name="InsertBtnIcon" Glyph="&#xE896;" FontSize="11" Foreground="White" />
+                                                <TextBlock x:Name="InsertBtnText" Text="Insert into Chat" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button x:Name="CopyDraftBtn" Click="OnCopyDraft" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon x:Name="CopyBtnIcon" Glyph="&#xE8C8;" FontSize="11" />
+                                                <TextBlock x:Name="CopyBtnText" Text="Copy" FontSize="11" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <Button Click="OnRegenerateDraft" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" HorizontalAlignment="Right" ToolTipService.ToolTip="Regenerate">
+                                        <FontIcon Glyph="&#xE72C;" FontSize="11" />
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- 4. Ask Co-Pilot (Custom Prompt) -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="ASK CO-PILOT" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="8" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="CustomPromptBox" Grid.Column="0" PlaceholderText="Ask Co-Pilot about this chat..." KeyDown="OnCustomPromptKeyDown" FontSize="11.5" CornerRadius="6" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="10,6" />
+                                    <Button x:Name="SendCustomPromptBtn" Grid.Column="2" Click="OnSendCustomPrompt" Background="{StaticResource AppAccentBrush}" CornerRadius="6" Width="32" Height="32" Padding="0">
+                                        <FontIcon Glyph="&#xE724;" FontSize="12" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

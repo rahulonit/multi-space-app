@@ -611,6 +611,20 @@ struct SettingsView: View {
                     Picker("Active Engine", selection: $store.preferences.aiProvider) {
                         Text("Google Gemini").tag("gemini")
                         Text("OpenAI ChatGPT").tag("chatgpt")
+                        Text("Local LLM (Ollama)").tag("ollama")
+                        Text("Smart Engine (Built-in)").tag("smart")
+                    }
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+
+                Divider()
+
+                settingsRow("Personal Persona Style", "Steer the default tone, verbosity, and personality across all Co-Pilot interactions.") {
+                    Picker("Persona Style", selection: $store.preferences.personaStyle) {
+                        ForEach(PersonaStyle.allCases) { style in
+                            Text(style.rawValue).tag(style.rawValue)
+                        }
                     }
                     .labelsHidden()
                     .frame(width: 190)
@@ -796,6 +810,46 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(store.preferences.openAiApiKey.isEmpty || testingAiConnection)
+                    }
+                }
+
+                Divider()
+
+                // Ollama Local LLM (Offline / Privacy-First)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "cpu.fill")
+                            .foregroundStyle(.purple)
+                        Text("Ollama Local LLM (Offline / Privacy-First)")
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Spacer()
+                        TextField("llama3.2", text: $store.preferences.ollamaModel)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 140)
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField("http://localhost:11434", text: $store.preferences.ollamaEndpoint)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+
+                        Button("Test Local Server") {
+                            testingAiConnection = true
+                            aiTestResult = nil
+                            Task {
+                                let res = await AIService.shared.testAPIConnection(
+                                    provider: "ollama",
+                                    apiKey: store.preferences.ollamaEndpoint,
+                                    model: store.preferences.ollamaModel
+                                )
+                                testingAiConnection = false
+                                aiTestResult = res
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(testingAiConnection)
                     }
                 }
 

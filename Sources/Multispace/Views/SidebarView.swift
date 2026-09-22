@@ -250,6 +250,38 @@ struct SidebarView: View {
                     store.removePlatform(platform.id)
                 }
             }
+
+            if !compact && accounts.count > 1 {
+                HStack(spacing: 5) {
+                    ForEach(accounts) { acc in
+                        let isCurrent = acc.id == active?.id
+                        Button {
+                            store.selectAccount(acc.id)
+                            store.destination = .platform(platform.id)
+                        } label: {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(isCurrent ? Palette.accent : Palette.muted.opacity(0.4))
+                                    .frame(width: 5, height: 5)
+                                Text(acc.name)
+                                    .font(.system(size: 9.5, weight: isCurrent ? .bold : .medium))
+                                    .foregroundStyle(isCurrent ? Palette.accent : Palette.muted)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(isCurrent ? Palette.accent.opacity(0.12) : Palette.hover, in: Capsule())
+                            .overlay(Capsule().stroke(isCurrent ? Palette.accent.opacity(0.4) : Color.clear, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Switch to \(acc.name)")
+                    }
+                    Spacer()
+                }
+                .padding(.leading, 32)
+                .padding(.top, 1)
+                .padding(.bottom, 2)
+            }
             if !compact && accounts.count > 1 {
                 ForEach(accounts) { account in
                     HStack(spacing: 4) {

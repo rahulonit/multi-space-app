@@ -59,4 +59,34 @@ namespace PINGGO.Models
         public string Classification { get; set; } = "Neutral";
         public string DetectedLanguage { get; set; } = "English";
     }
+
+    public class ActiveChatMessage
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Sender { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public bool IsFromMe { get; set; }
+        public string? Time { get; set; }
+    }
+
+    public class ActiveThreadContext
+    {
+        public string ContactName { get; set; } = string.Empty;
+        public string PlatformId { get; set; } = string.Empty;
+        public List<ActiveChatMessage> Messages { get; set; } = new();
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        public string ContextSnippet =>
+            Messages.Count == 0
+                ? (string.IsNullOrEmpty(ContactName) ? "" : $"Active conversation with {ContactName}.")
+                : $"Conversation with {ContactName}:\n" + string.Join("\n", Messages.ConvertAll(m => $"{(m.IsFromMe ? "You" : m.Sender)}: {m.Text}"));
+    }
+
+    public class CopilotMessage
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Role { get; set; } = "user"; // "user" or "assistant"
+        public string Content { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    }
 }

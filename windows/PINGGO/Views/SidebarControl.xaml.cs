@@ -17,6 +17,80 @@ namespace PINGGO.Views
             this.InitializeComponent();
         }
 
+        private void OnPlatformRowLoaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is StackPanel sp && sp.Tag is string platformId)
+            {
+                RenderAccountChips(sp, platformId);
+            }
+        }
+
+        private void RenderAccountChips(StackPanel parentRow, string platformId)
+        {
+            var chipsPanel = parentRow.FindName("AccountChipsPanel") as StackPanel;
+            if (chipsPanel == null) return;
+
+            chipsPanel.Children.Clear();
+            var accounts = ViewModel.GetAccounts(platformId);
+            if (accounts.Count <= 1)
+            {
+                chipsPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            chipsPanel.Visibility = Visibility.Visible;
+            var selected = ViewModel.GetSelectedAccount(platformId);
+
+            foreach (var acc in accounts)
+            {
+                bool isCurrent = acc.Id == selected?.Id;
+                var chipBtn = new Button
+                {
+                    Background = isCurrent 
+                        ? (Application.Current.Resources["AppCardBrush"] as Microsoft.UI.Xaml.Media.Brush)
+                        : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    BorderBrush = isCurrent
+                        ? (Application.Current.Resources["AppAccentBrush"] as Microsoft.UI.Xaml.Media.Brush)
+                        : (Application.Current.Resources["AppBorderBrush"] as Microsoft.UI.Xaml.Media.Brush),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    Margin = new Thickness(0, 0, 4, 0),
+                    Tag = acc.Id
+                };
+
+                var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+                {
+                    Width = 6,
+                    Height = 6,
+                    Fill = isCurrent
+                        ? (Application.Current.Resources["AppAccentBrush"] as Microsoft.UI.Xaml.Media.Brush)
+                        : (Application.Current.Resources["AppTextMutedBrush"] as Microsoft.UI.Xaml.Media.Brush)
+                };
+                var tb = new TextBlock
+                {
+                    Text = acc.AccountName,
+                    FontSize = 10,
+                    FontWeight = isCurrent ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                    Foreground = isCurrent 
+                        ? new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White)
+                        : (Application.Current.Resources["AppTextMutedBrush"] as Microsoft.UI.Xaml.Media.Brush)
+                };
+                sp.Children.Add(dot);
+                sp.Children.Add(tb);
+                chipBtn.Content = sp;
+
+                chipBtn.Click += (_, _) =>
+                {
+                    ViewModel.SelectAccount(acc.Id);
+                    RenderAccountChips(parentRow, platformId);
+                };
+
+                chipsPanel.Children.Add(chipBtn);
+            }
+        }
+
         private void OnPlatformItemClicked(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string platformId)

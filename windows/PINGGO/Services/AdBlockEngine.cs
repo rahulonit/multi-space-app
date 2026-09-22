@@ -93,12 +93,23 @@ namespace PINGGO.Services
             return false;
         }
 
+        public static Func<string, bool>? IsDomainWhitelisted { get; set; }
+
         public static void AttachToWebView(CoreWebView2 webView, Action<int>? onAdBlocked = null)
         {
             webView.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
 
             webView.WebResourceRequested += (s, e) =>
             {
+                var docUri = webView.Source;
+                if (!string.IsNullOrEmpty(docUri) && Uri.TryCreate(docUri, UriKind.Absolute, out var topUri))
+                {
+                    if (IsDomainWhitelisted?.Invoke(topUri.Host) == true)
+                    {
+                        return; // Whitelisted site: allow all resources
+                    }
+                }
+
                 if (Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri))
                 {
                     if (ShouldBlock(uri))
@@ -114,6 +125,15 @@ namespace PINGGO.Services
             {
                 if (e.IsSuccess)
                 {
+                    var docUri = webView.Source;
+                    if (!string.IsNullOrEmpty(docUri) && Uri.TryCreate(docUri, UriKind.Absolute, out var topUri))
+                    {
+                        if (IsDomainWhitelisted?.Invoke(topUri.Host) == true)
+                        {
+                            return; // Whitelisted site: skip hiding cosmetic ads
+                        }
+                    }
+
                     // Inject cosmetic CSS
                     var cssScript = $"const style = document.createElement('style'); style.textContent = `{CosmeticCss}`; document.head.appendChild(style);";
                     await webView.ExecuteScriptAsync(cssScript);

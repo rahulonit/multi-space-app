@@ -29,6 +29,7 @@ final class AppStore: ObservableObject {
 
     @Published var editingPlatform: SocialPlatform?
     @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
+    @Published var activeThreadContexts: [UUID: ActiveThreadContext] = [:]
     @Published var platformSummaries: [String: PlatformConversationSummary] = [:]
     @Published var isSplitView: Bool = false
     @Published var splitDestination: AppDestination? = nil
@@ -239,6 +240,10 @@ final class AppStore: ObservableObject {
         return accounts(for: account.platformID).count > 1
     }
 
+    func activeThreadContext(for accountID: UUID) -> ActiveThreadContext? {
+        activeThreadContexts[accountID]
+    }
+
     func removeAccount(_ id: UUID) {
         guard let account = account(id), canRemoveAccount(id) else { return }
         PortalSessionRegistry.shared.forget(account, platform: platform(account.platformID))
@@ -318,8 +323,16 @@ final class AppStore: ObservableObject {
         UserDefaults.standard.set(try? JSONEncoder().encode(socialPlatforms), forKey: "socialPlatforms")
     }
 
-    func updatePlatformActivity(accountID: UUID, title: String, messages: [[String: String]], notifications: [String], rawNotifications: [[String: String]] = []) {
-        guard account(accountID) != nil else { return }
+    func updatePlatformActivity(
+        accountID: UUID,
+        title: String,
+        messages: [[String: String]],
+        notifications: [String],
+        rawNotifications: [[String: String]] = [],
+        activeContact: String? = nil,
+        activeThreadMessages: [[String: Any]] = []
+    ) {
+        guard let acc = account(accountID) else { return }
         let unread: Int? = {
             guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
             return Int(title[title.index(after: title.startIndex)..<end])
@@ -360,6 +373,32 @@ final class AppStore: ObservableObject {
                 linkURL: itemLink.isEmpty ? nil : itemLink,
                 category: itemCat.isEmpty ? "general" : itemCat
             )
+        }
+
+        // Process Active Conversation Thread if present
+        let cleanContact = (activeContact ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanContact.isEmpty || !activeThreadMessages.isEmpty {
+            let threadMsgs: [ActiveChatMessage] = activeThreadMessages.prefix(15).enumerated().compactMap { idx, dict in
+                let sender = (dict["sender"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = (dict["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let isFromMe = (dict["isFromMe"] as? Bool) ?? (sender.lowercased() == "you" || sender.lowercased() == "me")
+                let time = (dict["time"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+                return ActiveChatMessage(
+                    id: "\(accountID)-thread-\(idx)-\(sender)",
+                    sender: sender.isEmpty ? (isFromMe ? "You" : cleanContact) : sender,
+                    text: text,
+                    isFromMe: isFromMe,
+                    time: (time?.isEmpty == false) ? time : nil
+                )
+            }
+            let ctx = ActiveThreadContext(
+                contactName: cleanContact.isEmpty ? (threadMsgs.first(where: { !$0.isFromMe })?.sender ?? "Current Chat") : cleanContact,
+                platformID: acc.platformID,
+                messages: threadMsgs,
+                updatedAt: .now
+            )
+            activeThreadContexts[accountID] = ctx
         }
 
         let next = PlatformActivitySnapshot(

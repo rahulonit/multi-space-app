@@ -43,6 +43,27 @@
                         <TextBlock Text="Select a reply draft to copy or inject into your active chat thread:" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
                     </StackPanel>
 
+                    <!-- Priority Triage Filter Pills -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="FilterAllBtn" Click="OnTriageFilterClicked" Tag="All" Background="#263B82F6" BorderBrush="#4D3B82F6" BorderThickness="1" CornerRadius="12" Padding="10,4">
+                                <TextBlock Text="All Items" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                            </Button>
+                            <Button x:Name="FilterUrgentBtn" Click="OnTriageFilterClicked" Tag="Urgent" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
+                                <TextBlock Text="🚨 Urgent" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppDangerBrush}" />
+                            </Button>
+                            <Button x:Name="FilterMeetingsBtn" Click="OnTriageFilterClicked" Tag="Meetings" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
+                                <TextBlock Text="📅 Meetings" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                            <Button x:Name="FilterQuestionsBtn" Click="OnTriageFilterClicked" Tag="Questions" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
+                                <TextBlock Text="❓ Questions" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                            <Button x:Name="FilterReviewsBtn" Click="OnTriageFilterClicked" Tag="Reviews" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
+                                <TextBlock Text="📝 Reviews" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+
                     <ItemsRepeater x:Name="RepliesRepeater">
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:SmartReplyOption">

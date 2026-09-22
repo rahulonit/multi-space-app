@@ -52,6 +52,8 @@ namespace PINGGO.Views
             var env = await CoreWebView2Environment.CreateAsync(null, browserProfilePath);
             await BrowserWebView.EnsureCoreWebView2Async(env);
 
+            AdBlockEngine.IsDomainWhitelisted = (domain) => ViewModel.WhitelistedDomains.Contains(domain);
+
             AdBlockEngine.AttachToWebView(BrowserWebView.CoreWebView2, (count) =>
             {
                 App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
@@ -74,7 +76,9 @@ namespace PINGGO.Views
                     {
                         ViewModel.ActiveTab.UrlString = uri.AbsoluteUri;
                         ViewModel.ActiveTab.Title = uri.Host;
+                        ViewModel.ActiveTab.FaviconUrl = $"https://www.google.com/s2/favicons?domain={uri.Host}&sz=64";
                     }
+                    ViewModel.UpdateCurrentWhitelistedState();
                     ViewModel.SaveSession();
                 }
             };
@@ -92,6 +96,19 @@ namespace PINGGO.Views
             var hasUrl = !string.IsNullOrWhiteSpace(ViewModel.UrlInput);
             StartPageScrollViewer.Visibility = hasUrl ? Visibility.Collapsed : Visibility.Visible;
             BrowserWebView.Visibility = hasUrl ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void OnTabSelected(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is Guid id)
+            {
+                ViewModel.SelectTab(id);
+            }
+        }
+
+        private void OnWhitelistToggled(object sender, RoutedEventArgs e)
+        {
+            ViewModel.ToggleWhitelistCurrentDomain();
         }
 
         private void OnNewTabClicked(object sender, RoutedEventArgs e) => ViewModel.AddNewTab();

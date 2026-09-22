@@ -46,6 +46,13 @@ namespace PINGGO.Views
             _allCommands.Add(new PaletteCommand { Title = "Swap Split Panes (⇄)", Category = "Actions", Action = () => vm.SwapSplitPanes() });
             _allCommands.Add(new PaletteCommand { Title = "Lock PINGGO Now", Category = "Security", Action = () => SecurityService.Shared.LockApp() });
 
+            // AI Assistant Controls
+            _allCommands.Add(new PaletteCommand { Title = "Use Google Gemini for Smart Replies", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "gemini"; vm.ShowToast("Active AI set to Google Gemini"); } });
+            _allCommands.Add(new PaletteCommand { Title = "Use OpenAI ChatGPT for Smart Replies", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "chatgpt"; vm.ShowToast("Active AI set to OpenAI ChatGPT"); } });
+            _allCommands.Add(new PaletteCommand { Title = $"Use Local Ollama ({vm.Preferences.OllamaModel})", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "ollama"; vm.ShowToast($"Active AI set to Local Ollama ({vm.Preferences.OllamaModel})"); } });
+            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Executive & Professional", Category = "AI Assistant", Action = () => { vm.Preferences.PersonaStyle = "Professional"; vm.ShowToast("AI Persona set to Professional"); } });
+            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Friendly & Casual", Category = "AI Assistant", Action = () => { vm.Preferences.PersonaStyle = "Casual"; vm.ShowToast("AI Persona set to Casual"); } });
+
             // Social platforms
             foreach (var p in vm.Platforms)
             {
@@ -54,6 +61,19 @@ namespace PINGGO.Views
                     Title = $"Switch to {p.Name}",
                     Category = "Workspaces",
                     Action = () => vm.SelectPlatform(p.Id)
+                });
+            }
+
+            // Accounts
+            foreach (var acc in vm.Accounts)
+            {
+                var plat = vm.Platforms.FirstOrDefault(p => p.Id == acc.PlatformID);
+                var platName = plat?.Name ?? acc.PlatformID;
+                _allCommands.Add(new PaletteCommand
+                {
+                    Title = $"Switch to {platName} · {acc.AccountName}",
+                    Category = "Accounts",
+                    Action = () => vm.SelectAccount(acc.Id)
                 });
             }
         }

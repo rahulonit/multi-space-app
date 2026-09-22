@@ -19,10 +19,69 @@ namespace PINGGO.Views
             var prefs = DataStoreService.Shared.CurrentData.Preferences;
             GeminiKeyBox.Password = prefs.GeminiApiKey;
             OpenAiKeyBox.Password = prefs.OpenAiApiKey;
+            OllamaEndpointBox.Text = string.IsNullOrEmpty(prefs.OllamaEndpoint) ? "http://localhost:11434" : prefs.OllamaEndpoint;
+            OllamaModelBox.Text = string.IsNullOrEmpty(prefs.OllamaModel) ? "llama3.2" : prefs.OllamaModel;
+
+            // Set AI Engine index
+            AiEngineCombo.SelectedIndex = prefs.AiProvider switch
+            {
+                "gemini" => 0,
+                "chatgpt" => 1,
+                "ollama" => 2,
+                _ => 3
+            };
+
+            // Set Persona style index
+            PersonaStyleCombo.SelectedIndex = prefs.PersonaStyle switch
+            {
+                "Casual & Warm" => 1,
+                "Executive & Formal" => 2,
+                "Technical & Precise" => 3,
+                _ => 0
+            };
+
             AppLockToggle.IsOn = prefs.AppLockEnabled;
             BlockAdsToggle.IsOn = prefs.AdBlockBlockAds;
             BlockTrackersToggle.IsOn = prefs.AdBlockBlockTrackers;
             BlockCookiesToggle.IsOn = prefs.AdBlockBlockCookieBanners;
+        }
+
+        private void OnAiEngineChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (AiEngineCombo.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            {
+                DataStoreService.Shared.CurrentData.Preferences.AiProvider = tag;
+                DataStoreService.Shared.Save();
+            }
+        }
+
+        private void OnPersonaStyleChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PersonaStyleCombo.SelectedItem is ComboBoxItem item && item.Content is string style)
+            {
+                DataStoreService.Shared.CurrentData.Preferences.PersonaStyle = style;
+                DataStoreService.Shared.Save();
+            }
+        }
+
+        private async void OnTestOllamaClicked(object sender, RoutedEventArgs e)
+        {
+            var endpoint = OllamaEndpointBox.Text.Trim();
+            var model = OllamaModelBox.Text.Trim();
+            AiStatusText.Visibility = Visibility.Visible;
+            AiStatusText.Text = "Testing Ollama local model server...";
+
+            var (ok, msg) = await AIService.Shared.TestConnectionAsync("ollama", endpoint, model);
+            AiStatusText.Text = msg;
+
+            if (ok)
+            {
+                var prefs = DataStoreService.Shared.CurrentData.Preferences;
+                prefs.OllamaEndpoint = endpoint;
+                prefs.OllamaModel = model;
+                DataStoreService.Shared.Save();
+                MainViewModel.Shared.ShowToast("Ollama configuration saved!");
+            }
         }
 
         private async void OnTestGeminiClicked(object sender, RoutedEventArgs e)

@@ -38,7 +38,7 @@ struct CommandPaletteView: View {
         })
 
         // AI Assistant
-        list.append(Item(id: "ai-settings", title: "AI Assistant & Stealth Mode", subtitle: "Manage Google Gemini & ChatGPT web accounts", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: nil) {
+        list.append(Item(id: "ai-settings", title: "AI Assistant & Stealth Mode", subtitle: "Manage Google Gemini, ChatGPT & Ollama settings", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: nil) {
             store.destination = .settings
         })
         list.append(Item(id: "ai-switch-gemini", title: "Use Google Gemini for Smart Replies", subtitle: "Set Gemini as primary active AI engine", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: store.preferences.aiProvider == "gemini" ? "Active" : nil) {
@@ -48,6 +48,18 @@ struct CommandPaletteView: View {
         list.append(Item(id: "ai-switch-chatgpt", title: "Use OpenAI ChatGPT for Smart Replies", subtitle: "Set ChatGPT as primary active AI engine", category: "AI Assistant", symbol: "bubble.left.and.bubble.right.fill", platform: nil, badge: store.preferences.aiProvider == "chatgpt" ? "Active" : nil) {
             store.preferences.aiProvider = "chatgpt"
             store.showToast("Active AI set to OpenAI ChatGPT")
+        })
+        list.append(Item(id: "ai-switch-ollama", title: "Use Local Ollama (Offline Private)", subtitle: "Run local model (\(store.preferences.ollamaModel)) with 0 data leakage", category: "AI Assistant", symbol: "cpu", platform: nil, badge: store.preferences.aiProvider == "ollama" ? "Active" : nil) {
+            store.preferences.aiProvider = "ollama"
+            store.showToast("Active AI set to Local Ollama (\(store.preferences.ollamaModel))")
+        })
+        list.append(Item(id: "ai-persona-prof", title: "Set AI Persona: Professional & Executive", subtitle: "Direct, polite, structured replies", category: "AI Assistant", symbol: "briefcase.fill", platform: nil, badge: store.preferences.personaStyle == "professional" ? "Active" : nil) {
+            store.preferences.personaStyle = "professional"
+            store.showToast("Persona set to Professional")
+        })
+        list.append(Item(id: "ai-persona-casual", title: "Set AI Persona: Friendly & Casual", subtitle: "Warm, natural conversation style", category: "AI Assistant", symbol: "face.smiling.fill", platform: nil, badge: store.preferences.personaStyle == "casual" ? "Active" : nil) {
+            store.preferences.personaStyle = "casual"
+            store.showToast("Persona set to Casual")
         })
 
         // Social Platforms
@@ -129,6 +141,26 @@ struct CommandPaletteView: View {
                         store.selectAccount(account.id)
                     })
                 }
+            }
+        }
+
+        // Active Contacts & Live Threads
+        for (accountID, threadCtx) in store.activeThreadContexts {
+            if let account = store.platformAccounts.first(where: { $0.id == accountID }),
+               let platform = store.platform(account.platformID),
+               !threadCtx.contactName.isEmpty {
+                let lastMsg = threadCtx.messages.last?.text ?? "Active chat conversation"
+                list.append(Item(
+                    id: "thread-\(accountID.uuidString)",
+                    title: "\(threadCtx.contactName) (\(platform.name))",
+                    subtitle: lastMsg,
+                    category: "Active Contacts",
+                    symbol: "person.crop.circle.fill",
+                    platform: platform,
+                    badge: "\(threadCtx.messages.count) msgs"
+                ) {
+                    store.selectAccount(accountID)
+                })
             }
         }
 

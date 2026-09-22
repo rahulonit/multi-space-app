@@ -170,6 +170,35 @@ struct PlatformActivitySnapshot: Codable, Equatable {
     }
 }
 
+struct ActiveChatMessage: Identifiable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var sender: String
+    var text: String
+    var isFromMe: Bool
+    var time: String? = nil
+}
+
+struct ActiveThreadContext: Hashable, Codable {
+    var contactName: String
+    var platformID: String
+    var messages: [ActiveChatMessage]
+    var updatedAt: Date = .now
+
+    var contextSnippet: String {
+        if messages.isEmpty {
+            return contactName.isEmpty ? "" : "Active conversation with \(contactName)."
+        }
+        let list = messages.map { "\($0.isFromMe ? "You" : $0.sender): \($0.text)" }.joined(separator: "\n")
+        return "Conversation with \(contactName):\n\(list)"
+    }
+}
+
+struct SentimentResult: Hashable, Codable {
+    var score: Double = 0.0
+    var classification: String = "Neutral / Professional"
+    var detectedLanguage: String = "English"
+}
+
 struct PlatformAccount: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var platformID: String
@@ -241,7 +270,7 @@ struct AppPreferences: Codable, Equatable {
 
     // MARK: - AI Assistant & Stealth Mode Preferences
     var aiEnabled: Bool = true
-    var aiProvider: String = "gemini" // "gemini" or "chatgpt"
+    var aiProvider: String = "gemini" // "gemini", "chatgpt", "ollama", "smart"
     var isGeminiLoggedIn: Bool = false
     var geminiAccountEmail: String = ""
     var isChatGptLoggedIn: Bool = false
@@ -249,6 +278,9 @@ struct AppPreferences: Codable, Equatable {
     var geminiApiKey: String = ""
     var openAiApiKey: String = ""
     var aiModelTier: String = "gemini-1.5-flash"
+    var ollamaEndpoint: String = "http://localhost:11434"
+    var ollamaModel: String = "llama3.2"
+    var personaStyle: String = "direct"
     var stealthModeDefault: Bool = true
     var defaultReplyTone: String = "Professional"
     var customAiPrompt: String = ""
@@ -263,7 +295,7 @@ struct AppPreferences: Codable, Equatable {
         case showWebsiteAlerts, appLockEnabled, autoLockMinutes, tabFreezingEnabled, tabFreezeMinutes
         case lockMethod, customPinHash, customPinSalt, customPinHint
         case aiEnabled, aiProvider, isGeminiLoggedIn, geminiAccountEmail, isChatGptLoggedIn, chatGptAccountEmail
-        case geminiApiKey, openAiApiKey, aiModelTier
+        case geminiApiKey, openAiApiKey, aiModelTier, ollamaEndpoint, ollamaModel, personaStyle
         case stealthModeDefault, defaultReplyTone, customAiPrompt
         case adBlockBlockAds, adBlockBlockTrackers, adBlockBlockCookieBanners
     }
@@ -297,12 +329,44 @@ struct AppPreferences: Codable, Equatable {
         geminiApiKey = try c.decodeIfPresent(String.self, forKey: .geminiApiKey) ?? ""
         openAiApiKey = try c.decodeIfPresent(String.self, forKey: .openAiApiKey) ?? ""
         aiModelTier = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-1.5-flash"
+        ollamaEndpoint = try c.decodeIfPresent(String.self, forKey: .ollamaEndpoint) ?? "http://localhost:11434"
+        ollamaModel = try c.decodeIfPresent(String.self, forKey: .ollamaModel) ?? "llama3.2"
+        personaStyle = try c.decodeIfPresent(String.self, forKey: .personaStyle) ?? "direct"
         stealthModeDefault = try c.decodeIfPresent(Bool.self, forKey: .stealthModeDefault) ?? true
         defaultReplyTone = try c.decodeIfPresent(String.self, forKey: .defaultReplyTone) ?? "Professional"
         customAiPrompt = try c.decodeIfPresent(String.self, forKey: .customAiPrompt) ?? ""
         adBlockBlockAds = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockAds) ?? true
         adBlockBlockTrackers = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockTrackers) ?? true
         adBlockBlockCookieBanners = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockCookieBanners) ?? true
+    }
+}
+
+struct CopilotMessage: Identifiable, Hashable, Codable {
+    var id: UUID = UUID()
+    var role: String // "user" or "assistant"
+    var content: String
+    var timestamp: Date = .now
+}
+
+enum PersonaStyle: String, CaseIterable, Identifiable {
+    case direct = "Direct & Crisp"
+    case friendly = "Casual & Warm"
+    case executive = "Executive & Formal"
+    case technical = "Technical & Precise"
+
+    var id: String { rawValue }
+
+    var systemInstruction: String {
+        switch self {
+        case .direct:
+            return "Adopt a direct, concise, and action-oriented communication style. Omit pleasantries and fluff."
+        case .friendly:
+            return "Adopt a warm, friendly, empathetic, and approachable conversational style."
+        case .executive:
+            return "Adopt an executive, structured, highly professional, and diplomatic communication style."
+        case .technical:
+            return "Adopt a precise, technically accurate, analytical, and structured communication style."
+        }
     }
 }
 

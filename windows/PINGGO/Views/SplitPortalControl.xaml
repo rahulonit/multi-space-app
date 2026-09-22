@@ -24,8 +24,23 @@
             <!-- Left pane indicator -->
             <TextBlock x:Name="LeftPaneTitle" Grid.Column="0" Text="Left Workspace" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
 
-            <!-- Center Controls: 1-Click Swap Button -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <!-- Center Controls: Ratio Presets, 1-Click Swap Button, and Close -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <!-- Quick Ratio Presets (1:2, 1:1, 2:1) -->
+                <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="2">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button x:Name="RatioBtn12" Click="OnRatio12Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="1:2 Ratio (Left compact, Right wide)">
+                            <TextBlock Text="1:2" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
+                        </Button>
+                        <Button x:Name="RatioBtn11" Click="OnRatio11Clicked" Background="{StaticResource AppSidebarBrush}" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="1:1 Ratio (Equal half width)">
+                            <TextBlock Text="1:1" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                        </Button>
+                        <Button x:Name="RatioBtn21" Click="OnRatio21Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="2:1 Ratio (Left wide, Right compact)">
+                            <TextBlock Text="2:1" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
+                        </Button>
+                    </StackPanel>
+                </Border>
+
                 <Button Click="OnSwapClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,4" ToolTipService.ToolTip="Swap left and right panes">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE8AB;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
@@ -47,13 +62,15 @@
         <!-- Side-by-Side Panes -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="1" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="LeftColumn" Width="*" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition x:Name="RightColumn" Width="*" />
             </Grid.ColumnDefinitions>
 
             <local:PortalViewControl x:Name="LeftPortal" Grid.Column="0" />
-            <Border Grid.Column="1" Background="{StaticResource AppBorderBrush}" />
+            <Border Grid.Column="1" Background="{StaticResource AppSidebarBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1,0">
+                <FontIcon Glyph="&#xE784;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
             <local:PortalViewControl x:Name="RightPortal" Grid.Column="2" />
         </Grid>
     </Grid>

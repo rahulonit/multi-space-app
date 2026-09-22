@@ -2,34 +2,68 @@ import SwiftUI
 
 struct SplitPortalView: View {
     @EnvironmentObject private var store: AppStore
+    @State private var splitRatio: CGFloat = 0.5
+    @State private var isDraggingDivider: Bool = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left Pane (Primary)
-            paneView(for: store.destination, isSplitPane: false)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geo in
+            let totalWidth = geo.size.width
+            let leftWidth = max(240, min(totalWidth - 240, totalWidth * splitRatio))
+            let rightWidth = max(240, totalWidth - leftWidth - 6)
 
-            // Split Divider
-            Rectangle()
-                .fill(.primary.opacity(0.15))
-                .frame(width: 1)
+            HStack(spacing: 0) {
+                // Left Pane (Primary)
+                paneView(for: store.destination, isSplitPane: false)
+                    .frame(width: leftWidth, height: geo.size.height)
 
-            // Right Pane (Secondary)
-            VStack(spacing: 0) {
-                secondaryHeader
-                if let secondary = store.splitDestination {
-                    paneView(for: secondary, isSplitPane: true)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    EmptyState(
-                        symbol: "rectangle.split.2x1",
-                        title: "Select an app",
-                        subtitle: "Choose an app to display in the secondary pane."
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Draggable Split Divider (6px wide with visual grab bar)
+                ZStack {
+                    Rectangle()
+                        .fill(isDraggingDivider ? Palette.accent.opacity(0.5) : Palette.border.opacity(0.8))
+                        .frame(width: 6)
+
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(isDraggingDivider ? Palette.accent : Palette.muted.opacity(0.5))
+                        .frame(width: 2.5, height: 26)
                 }
+                .frame(width: 6)
+                .contentShape(Rectangle())
+                .onHover { inside in
+                    if inside {
+                        NSCursor.resizeLeftRight.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            isDraggingDivider = true
+                            let newRatio = value.location.x / totalWidth
+                            splitRatio = max(0.20, min(0.80, newRatio))
+                        }
+                        .onEnded { _ in
+                            isDraggingDivider = false
+                        }
+                )
+
+                // Right Pane (Secondary)
+                VStack(spacing: 0) {
+                    secondaryHeader
+                    if let secondary = store.splitDestination {
+                        paneView(for: secondary, isSplitPane: true)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        EmptyState(
+                            symbol: "rectangle.split.2x1",
+                            title: "Select an app",
+                            subtitle: "Choose an app to display in the secondary pane."
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(width: rightWidth, height: geo.size.height)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -118,6 +152,30 @@ struct SplitPortalView: View {
                     .padding(.vertical, 2.5)
                     .background(Palette.accent.opacity(0.12), in: Capsule())
                 }
+            }
+
+            // Quick ratio presets
+            HStack(spacing: 4) {
+                Button("1:2") { withAnimation(.easeInOut(duration: 0.2)) { splitRatio = 0.33 } }
+                    .font(.system(size: 9.5, weight: abs(splitRatio - 0.33) < 0.05 ? .bold : .regular))
+                    .foregroundStyle(abs(splitRatio - 0.33) < 0.05 ? Palette.accent : Palette.muted)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(abs(splitRatio - 0.33) < 0.05 ? Palette.accent.opacity(0.12) : Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+                    .buttonStyle(.plain)
+
+                Button("1:1") { withAnimation(.easeInOut(duration: 0.2)) { splitRatio = 0.50 } }
+                    .font(.system(size: 9.5, weight: abs(splitRatio - 0.50) < 0.05 ? .bold : .regular))
+                    .foregroundStyle(abs(splitRatio - 0.50) < 0.05 ? Palette.accent : Palette.muted)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(abs(splitRatio - 0.50) < 0.05 ? Palette.accent.opacity(0.12) : Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+                    .buttonStyle(.plain)
+
+                Button("2:1") { withAnimation(.easeInOut(duration: 0.2)) { splitRatio = 0.67 } }
+                    .font(.system(size: 9.5, weight: abs(splitRatio - 0.67) < 0.05 ? .bold : .regular))
+                    .foregroundStyle(abs(splitRatio - 0.67) < 0.05 ? Palette.accent : Palette.muted)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(abs(splitRatio - 0.67) < 0.05 ? Palette.accent.opacity(0.12) : Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+                    .buttonStyle(.plain)
             }
 
             Spacer()

@@ -368,6 +368,11 @@ final class AIService: ObservableObject {
         return (score, label)
     }
 
+    func analyzeSentiment(text: String) -> SentimentResult {
+        let (score, label) = analyzeSentimentML(text: text)
+        return SentimentResult(score: score, classification: label, detectedLanguage: "English")
+    }
+
     // MARK: - Context & Entity Extraction Engine
     func extractSubjectAndEntities(from text: String) -> String {
         let lower = text.lowercased()
@@ -1023,17 +1028,305 @@ final class AIService: ObservableObject {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func testAPIConnection(provider: String, apiKey: String, model: String) async -> (success: Bool, message: String) {
+    // MARK: - Streaming Generative API Integrations (Server-Sent Events)
+    func streamGeminiAPI(
+        apiKey: String,
+        model: String = "gemini-1.5-flash",
+        prompt: String,
+        systemInstruction: String? = nil,
+        onChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
         let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanKey.isEmpty else {
-            return (false, "API Key is required to test connection.")
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Gemini API key is empty."])
         }
 
+        let targetModel = model.isEmpty ? "gemini-1.5-flash" : model
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):streamGenerateContent?alt=sse&key=\(cleanKey)") else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini endpoint URL."])
+        }
+
+        var contents: [[String: Any]] = []
+        if let system = systemInstruction, !system.isEmpty {
+            contents.append([
+                "role": "user",
+                "parts": [["text": "System instructions: \(system)"]]
+            ])
+            contents.append([
+                "role": "model",
+                "parts": [["text": "Understood. I will follow these instructions."]]
+            ])
+        }
+        contents.append([
+            "role": "user",
+            "parts": [["text": prompt]]
+        ])
+
+        let bodyDict: [String: Any] = ["contents": contents]
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        request.timeoutInterval = 30
+
+        let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response."])
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Gemini streaming error (HTTP \(httpResponse.statusCode))"])
+        }
+
+        var fullText = ""
+        for try await line in asyncBytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let jsonString = String(trimmed.dropFirst(6))
+            guard let jsonData = jsonString.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let candidates = json["candidates"] as? [[String: Any]],
+                  let first = candidates.first,
+                  let content = first["content"] as? [String: Any],
+                  let parts = content["parts"] as? [[String: Any]],
+                  let text = parts.first?["text"] as? String else {
+                continue
+            }
+            fullText += text
+            onChunk(text)
+        }
+        return fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func streamOpenAIAPI(
+        apiKey: String,
+        model: String = "gpt-4o-mini",
+        prompt: String,
+        systemInstruction: String? = nil,
+        onChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanKey.isEmpty else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "OpenAI API key is empty."])
+        }
+
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OpenAI endpoint URL."])
+        }
+
+        var messages: [[String: String]] = []
+        if let system = systemInstruction, !system.isEmpty {
+            messages.append(["role": "system", "content": system])
+        }
+        messages.append(["role": "user", "content": prompt])
+
+        let targetModel = model.isEmpty ? "gpt-4o-mini" : model
+        let bodyDict: [String: Any] = [
+            "model": targetModel,
+            "messages": messages,
+            "temperature": 0.7,
+            "stream": true
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(cleanKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+        request.timeoutInterval = 30
+
+        let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response."])
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "OpenAI streaming error (HTTP \(httpResponse.statusCode))"])
+        }
+
+        var fullText = ""
+        for try await line in asyncBytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let payload = String(trimmed.dropFirst(6))
+            if payload == "[DONE]" { break }
+            guard let jsonData = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let first = choices.first,
+                  let delta = first["delta"] as? [String: Any],
+                  let text = delta["content"] as? String else {
+                continue
+            }
+            fullText += text
+            onChunk(text)
+        }
+        return fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func streamOllamaAPI(
+        endpoint: String = "http://localhost:11434",
+        model: String = "llama3.2",
+        prompt: String,
+        systemInstruction: String? = nil,
+        history: [CopilotMessage] = [],
+        onChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let base = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let cleanBase = base.isEmpty ? "http://localhost:11434" : base
+        guard let url = URL(string: "\(cleanBase)/api/chat") else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Ollama endpoint URL."])
+        }
+
+        var messages: [[String: String]] = []
+        if let system = systemInstruction, !system.isEmpty {
+            messages.append(["role": "system", "content": system])
+        }
+        for h in history {
+            messages.append(["role": h.role, "content": h.content])
+        }
+        messages.append(["role": "user", "content": prompt])
+
+        let targetModel = model.isEmpty ? "llama3.2" : model
+        let bodyDict: [String: Any] = [
+            "model": targetModel,
+            "messages": messages,
+            "stream": true
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        request.timeoutInterval = 60
+
+        let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response from Ollama."])
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Ollama streaming error (HTTP \(httpResponse.statusCode))"])
+        }
+
+        var fullText = ""
+        for try await line in asyncBytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, let jsonData = trimmed.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let message = json["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                continue
+            }
+            fullText += content
+            onChunk(content)
+        }
+        return fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    func streamCoPilotResponse(
+        prompt: String,
+        context: String,
+        tone: AIReplyTone = .friendly,
+        history: [CopilotMessage] = [],
+        preferences: AppPreferences,
+        onChunk: @escaping @MainActor (String) -> Void
+    ) async -> String {
+        let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let personaInstruction = PersonaStyle(rawValue: preferences.personaStyle)?.systemInstruction
+            ?? "Adopt a direct, concise, and action-oriented communication style."
+        let sysInstruction = "You are PINGGO Co-Pilot, an intelligent personal communication assistant. \(personaInstruction) Draft clear, concise, and context-aware responses in a \(tone.rawValue) tone. \(preferences.customAiPrompt.isEmpty ? "" : "User guidelines: " + preferences.customAiPrompt)"
+        let userPrompt = cleanContext.isEmpty ? cleanPrompt : "Context:\n\(cleanContext)\n\nInstruction/Question:\n\(cleanPrompt)"
+
+        if preferences.aiProvider == "gemini" && !preferences.geminiApiKey.isEmpty {
+            if let result = try? await streamGeminiAPI(
+                apiKey: preferences.geminiApiKey,
+                model: preferences.aiModelTier,
+                prompt: userPrompt,
+                systemInstruction: sysInstruction,
+                onChunk: { chunk in
+                    Task { @MainActor in onChunk(chunk) }
+                }
+            ), !result.isEmpty {
+                return result
+            }
+        } else if preferences.aiProvider == "chatgpt" && !preferences.openAiApiKey.isEmpty {
+            if let result = try? await streamOpenAIAPI(
+                apiKey: preferences.openAiApiKey,
+                model: preferences.aiModelTier,
+                prompt: userPrompt,
+                systemInstruction: sysInstruction,
+                onChunk: { chunk in
+                    Task { @MainActor in onChunk(chunk) }
+                }
+            ), !result.isEmpty {
+                return result
+            }
+        } else if preferences.aiProvider == "ollama" {
+            if let result = try? await streamOllamaAPI(
+                endpoint: preferences.ollamaEndpoint,
+                model: preferences.ollamaModel,
+                prompt: userPrompt,
+                systemInstruction: sysInstruction,
+                history: history,
+                onChunk: { chunk in
+                    Task { @MainActor in onChunk(chunk) }
+                }
+            ), !result.isEmpty {
+                return result
+            }
+        }
+
+        // Local Smart Engine fallback with typewriter streaming effect
+        let fallbackReply = await draftCustomReply(
+            prompt: cleanPrompt,
+            messageContext: cleanContext,
+            sender: "User",
+            tone: tone,
+            preferences: preferences
+        )
+
+        let words = fallbackReply.components(separatedBy: " ")
+        var accumulated = ""
+        for (i, word) in words.enumerated() {
+            let piece = (i == 0 ? "" : " ") + word
+            accumulated += piece
+            onChunk(piece)
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        return accumulated
+    }
+
+    func testAPIConnection(provider: String, apiKey: String, model: String) async -> (success: Bool, message: String) {
+        let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
         do {
-            if provider == "gemini" {
+            if provider == "ollama" {
+                let base = cleanKey.isEmpty ? "http://localhost:11434" : cleanKey.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+                guard let url = URL(string: "\(base)/api/tags") else {
+                    return (false, "Invalid endpoint URL.")
+                }
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 5
+                let (_, res) = try await URLSession.shared.data(for: req)
+                if let httpRes = res as? HTTPURLResponse, (200...299).contains(httpRes.statusCode) {
+                    return (true, "Ollama Connected! Local model server active at \(base).")
+                } else {
+                    return (false, "Ollama responded with HTTP \((res as? HTTPURLResponse)?.statusCode ?? 0)")
+                }
+            } else if provider == "gemini" {
+                guard !cleanKey.isEmpty else { return (false, "API Key is required to test connection.") }
                 let reply = try await callGeminiAPI(apiKey: cleanKey, model: model, prompt: "Respond with the single word 'CONNECTED'.")
                 return (true, "Google Gemini Connected! Response: \(reply.prefix(30))")
             } else {
+                guard !cleanKey.isEmpty else { return (false, "API Key is required to test connection.") }
                 let reply = try await callOpenAIAPI(apiKey: cleanKey, model: model, prompt: "Respond with the single word 'CONNECTED'.")
                 return (true, "OpenAI ChatGPT Connected! Response: \(reply.prefix(30))")
             }

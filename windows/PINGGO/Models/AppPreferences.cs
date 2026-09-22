@@ -80,6 +80,15 @@ namespace PINGGO.Models
         [JsonPropertyName("aiModelTier")]
         public string AiModelTier { get; set; } = "gemini-1.5-flash";
 
+        [JsonPropertyName("ollamaEndpoint")]
+        public string OllamaEndpoint { get; set; } = "http://localhost:11434";
+
+        [JsonPropertyName("ollamaModel")]
+        public string OllamaModel { get; set; } = "llama3.2";
+
+        [JsonPropertyName("personaStyle")]
+        public string PersonaStyle { get; set; } = "Direct & Crisp";
+
         [JsonPropertyName("stealthModeDefault")]
         public bool StealthModeDefault { get; set; } = true;
 

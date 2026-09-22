@@ -571,6 +571,7 @@ private struct PortalBrowser: View {
     @State private var documentToPreview: PortalDownloadedDocument?
     @State private var showingPasskeyAssistant = false
     @State private var dismissedPasskeyBanner = false
+    @State private var showingAIDrawer = false
 
     private var isAuthenticationPage: Bool {
         let urlStr = (session.currentURL ?? url).absoluteString.lowercased()
@@ -673,6 +674,25 @@ private struct PortalBrowser: View {
                 ) {
                     store.toggleSplitView()
                 }
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        showingAIDrawer.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Co-Pilot")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(showingAIDrawer ? .white : Palette.accent)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(showingAIDrawer ? Palette.accent : Palette.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Toggle AI Co-Pilot & Smart Reply Drawer")
                 Menu {
                     Button("Edit platform…") { store.editingPlatform = platform }
                     Button("Remove from sidebar", role: .destructive) { store.removePlatform(platform.id) }
@@ -747,7 +767,7 @@ private struct PortalBrowser: View {
                 )
             }
 
-            ZStack {
+            ZStack(alignment: .trailing) {
                 PortalWebView(session: session)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if let error = session.error {
@@ -791,6 +811,20 @@ private struct PortalBrowser: View {
                     .frame(maxWidth: 380)
                     .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                 }
+                if showingAIDrawer {
+                    AICopilotDrawer(
+                        session: session,
+                        platform: platform,
+                        account: account,
+                        onClose: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                showingAIDrawer = false
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(10)
+                }
             }
             .background(.white)
         }
@@ -806,10 +840,12 @@ private struct PortalBrowser: View {
             if session.webView.url != url && session.currentURL != url {
                 session.load(url)
             }
-            session.activityHandler = { title, messages, notifications, rawNotifications in
+            session.activityHandler = { title, messages, notifications, rawNotifications, activeContact, activeThreadMessages in
                 store.updatePlatformActivity(accountID: account.id, title: title,
                                              messages: messages, notifications: notifications,
-                                             rawNotifications: rawNotifications)
+                                             rawNotifications: rawNotifications,
+                                             activeContact: activeContact,
+                                             activeThreadMessages: activeThreadMessages)
             }
         }
         .onChange(of: url) { _, newURL in
@@ -1043,10 +1079,12 @@ final class PortalSessionRegistry {
             guard let platform = platforms.first(where: { $0.id == account.platformID }) else { continue }
             guard let url = platform.resolvedWebsiteURL else { continue }
             let browser = session(for: account, url: url)
-            browser.activityHandler = { [weak store] title, messages, notifications, rawNotifications in
+            browser.activityHandler = { [weak store] title, messages, notifications, rawNotifications, activeContact, activeThreadMessages in
                 store?.updatePlatformActivity(accountID: account.id, title: title,
-                                              messages: messages, notifications: notifications,
-                                              rawNotifications: rawNotifications)
+                                               messages: messages, notifications: notifications,
+                                               rawNotifications: rawNotifications,
+                                               activeContact: activeContact,
+                                               activeThreadMessages: activeThreadMessages)
             }
         }
     }
@@ -1185,12 +1223,25 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var currentURL: URL?
     @Published var error: String?
     @Published var completedDownload: PortalDownloadedDocument?
+    @Published var activeThread: ActiveThreadContext? = nil
+    @Published var copilotHistory: [CopilotMessage] = []
     var lastAccessedAt: Date = .now
     let webView: WKWebView
     let homeURL: URL
     let accountID: UUID
-    var activityHandler: ((String, [[String: String]], [String], [[String: String]]) -> Void)?
+    var activityHandler: ((String, [[String: String]], [String], [[String: String]], String?, [[String: Any]]) -> Void)?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
+
+    func appendCopilotMessage(role: String, content: String) {
+        copilotHistory.append(CopilotMessage(role: role, content: content))
+        if copilotHistory.count > 10 {
+            copilotHistory.removeFirst(copilotHistory.count - 10)
+        }
+    }
+
+    func clearCopilotHistory() {
+        copilotHistory.removeAll()
+    }
 
     init(account: PlatformAccount, url: URL) {
         accountID = account.id
@@ -1236,6 +1287,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
 
     func reload() {
         webView.reload()
+    }
+
+    func insertTextIntoChat(_ text: String) {
+        let escaped = text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "")
+        let script = "window.pinggoInsertText ? window.pinggoInsertText(\"\(escaped)\") : false;"
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     func forceCollect() {
@@ -1348,7 +1409,34 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 "category": item["category"] as? String ?? "general"
             ]
         }
-        activityHandler?(title, rows, notifications, rawNotifications)
+        let activeContact = body["activeContact"] as? String
+        let activeThreadMessages = body["activeThreadMessages"] as? [[String: Any]] ?? []
+
+        let cleanContact = (activeContact ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanContact.isEmpty || !activeThreadMessages.isEmpty {
+            let threadMsgs: [ActiveChatMessage] = activeThreadMessages.prefix(15).enumerated().compactMap { idx, dict in
+                let sender = (dict["sender"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = (dict["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let isFromMe = (dict["isFromMe"] as? Bool) ?? (sender.lowercased() == "you" || sender.lowercased() == "me")
+                let time = (dict["time"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+                return ActiveChatMessage(
+                    id: "\(accountID)-thread-\(idx)-\(sender)",
+                    sender: sender.isEmpty ? (isFromMe ? "You" : cleanContact) : sender,
+                    text: text,
+                    isFromMe: isFromMe,
+                    time: (time?.isEmpty == false) ? time : nil
+                )
+            }
+            self.activeThread = ActiveThreadContext(
+                contactName: cleanContact.isEmpty ? (threadMsgs.first(where: { !$0.isFromMe })?.sender ?? "Current Chat") : cleanContact,
+                platformID: homeURL.host ?? "",
+                messages: threadMsgs,
+                updatedAt: .now
+            )
+        }
+
+        activityHandler?(title, rows, notifications, rawNotifications, activeContact, activeThreadMessages)
     }
 
     func load(_ url: URL) {
@@ -1783,7 +1871,102 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           });
         });
 
-        const payload = { title: document.title || '', messages, notifications, rawNotifications };
+        // 3. Active Conversation Thread & Contact Detection
+        let activeContact = '';
+        if (host.endsWith('whatsapp.com')) {
+          const headerName = document.querySelector('#main header span[dir="auto"], #main header [title], #main header ._amie, header span[title]');
+          if (headerName) activeContact = clean(headerName.getAttribute('title') || headerName.innerText);
+        } else if (host.endsWith('telegram.org')) {
+          const headerName = document.querySelector('.chat-info .peer-title, .chat-info .title, .top-chat-info .name, .sidebar-header-title');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('discord.com')) {
+          const headerName = document.querySelector('section[aria-label*="Channel header"] h1, h2[class*="title"], [data-list-item-id*="channels___"]');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('slack.com')) {
+          const headerName = document.querySelector('[data-qa="channel_name"], .p-classic_nav__team_header__channel_name');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('linkedin.com')) {
+          const headerName = document.querySelector('.msg-entity-lockup__entity-title, .msg-title-bar__title');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
+          const headerName = document.querySelector('[role="main"] h1, [role="main"] span[dir="auto"]');
+          if (headerName) activeContact = clean(headerName.innerText);
+        }
+        if (!activeContact) {
+          const titleParts = (document.title || '').split(/[-–|·•]/);
+          if (titleParts.length > 1 && !titleParts[0].toLowerCase().includes('whatsapp') && !titleParts[0].toLowerCase().includes('telegram')) {
+            activeContact = clean(titleParts[0]);
+          }
+        }
+
+        const activeThreadMessages = [];
+        let bubbleSelectors = '';
+        if (host.endsWith('whatsapp.com')) {
+          bubbleSelectors = '#main .message-in, #main .message-out';
+        } else if (host.endsWith('telegram.org')) {
+          bubbleSelectors = '.messages-container .message, .bubbles .bubble, .message-list .message';
+        } else if (host.endsWith('discord.com')) {
+          bubbleSelectors = 'li[class*="messageListItem"], [id^="chat-messages-"]';
+        } else if (host.endsWith('slack.com')) {
+          bubbleSelectors = '.c-message_kit__message, [data-qa="message_container"]';
+        } else if (host.endsWith('linkedin.com')) {
+          bubbleSelectors = '.msg-s-message-list__event, .msg-s-event-listitem';
+        } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
+          bubbleSelectors = 'div[data-testid="message-container"], [role="row"] [role="gridcell"]';
+        }
+
+        if (bubbleSelectors) {
+          const bubbles = Array.from(document.querySelectorAll(bubbleSelectors)).slice(-12);
+          bubbles.forEach(bubble => {
+            let sender = '';
+            let text = '';
+            let isFromMe = false;
+            let time = '';
+
+            if (host.endsWith('whatsapp.com')) {
+              isFromMe = bubble.classList.contains('message-out');
+              const textNode = bubble.querySelector('span.selectable-text, ._ao3e, span[dir="ltr"]');
+              if (textNode) text = clean(textNode.innerText);
+              const authorNode = bubble.querySelector('span[data-testid="author"], ._amih');
+              sender = isFromMe ? 'You' : (authorNode ? clean(authorNode.innerText) : (activeContact || 'Contact'));
+              const timeNode = bubble.querySelector('[data-testid="msg-meta"] span, span[dir="auto"]');
+              if (timeNode) time = clean(timeNode.innerText);
+            } else if (host.endsWith('telegram.org')) {
+              isFromMe = bubble.classList.contains('is-out') || bubble.classList.contains('own');
+              const textNode = bubble.querySelector('.text-content, .message-content, .translatable-message');
+              if (textNode) text = clean(textNode.innerText);
+              const authorNode = bubble.querySelector('.message-title, .message-author, .author');
+              sender = isFromMe ? 'You' : (authorNode ? clean(authorNode.innerText) : (activeContact || 'Contact'));
+            } else if (host.endsWith('discord.com')) {
+              const authorNode = bubble.querySelector('span[class*="username"]');
+              if (authorNode) sender = clean(authorNode.innerText);
+              const textNode = bubble.querySelector('div[id^="message-content-"]');
+              if (textNode) text = clean(textNode.innerText);
+              isFromMe = sender.toLowerCase() === 'you';
+            } else if (host.endsWith('slack.com')) {
+              const authorNode = bubble.querySelector('.c-message__sender_button, [data-qa="message_sender_name"]');
+              if (authorNode) sender = clean(authorNode.innerText);
+              const textNode = bubble.querySelector('.c-message_kit__blocks, [data-qa="message-text"]');
+              if (textNode) text = clean(textNode.innerText);
+              isFromMe = sender.toLowerCase() === 'you';
+            } else {
+              const textNode = bubble.querySelector('p, span, div');
+              if (textNode) text = clean(textNode.innerText);
+              sender = activeContact || 'Contact';
+            }
+
+            if (text && text.length > 0 && text.length < 1000) {
+              activeThreadMessages.push({
+                sender: sender || (isFromMe ? 'You' : 'Contact'),
+                text: text.slice(0, 500),
+                isFromMe,
+                time: time || undefined
+              });
+            }
+          });
+        }
+
+        const payload = { title: document.title || '', messages, notifications, rawNotifications, activeContact, activeThreadMessages };
         const signature = JSON.stringify(payload);
         if (!force && signature === lastPayload) return;
         lastPayload = signature;
@@ -1792,6 +1975,62 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
 
       window.__pinggoCollect = () => collect(true);
       window.__multispaceCollect = () => collect(true);
+
+      window.pinggoInsertText = function(text) {
+        if (!text) return false;
+        const selectors = [
+          '#main footer [contenteditable="true"]',
+          '#main [data-tab="10"][contenteditable="true"]',
+          'footer div[contenteditable="true"][data-lexical-editor="true"]',
+          '#editable-message-text',
+          '.input-message-input[contenteditable="true"]',
+          '.ql-editor[contenteditable="true"]',
+          '[data-qa="message_input"]',
+          '[role="textbox"][contenteditable="true"]',
+          '[aria-label*="message" i][contenteditable="true"]',
+          '[aria-label*="type a message" i][contenteditable="true"]',
+          '[contenteditable="true"]',
+          'textarea[placeholder*="message" i]',
+          'textarea',
+          'input[type="text"][placeholder*="message" i]'
+        ];
+
+        let target = null;
+        if (document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
+          target = document.activeElement;
+        }
+
+        if (!target) {
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.offsetParent !== null) {
+              target = el;
+              break;
+            }
+          }
+        }
+
+        if (!target) return false;
+
+        target.focus();
+
+        let success = false;
+        try {
+          success = document.execCommand('insertText', false, text);
+        } catch (e) {}
+
+        if (!success) {
+          if (target.isContentEditable) {
+            target.innerText = text;
+          } else {
+            target.value = text;
+          }
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          success = true;
+        }
+        return success;
+      };
 
       function schedule() {
         if (pending) return;
@@ -1852,3 +2091,458 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     })();
     """#
 }
+
+struct AICopilotDrawer: View {
+    @ObservedObject var session: PortalSession
+    let platform: SocialPlatform
+    let account: PlatformAccount
+    let onClose: () -> Void
+
+    @EnvironmentObject private var store: AppStore
+    @State private var activeTone: AIReplyTone = .friendly
+    @State private var generatedDraft: String = ""
+    @State private var isGenerating: Bool = false
+    @State private var customPrompt: String = ""
+    @State private var isCopied: Bool = false
+    @State private var isInserted: Bool = false
+
+    private var activeContext: ActiveThreadContext? {
+        session.activeThread ?? store.activeThreadContext(for: account.id)
+    }
+
+    private var contactTitle: String {
+        activeContext?.contactName.isEmpty == false ? activeContext!.contactName : platform.name
+    }
+
+    private var sentimentResult: SentimentResult {
+        let snippet = activeContext?.contextSnippet ?? ""
+        if snippet.isEmpty {
+            let previews = store.platformActivity[account.id]?.messages ?? []
+            let previewText = previews.prefix(3).map(\.text).joined(separator: " ")
+            return AIService.shared.analyzeSentiment(text: previewText)
+        }
+        return AIService.shared.analyzeSentiment(text: snippet)
+    }
+
+    private var urgencyLevel: String {
+        let score = sentimentResult.score
+        if score <= -0.4 { return "🚨 Urgent" }
+        if score >= 0.3 { return "✨ Positive" }
+        return "💬 Normal"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Palette.accent)
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Co-Pilot")
+                        .font(.system(size: 14, weight: .bold))
+                }
+
+                Spacer()
+
+                // AI Provider badge
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(providerIndicatorColor)
+                        .frame(width: 6, height: 6)
+                    Text(providerLabel)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Palette.hover, in: Capsule())
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Palette.panel)
+
+            Divider()
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 14) {
+                    // 1. Active Thread Context & Sentiment Card
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("ACTIVE CHAT")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                Text(contactTitle)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Text(urgencyLevel)
+                                .font(.system(size: 10.5, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(urgencyBackgroundColor, in: Capsule())
+                                .foregroundStyle(urgencyForegroundColor)
+                        }
+
+                        // Sentiment Gauge Bar
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text("Sentiment: \(sentimentResult.classification)")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.muted)
+                                Spacer()
+                                Text(String(format: "%+.1f", sentimentResult.score))
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(sentimentColor)
+                            }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(Palette.hover)
+                                        .frame(height: 5)
+                                    let normalized = CGFloat((sentimentResult.score + 1.0) / 2.0)
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(sentimentColor)
+                                        .frame(width: max(8, geo.size.width * normalized), height: 5)
+                                }
+                            }
+                            .frame(height: 5)
+                        }
+
+                        // Thread summary / latest incoming snippet
+                        if let lastIncoming = activeContext?.messages.last(where: { !$0.isFromMe }) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Latest message:")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Palette.muted)
+                                Text("\"\(lastIncoming.text)\"")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(3)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Palette.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                    .padding(12)
+                    .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
+
+                    // 2. 1-Click Smart Reply Tones
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("SMART REPLIES")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(Palette.muted)
+
+                        let tones: [(AIReplyTone, String, String)] = [
+                            (.professional, "Professional", "briefcase.fill"),
+                            (.friendly, "Friendly", "face.smiling.fill"),
+                            (.concise, "Concise", "bolt.fill"),
+                            (.casual, "Casual", "sunglasses.fill"),
+                            (.politeDecline, "Decline", "xmark.circle.fill"),
+                            (.proposeTime, "Propose Time", "calendar.badge.clock")
+                        ]
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                            ForEach(tones, id: \.0) { tone, label, icon in
+                                Button {
+                                    activeTone = tone
+                                    triggerSmartReply(tone: tone)
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: icon)
+                                            .font(.system(size: 10))
+                                        Text(label)
+                                            .font(.system(size: 11, weight: .medium))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(activeTone == tone ? Palette.accent.opacity(0.18) : Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(activeTone == tone ? Palette.accent.opacity(0.5) : Color.clear, lineWidth: 1)
+                                    )
+                                    .foregroundStyle(activeTone == tone ? Palette.accent : .primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // 2.5 Multi-turn Dialogue Memory (Recent conversation turns)
+                    if !session.copilotHistory.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("CONVERSATION MEMORY (\(session.copilotHistory.count))")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                Spacer()
+                                Button {
+                                    session.clearCopilotHistory()
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "arrow.counterclockwise")
+                                        Text("Reset")
+                                    }
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.muted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            VStack(spacing: 6) {
+                                ForEach(session.copilotHistory) { msg in
+                                    HStack {
+                                        if msg.role == "user" {
+                                            Spacer(minLength: 24)
+                                            Text(msg.content)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Palette.accent, in: RoundedRectangle(cornerRadius: 10))
+                                        } else {
+                                            Text(msg.content)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(.primary)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
+                                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
+                                            Spacer(minLength: 24)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .background(Palette.hover.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // 3. Generated Reply Draft & Action Controls
+                    if !generatedDraft.isEmpty || isGenerating {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("REPLY DRAFT (\(activeTone.rawValue.capitalized))")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                Spacer()
+                                if isGenerating {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                }
+                            }
+
+                            Text(generatedDraft)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
+
+                            // Action Buttons: Insert into chat & Copy
+                            HStack(spacing: 8) {
+                                Button {
+                                    session.insertTextIntoChat(generatedDraft)
+                                    isInserted = true
+                                    Task {
+                                        try? await Task.sleep(for: .seconds(2))
+                                        isInserted = false
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: isInserted ? "checkmark" : "arrow.down.doc.fill")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text(isInserted ? "Inserted!" : "Insert into Chat")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
+                                    .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isGenerating)
+
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(generatedDraft, forType: .string)
+                                    isCopied = true
+                                    Task {
+                                        try? await Task.sleep(for: .seconds(2))
+                                        isCopied = false
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                                            .font(.system(size: 10))
+                                        Text(isCopied ? "Copied" : "Copy")
+                                            .font(.system(size: 11))
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                                    .foregroundStyle(Palette.muted)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isGenerating)
+
+                                Spacer()
+
+                                Button {
+                                    triggerSmartReply(tone: activeTone)
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 11))
+                                        .padding(6)
+                                        .background(Palette.hover, in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Regenerate reply")
+                                .disabled(isGenerating)
+                            }
+                        }
+                    }
+
+                    // 4. Custom Co-Pilot Prompt Input with Streaming Output
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("ASK CO-PILOT")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(Palette.muted)
+
+                        HStack(spacing: 6) {
+                            TextField("Ask Co-Pilot about this chat...", text: $customPrompt)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 11.5))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.hover, lineWidth: 1))
+                                .onSubmit {
+                                    triggerCustomPrompt()
+                                }
+
+                            Button {
+                                triggerCustomPrompt()
+                            } label: {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? Palette.muted : Palette.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
+                        }
+                    }
+                }
+                .padding(14)
+            }
+        }
+        .frame(width: 330)
+        .background(Palette.panel)
+        .overlay(Rectangle().frame(width: 1).foregroundStyle(Palette.hover), alignment: .leading)
+    }
+
+    private var providerLabel: String {
+        let prefs = store.preferences
+        if prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty { return "Gemini" }
+        if prefs.aiProvider == "chatgpt" && !prefs.openAiApiKey.isEmpty { return "ChatGPT" }
+        if prefs.aiProvider == "ollama" { return "Ollama (\(prefs.ollamaModel))" }
+        return "Smart Engine"
+    }
+
+    private var providerIndicatorColor: Color {
+        let prefs = store.preferences
+        if prefs.aiProvider == "ollama" { return .purple }
+        if (prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty) || (prefs.aiProvider == "chatgpt" && !prefs.openAiApiKey.isEmpty) {
+            return .green
+        }
+        return .orange
+    }
+
+    private var sentimentColor: Color {
+        let score = sentimentResult.score
+        if score >= 0.2 { return .green }
+        if score <= -0.2 { return .red }
+        return .orange
+    }
+
+    private var urgencyBackgroundColor: Color {
+        let score = sentimentResult.score
+        if score <= -0.4 { return Color.red.opacity(0.15) }
+        if score >= 0.3 { return Color.green.opacity(0.15) }
+        return Palette.hover
+    }
+
+    private var urgencyForegroundColor: Color {
+        let score = sentimentResult.score
+        if score <= -0.4 { return .red }
+        if score >= 0.3 { return .green }
+        return Palette.muted
+    }
+
+    private func triggerSmartReply(tone: AIReplyTone) {
+        guard !isGenerating else { return }
+        isGenerating = true
+        generatedDraft = ""
+        let contextSnippet = activeContext?.contextSnippet ?? ""
+        let contact = contactTitle
+        let userInstruction = "Draft a \(tone.rawValue) reply to \(contact)."
+
+        Task {
+            session.appendCopilotMessage(role: "user", content: userInstruction)
+            let result = await AIService.shared.streamCoPilotResponse(
+                prompt: userInstruction,
+                context: contextSnippet,
+                tone: tone,
+                history: session.copilotHistory,
+                preferences: store.preferences,
+                onChunk: { chunk in
+                    generatedDraft += chunk
+                }
+            )
+            session.appendCopilotMessage(role: "assistant", content: result)
+            isGenerating = false
+        }
+    }
+
+    private func triggerCustomPrompt() {
+        let prompt = customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isGenerating else { return }
+        isGenerating = true
+        generatedDraft = ""
+        let query = prompt
+        customPrompt = ""
+        let contextSnippet = activeContext?.contextSnippet ?? ""
+
+        Task {
+            session.appendCopilotMessage(role: "user", content: query)
+            let result = await AIService.shared.streamCoPilotResponse(
+                prompt: query,
+                context: contextSnippet,
+                tone: activeTone,
+                history: session.copilotHistory,
+                preferences: store.preferences,
+                onChunk: { chunk in
+                    generatedDraft += chunk
+                }
+            )
+            session.appendCopilotMessage(role: "assistant", content: result)
+            isGenerating = false
+        }
+    }
+}
+
