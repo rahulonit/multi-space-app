@@ -435,6 +435,9 @@ struct InboxView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             store.refreshSummaries()
+            if unreadUnifiedMessages.isEmpty && !allUnifiedMessages.isEmpty && selectedFolder == .unread {
+                selectedFolder = .all
+            }
             if selectedMessageID == nil {
                 selectedMessageID = filteredMessages.first?.id
             }
@@ -658,6 +661,18 @@ struct InboxView: View {
 
         return Button {
             selectedPlatformID = platformID
+            if let platformID {
+                let platformMsgs = allUnifiedMessages.filter { $0.platform.id == platformID }
+                let platformUnreadCount = platformMsgs.filter { $0.isUnread }.count
+                if platformUnreadCount == 0 && !platformMsgs.isEmpty && selectedFolder == .unread {
+                    selectedFolder = .all
+                }
+            } else {
+                let totalUnread = max(unreadUnifiedMessages.count, store.totalUnreadCount)
+                if totalUnread == 0 && !allUnifiedMessages.isEmpty && selectedFolder == .unread {
+                    selectedFolder = .all
+                }
+            }
             if selectedFolder == .alerts {
                 selectedAlertID = filteredAlerts.first?.id
             } else {
@@ -689,7 +704,7 @@ struct InboxView: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(Color.blue, in: Capsule())
-                } else if total > 0 && selectedFolder == .all {
+                } else if total > 0 {
                     Text("\(total)")
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.muted.opacity(0.6))

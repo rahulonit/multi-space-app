@@ -159,6 +159,18 @@ namespace PINGGO.Services
                         } else if (host.endsWith('slack.com')) {
                             const headerName = document.querySelector('[data-qa="channel_name"], .p-classic_nav__team_header__channel_name');
                             if (headerName) activeContact = clean(headerName.innerText);
+                        } else if (host.endsWith('linkedin.com')) {
+                            const headerName = document.querySelector('.msg-entity-lockup__entity-title, .msg-title-bar__title, .msg-thread__link-to-profile, header h2');
+                            if (headerName) activeContact = clean(headerName.innerText);
+                        } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
+                            const headerName = document.querySelector('[role="main"] h1, [role="main"] span[dir="auto"]');
+                            if (headerName) activeContact = clean(headerName.innerText);
+                        } else if (host.endsWith('instagram.com')) {
+                            const headerName = document.querySelector('header h2, header span[dir="auto"], a[role="link"] span[dir="auto"]');
+                            if (headerName) activeContact = clean(headerName.innerText);
+                        } else if (host.endsWith('teams.microsoft.com')) {
+                            const headerName = document.querySelector('[data-tid="chat-header-title"], [data-tid="thread-header-title"]');
+                            if (headerName) activeContact = clean(headerName.innerText);
                         }
 
                         // Scrape active thread messages
@@ -172,6 +184,14 @@ namespace PINGGO.Services
                             bubbleSelectors = 'li[class*="messageListItem"], [id^="chat-messages-"]';
                         } else if (host.endsWith('slack.com')) {
                             bubbleSelectors = '.c-message_kit__message, [data-qa="message_container"]';
+                        } else if (host.endsWith('linkedin.com')) {
+                            bubbleSelectors = '.msg-s-message-list__event, .msg-s-event-listitem, .msg-s-message-group';
+                        } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
+                            bubbleSelectors = 'div[data-testid="message-container"], [role="row"] [role="gridcell"]';
+                        } else if (host.endsWith('instagram.com')) {
+                            bubbleSelectors = 'div[role="row"], div.x1n2onr6';
+                        } else if (host.endsWith('teams.microsoft.com')) {
+                            bubbleSelectors = '[data-tid="chat-pane-item"], [data-tid="message-pane-list-item"]';
                         }
 
                         if (bubbleSelectors) {
@@ -191,6 +211,12 @@ namespace PINGGO.Services
                                     const textNode = bubble.querySelector('.text-content, .message-content, .translatable-message');
                                     if (textNode) text = clean(textNode.innerText);
                                     sender = isFromMe ? 'You' : (activeContact || 'Contact');
+                                } else if (host.endsWith('linkedin.com')) {
+                                    const authorNode = bubble.querySelector('.msg-s-message-group__name, [data-anonymize="person-name"]');
+                                    if (authorNode) sender = clean(authorNode.innerText);
+                                    const textNode = bubble.querySelector('.msg-s-event-listitem__body, .msg-s-message-group__message, p');
+                                    if (textNode) text = clean(textNode.innerText);
+                                    isFromMe = sender.toLowerCase() === 'you' || bubble.classList.contains('msg-s-message-list__event--out');
                                 } else {
                                     const textNode = bubble.querySelector('p, span, div');
                                     if (textNode) text = clean(textNode.innerText);

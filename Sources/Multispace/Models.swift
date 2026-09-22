@@ -41,8 +41,8 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
     var resolvedWebsiteURL: URL? {
         var address = websiteURL ?? Self.defaultWebsites[id]
             ?? Self.defaultWebsites[officialIdentity?.id ?? ""] ?? officialIdentity?.websiteURL
-        if (id == "linkedin" || officialIdentity?.id == "linkedin") && (address == nil || address == "https://www.linkedin.com/feed/") {
-            address = "https://www.linkedin.com/login"
+        if (id == "linkedin" || officialIdentity?.id == "linkedin") && (address == nil || address == "https://www.linkedin.com/login" || address == "https://www.linkedin.com/feed/") {
+            address = "https://www.linkedin.com/messaging/"
         }
         guard let address, let url = URL(string: address),
               url.scheme?.lowercased() == "https", url.host != nil else { return nil }
@@ -61,6 +61,9 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
             case "x": return "https://x.com/messages"
             case "discord": return "https://discord.com/channels/@me"
             case "snapchat": return "https://web.snapchat.com/"
+            case "slack": return "https://app.slack.com/client"
+            case "reddit": return "https://www.reddit.com/message/inbox"
+            case "teams": return "https://teams.microsoft.com"
             default: return nil
             }
         }()
@@ -102,10 +105,14 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
 
     static let defaultWebsites: [String: String] = [
         "whatsapp": "https://web.whatsapp.com/",
-        "instagram": "https://www.instagram.com/",
+        "instagram": "https://www.instagram.com/direct/inbox/",
         "telegram": "https://web.telegram.org/a/",
-        "facebook": "https://www.facebook.com/",
-        "linkedin": "https://www.linkedin.com/login"
+        "facebook": "https://www.facebook.com/messages/t/",
+        "linkedin": "https://www.linkedin.com/messaging/",
+        "x": "https://x.com/messages",
+        "slack": "https://app.slack.com/client",
+        "reddit": "https://www.reddit.com/message/inbox",
+        "teams": "https://teams.microsoft.com"
     ]
 
     static let defaults: [SocialPlatform] = [
@@ -117,8 +124,8 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
 
     static let suggestions: [SocialPlatform] = [
         .init(id: "discord", name: "Discord", symbol: "bubble.left.and.bubble.right.fill", color: "purple", websiteURL: "https://discord.com/app"),
-        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/login"),
-        .init(id: "x", name: "X", symbol: "at", color: "purple", websiteURL: "https://x.com/home"),
+        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/messaging/"),
+        .init(id: "x", name: "X", symbol: "at", color: "purple", websiteURL: "https://x.com/messages"),
         .init(id: "snapchat", name: "Snapchat", symbol: "camera.fill", color: "orange", websiteURL: "https://web.snapchat.com/"),
         .init(id: "tiktok", name: "TikTok", symbol: "video.fill", color: "pink", websiteURL: "https://www.tiktok.com/")
     ]

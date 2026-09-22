@@ -1192,7 +1192,7 @@ final class PortalSessionRegistry {
         guard let session = sessions[accountID] else { return }
         await session.injectCookie(name: tokenName, value: tokenValue, domain: domain)
         if domain.contains("linkedin.com") {
-            session.load(URL(string: "https://www.linkedin.com/feed/")!)
+            session.load(URL(string: "https://www.linkedin.com/messaging/")!)
         } else {
             session.reload()
         }
@@ -1696,21 +1696,27 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         const host = location.hostname.toLowerCase();
         let selector = '';
         if (host.endsWith('whatsapp.com')) {
-          selector = '#pane-side [role="row"], #pane-side [role="listitem"], [data-testid="cell-frame-container"], div[role="listitem"], div._ak8l, div[tabindex="-1"][role="row"]';
+          selector = '#pane-side [role="row"], #pane-side [role="listitem"], [data-testid="cell-frame-container"], div[role="listitem"], div._ak8l, div[tabindex="-1"][role="row"], div[data-testid="chat-list-item"]';
         } else if (host.endsWith('instagram.com')) {
-          selector = 'a[href*="/direct/t/"], div[role="listitem"] a[href*="/direct/"], a[href*="/direct/inbox/"]';
+          selector = 'a[href*="/direct/t/"], div[role="listitem"] a[href*="/direct/"], a[href*="/direct/inbox/"], div[role="row"] a[role="link"]';
         } else if (host.endsWith('telegram.org')) {
-          selector = '.chat-list .ListItem, .chat-list-item, .chatlist-chat, a.chatlist-chat, .chatlist-parts, .c-ripple';
-        } else if (host.endsWith('facebook.com')) {
-          selector = 'a[href*="/messages/t/"], div[role="row"] a[role="link"], div[role="gridcell"] a';
+          selector = '.chat-list .ListItem, .chat-list-item, .chatlist-chat, a.chatlist-chat, .chatlist-parts, .c-ripple, div.chat-item, .chatlist a';
+        } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
+          selector = 'a[href*="/messages/t/"], div[role="row"] a[role="link"], div[role="gridcell"] a, a[href*="/t/"]';
         } else if (host.endsWith('snapchat.com')) {
           selector = '[data-testid*="conversation-list"] [role="button"], a[href*="/chat/"]';
         } else if (host.endsWith('linkedin.com')) {
-          selector = 'li.msg-conversation-listitem, .msg-conversation-card, a[href*="/messaging/thread/"], [data-view-name*="conversation"], .msg-overlay-list-bubble__convo-item, .msg-overlay-conversation-bubble';
+          selector = 'li.msg-conversation-listitem, .msg-conversation-card, a[href*="/messaging/thread/"], [data-view-name*="conversation"], .msg-overlay-list-bubble__convo-item, .msg-overlay-conversation-bubble, div.msg-conversations-container__conversations-list li, div[data-view-name="conversation-list-item"], div[data-control-name="conversation_item"], li[class*="msg-conversation"], div[class*="msg-conversation-card"]';
         } else if (host.endsWith('x.com') || host.endsWith('twitter.com')) {
           selector = '[data-testid="conversation"], a[href*="/messages/"]';
         } else if (host.endsWith('discord.com')) {
-          selector = 'a[href*="/channels/@me/"], li[class*="channel_"]';
+          selector = 'a[href*="/channels/@me/"], li[class*="channel_"], [data-list-item-id*="private-channels-"]';
+        } else if (host.endsWith('slack.com')) {
+          selector = '[data-qa="channel_sidebar_name_matching"], div.p-channel_sidebar__channel, .c-link--channel, [data-qa-channel-sidebar-channel-id]';
+        } else if (host.endsWith('teams.microsoft.com')) {
+          selector = 'div[data-tid="chat-list-item"], div[data-tid="team-channel-item"]';
+        } else if (host.endsWith('reddit.com')) {
+          selector = '[data-testid="chat-room-item"], div.message, .entry, a[href*="/message/messages/"]';
         } else {
           selector = '[role="listitem"] a[href*="message"], [role="listitem"] a[href*="chat"], a[href*="/messages/"], a[href*="/direct/"], [role="listitem"]';
         }
@@ -1729,32 +1735,72 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
               link = anchor.href;
             }
 
-            const timeNode = node.querySelector('time, [class*="time"], [class*="timestamp"], [data-testid*="time"], div._ak8i, span[class*="_ak8i"]');
+            const timeNode = node.querySelector('time, [class*="time"], [class*="timestamp"], [data-testid*="time"], div._ak8i, span[class*="_ak8i"], span[data-testid="cell-frame-secondary-title"]');
             if (timeNode) {
               time = clean(timeNode.innerText || timeNode.getAttribute('datetime'));
             }
 
             // WhatsApp specific: contact name in span[title] or _ak8q
             if (host.endsWith('whatsapp.com')) {
-              const nameSpan = node.querySelector('span[title], div[class*="_ak8q"] span');
+              const nameSpan = node.querySelector('span[title], div[class*="_ak8q"] span, span[data-testid="cell-frame-title"], [data-testid="chat-title"]');
               if (nameSpan) sender = clean(nameSpan.getAttribute('title') || nameSpan.innerText);
-              const textSpan = node.querySelector('[data-testid="last-msg-status"], span[class*="_ao3e"], div[class*="_ak8k"] span');
+              const textSpan = node.querySelector('[data-testid="last-msg-status"], span[class*="_ao3e"], div[class*="_ak8k"] span, span[data-testid="last-msg"]');
               if (textSpan) text = clean(textSpan.innerText);
             }
 
             // LinkedIn specific:
             if (!sender && host.endsWith('linkedin.com')) {
-              const nameEl = node.querySelector('.msg-conversation-listitem__participant-names, .msg-overlay-list-bubble__convo-item-header, h3');
+              const nameEl = node.querySelector('.msg-conversation-listitem__participant-names, span[data-anonymize="person-name"], h3.msg-conversation-listitem__participant-names, .msg-overlay-list-bubble__convo-item-header, .msg-conversation-card__participant-names, div.artdeco-entity-lockup__title, [data-view-name="conversation-list-item"] h3, h3, h4');
               if (nameEl) sender = clean(nameEl.innerText);
-              const snippetEl = node.querySelector('.msg-overlay-list-bubble__message-snippet, .msg-conversation-card__message-snippet, p');
+              const snippetEl = node.querySelector('.msg-conversation-card__message-snippet, .msg-overlay-list-bubble__message-snippet, p.msg-conversation-card__message-snippet, span.msg-conversation-card__message-snippet-body, .msg-conversation-card__row p, .msg-s-message-group__meta, [class*="message-snippet"], p');
               if (snippetEl) text = clean(snippetEl.innerText);
             }
 
             // Telegram specific:
             if (!sender && host.endsWith('telegram.org')) {
-              const nameEl = node.querySelector('.peer-title, .title, .user-caption, h3');
+              const nameEl = node.querySelector('.peer-title, .title, .user-caption, .chat-title, h3');
               if (nameEl) sender = clean(nameEl.innerText);
-              const snippetEl = node.querySelector('.subtitle, .last-message, .dialog-subtitle, p');
+              const snippetEl = node.querySelector('.subtitle, .last-message, .dialog-subtitle, .message, p');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Slack specific:
+            if (!sender && host.endsWith('slack.com')) {
+              const nameEl = node.querySelector('[data-qa="channel_sidebar_name_matching"], .p-channel_sidebar__name, span.c-link--channel');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('.p-channel_sidebar__subtext, [data-qa="channel_sidebar_prefix"]');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Teams specific:
+            if (!sender && host.endsWith('teams.microsoft.com')) {
+              const nameEl = node.querySelector('[data-tid="chat-list-item-title"], span[data-tid="channel-list-item-title"], h3');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('[data-tid="chat-list-item-preview"], [data-tid="chat-list-item-message-body"], p');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Instagram specific:
+            if (!sender && host.endsWith('instagram.com')) {
+              const nameEl = node.querySelector('span[dir="auto"], span.x1lliihq, span[class*="x193iq5w"], div[role="button"] span');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('span.x1lliihq span, div[class*="x1n2onr6"] span');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // Facebook / Messenger specific:
+            if (!sender && (host.endsWith('facebook.com') || host.endsWith('messenger.com'))) {
+              const nameEl = node.querySelector('span[dir="auto"], span.x1lliihq, div[role="gridcell"] span');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('span[dir="auto"], div.x78zum5 span');
+              if (snippetEl) text = clean(snippetEl.innerText);
+            }
+
+            // X / Twitter specific:
+            if (!sender && (host.endsWith('x.com') || host.endsWith('twitter.com'))) {
+              const nameEl = node.querySelector('[data-testid="User-Name"], div[dir="ltr"] span');
+              if (nameEl) sender = clean(nameEl.innerText);
+              const snippetEl = node.querySelector('div[dir="auto"] span, [data-testid="last-message"]');
               if (snippetEl) text = clean(snippetEl.innerText);
             }
 
@@ -1778,10 +1824,10 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             if (lowerSender === 'archived' || lowerSender === 'chats' || lowerSender === 'messages' || lowerSender === 'search' || lowerSender === 'filter chats') return;
 
             const isUnread = Boolean(
-              node.querySelector('[aria-label*="unread" i], [class*="unread" i], .badge, [data-testid*="unread"], span[class*="_ak8q"], .msg-conversation-listitem--unread, [data-qa="activity_item"]') ||
+              node.querySelector('[aria-label*="unread" i], [class*="unread" i], .badge, [data-testid*="unread"], span[class*="_ak8q"], .msg-conversation-listitem--unread, .msg-conversation-card--unread, [data-badge="unread"], span.msg-conversation-listitem__unread-count, span.notification-badge, .notification-badge--show, [data-qa*="unread"], [data-qa-channel-sidebar-is-unread="true"]') ||
               (node.getAttribute('aria-label') || '').toLowerCase().includes('unread') ||
               (node.className || '').toString().toLowerCase().includes('unread') ||
-              node.querySelector('span[class*="unread"], div[class*="unread"], [aria-live="polite"]')
+              node.querySelector('span[class*="unread"], div[class*="unread"]')
             );
 
             if (sender && text) {
@@ -1886,10 +1932,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           const headerName = document.querySelector('[data-qa="channel_name"], .p-classic_nav__team_header__channel_name');
           if (headerName) activeContact = clean(headerName.innerText);
         } else if (host.endsWith('linkedin.com')) {
-          const headerName = document.querySelector('.msg-entity-lockup__entity-title, .msg-title-bar__title');
+          const headerName = document.querySelector('.msg-entity-lockup__entity-title, .msg-title-bar__title, .msg-thread__link-to-profile, header h2');
           if (headerName) activeContact = clean(headerName.innerText);
         } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
           const headerName = document.querySelector('[role="main"] h1, [role="main"] span[dir="auto"]');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('instagram.com')) {
+          const headerName = document.querySelector('header h2, header span[dir="auto"], a[role="link"] span[dir="auto"]');
+          if (headerName) activeContact = clean(headerName.innerText);
+        } else if (host.endsWith('teams.microsoft.com')) {
+          const headerName = document.querySelector('[data-tid="chat-header-title"], [data-tid="thread-header-title"]');
           if (headerName) activeContact = clean(headerName.innerText);
         }
         if (!activeContact) {
@@ -1910,9 +1962,13 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         } else if (host.endsWith('slack.com')) {
           bubbleSelectors = '.c-message_kit__message, [data-qa="message_container"]';
         } else if (host.endsWith('linkedin.com')) {
-          bubbleSelectors = '.msg-s-message-list__event, .msg-s-event-listitem';
+          bubbleSelectors = '.msg-s-message-list__event, .msg-s-event-listitem, .msg-s-message-group';
         } else if (host.endsWith('facebook.com') || host.endsWith('messenger.com')) {
           bubbleSelectors = 'div[data-testid="message-container"], [role="row"] [role="gridcell"]';
+        } else if (host.endsWith('instagram.com')) {
+          bubbleSelectors = 'div[role="row"], div.x1n2onr6';
+        } else if (host.endsWith('teams.microsoft.com')) {
+          bubbleSelectors = '[data-tid="chat-pane-item"], [data-tid="message-pane-list-item"]';
         }
 
         if (bubbleSelectors) {
@@ -1949,6 +2005,12 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
               const textNode = bubble.querySelector('.c-message_kit__blocks, [data-qa="message-text"]');
               if (textNode) text = clean(textNode.innerText);
               isFromMe = sender.toLowerCase() === 'you';
+            } else if (host.endsWith('linkedin.com')) {
+              const authorNode = bubble.querySelector('.msg-s-message-group__name, [data-anonymize="person-name"]');
+              if (authorNode) sender = clean(authorNode.innerText);
+              const textNode = bubble.querySelector('.msg-s-event-listitem__body, .msg-s-message-group__message, p');
+              if (textNode) text = clean(textNode.innerText);
+              isFromMe = sender.toLowerCase() === 'you' || bubble.classList.contains('msg-s-message-list__event--out');
             } else {
               const textNode = bubble.querySelector('p, span, div');
               if (textNode) text = clean(textNode.innerText);

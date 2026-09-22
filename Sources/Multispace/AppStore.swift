@@ -334,8 +334,11 @@ final class AppStore: ObservableObject {
     ) {
         guard let acc = account(accountID) else { return }
         let unread: Int? = {
-            guard title.first == "(", let end = title.firstIndex(of: ")") else { return nil }
-            return Int(title[title.index(after: title.startIndex)..<end])
+            if let match = title.range(of: #"\(\d+\)"#, options: .regularExpression) {
+                let numStr = title[match].dropFirst().dropLast()
+                return Int(numStr)
+            }
+            return nil
         }()
         let previews = messages.prefix(15).enumerated().compactMap { index, item -> PlatformMessagePreview? in
             let sender = (item["sender"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
