@@ -230,7 +230,7 @@ struct GlobalHeaderView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     securityFeatureRow(icon: "lock.fill", title: "End-to-End Encryption", subtitle: "Platform credentials encrypted in Apple Keychain")
-                    securityFeatureRow(icon: "eye.slash.fill", title: "Stealth Mode Available", subtitle: "Read messages without triggering read receipts or blue checkmarks")
+                    securityFeatureRow(icon: "eye.slash.fill", title: "Private Preview Available", subtitle: "Review captured messages without opening the interactive portal")
                     securityFeatureRow(icon: store.preferences.appLockEnabled ? "touchid" : "lock.open", title: "App Lock Protection", subtitle: store.preferences.appLockEnabled ? "Biometric & Master PIN active" : "Disabled (Enable in Settings)")
                     securityFeatureRow(icon: "memorychip", title: "Isolated Sandboxes", subtitle: "Per-platform web partitions and storage isolation")
                 }

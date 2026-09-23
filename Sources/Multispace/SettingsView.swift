@@ -632,8 +632,8 @@ struct SettingsView: View {
 
                 Divider()
 
-                settingsRow("Stealth Mode Default", "When opening unread chats in Inbox, inspect messages and AI analysis without loading the interactive portal (no read receipts sent).") {
-                    Toggle("Stealth Mode", isOn: $store.preferences.stealthModeDefault)
+                settingsRow("Private Preview Default", "When opening unread chats in Inbox, inspect captured messages and private AI analysis without loading the interactive portal.") {
+                    Toggle("Private Preview", isOn: $store.preferences.stealthModeDefault)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
@@ -1917,5 +1917,4 @@ struct EditProfileSheet: View {
         }
     }
 }
-
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PINGGO.Models;
@@ -23,6 +25,12 @@ namespace PINGGO.Views
         private bool _isSummaryExpanded = true;
         private KeywordSmartSummary? _activeKeywordSummary;
         private Dictionary<string, List<AIChatMessage>> _aiChatHistory = new();
+        private readonly Dictionary<string, List<AIChatMessage>> _intelligenceChatHistory = new();
+        private readonly Dictionary<string, int> _analyzedMessageCounts = new();
+        private ChatIntelligenceAnalysis? _chatIntelligenceAnalysis;
+        private List<PlatformMessagePreview> _chatIntelligenceMessages = new();
+        private bool _isChatIntelligenceVisible = true;
+        private bool _isChatIntelligenceExpanded;
 
         public InboxControl()
         {
@@ -211,20 +219,21 @@ namespace PINGGO.Views
                 // AI Suggested Replies
                 UpdateSuggestedReplies();
 
-                // Smart Summary AI Chat Assistant
-                UpdateAiChatAssistant();
+                UpdateChatIntelligence();
             }
             else if (!string.IsNullOrEmpty(q) && _activeKeywordSummary != null)
             {
                 ConversationDetailPane.Visibility = Visibility.Collapsed;
                 KeywordDossierPane.Visibility = Visibility.Visible;
                 EmptyReaderPane.Visibility = Visibility.Collapsed;
+                SetChatIntelligenceVisibility(false);
             }
             else
             {
                 ConversationDetailPane.Visibility = Visibility.Collapsed;
                 KeywordDossierPane.Visibility = Visibility.Collapsed;
                 EmptyReaderPane.Visibility = Visibility.Visible;
+                SetChatIntelligenceVisibility(false);
             }
         }
 
@@ -407,6 +416,252 @@ namespace PINGGO.Views
             }
         }
 
+        // MARK: - Private, conversation-scoped AI Chat Intelligence
+        private List<PlatformMessagePreview> GetChatIntelligenceMessages()
+        {
+            if (_selectedMessage == null) return new List<PlatformMessagePreview>();
+            if (MainViewModel.Shared.AccountThreadContexts.TryGetValue(_selectedMessage.AccountId, out var context) &&
+                context.Messages.Count > 0 &&
+                (string.IsNullOrWhiteSpace(context.ContactName) ||
+                 context.ContactName.Contains(_selectedMessage.DisplaySender, StringComparison.OrdinalIgnoreCase) ||
+                 _selectedMessage.DisplaySender.Contains(context.ContactName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return context.Messages.TakeLast(ChatIntelligenceService.MaximumMessages).Select(message => new PlatformMessagePreview
+                {
+                    Id = message.Id,
+                    Sender = message.IsFromMe ? "You" : message.Sender,
+                    Text = message.Text,
+                    Time = message.Time,
+                    Unread = false
+                }).ToList();
+            }
+
+            var previews = _allMessages
+                .Where(message => message.AccountId == _selectedMessage.AccountId &&
+                                  message.DisplaySender.Equals(_selectedMessage.DisplaySender, StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Message)
+                .TakeLast(ChatIntelligenceService.MaximumMessages)
+                .ToList();
+            return previews.Count == 0 ? new List<PlatformMessagePreview> { _selectedMessage.Message } : previews;
+        }
+
+        private List<AIChatMemberItem>? GetChatIntelligenceMetadataMembers()
+        {
+            if (_selectedMessage == null) return null;
+            return MainViewModel.Shared.AccountThreadContexts.TryGetValue(_selectedMessage.AccountId, out var context)
+                ? context.GroupMembers
+                : null;
+        }
+
+        private void SetChatIntelligenceVisibility(bool visible)
+        {
+            var shouldShow = visible && _selectedMessage != null;
+            ChatIntelligencePane.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
+            ChatIntelligenceDivider.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
+            ChatIntelligenceColumn.Width = shouldShow ? new GridLength(390) : new GridLength(0);
+            ChatIntelligenceDividerColumn.Width = shouldShow ? new GridLength(1) : new GridLength(0);
+        }
+
+        private void UpdateChatIntelligence(bool forceRefresh = false)
+        {
+            if (_selectedMessage == null)
+            {
+                SetChatIntelligenceVisibility(false);
+                return;
+            }
+
+            _chatIntelligenceMessages = GetChatIntelligenceMessages();
+            _chatIntelligenceAnalysis = ChatIntelligenceService.Shared.Analyze(_selectedMessage.Id, _chatIntelligenceMessages);
+            var previousCount = _analyzedMessageCounts.TryGetValue(_selectedMessage.Id, out var count) ? count : _chatIntelligenceMessages.Count;
+            var newCount = Math.Max(0, _chatIntelligenceMessages.Count - previousCount);
+            if (forceRefresh || !_analyzedMessageCounts.ContainsKey(_selectedMessage.Id)) _analyzedMessageCounts[_selectedMessage.Id] = _chatIntelligenceMessages.Count;
+
+            SetChatIntelligenceVisibility(_isChatIntelligenceVisible);
+            ChatIntelligenceNewMessagesButton.Visibility = newCount > 0 && !forceRefresh ? Visibility.Visible : Visibility.Collapsed;
+            ChatIntelligenceNewMessagesText.Text = $"{newCount} new message{(newCount == 1 ? "" : "s")} available — Refresh analysis";
+            ChatIntelligenceMessageCountText.Text = $"Analyzed {_chatIntelligenceAnalysis.MessageCount} message{(_chatIntelligenceAnalysis.MessageCount == 1 ? "" : "s")}";
+
+            PopulateSimpleList(ChatIntelligenceSummaryItems,
+                _chatIntelligenceAnalysis.HasUsefulContext ? _chatIntelligenceAnalysis.Summary : new List<string> { "Not enough conversation context yet." });
+            PopulateExpandedIntelligenceDetails(_chatIntelligenceAnalysis);
+            PopulateIntelligenceQuestions(_chatIntelligenceAnalysis.SuggestedQuestions);
+            PopulateIntelligenceChat();
+
+            var members = ChatIntelligenceService.Shared.GroundedMembers(_chatIntelligenceMessages, GetChatIntelligenceMetadataMembers());
+            ChatIntelligenceExportActions.Visibility = members.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void PopulateSimpleList(StackPanel panel, IEnumerable<string> values)
+        {
+            panel.Children.Clear();
+            foreach (var value in values)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"• {value}",
+                    FontSize = 11.5,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 226, 232, 240))
+                });
+            }
+        }
+
+        private void PopulateExpandedIntelligenceDetails(ChatIntelligenceAnalysis analysis)
+        {
+            ChatIntelligenceExpandedDetails.Children.Clear();
+            AddIntelligenceSection("MAIN TOPICS", analysis.Topics);
+            AddIntelligenceSection("IMPORTANT DECISIONS", analysis.Decisions);
+            AddIntelligenceSection("PENDING TASKS", analysis.Tasks);
+            AddIntelligenceSection("DATES & DEADLINES", analysis.Dates);
+            AddIntelligenceSection("UNRESOLVED QUESTIONS", analysis.UnresolvedQuestions);
+            AddIntelligenceSection("LINKS", analysis.Links);
+            AddIntelligenceSection("PHONE NUMBERS", analysis.PhoneNumbers);
+
+            if (analysis.Sources.Count > 0)
+            {
+                var sourceStack = new StackPanel { Spacing = 5 };
+                sourceStack.Children.Add(new TextBlock { Text = "SOURCES", FontSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppTextMutedBrush"] });
+                foreach (var source in analysis.Sources.TakeLast(8))
+                {
+                    var button = new Button { Content = source.Label, Tag = source.MessageId, FontSize = 9.5, Padding = new Thickness(7, 3, 7, 3), HorizontalAlignment = HorizontalAlignment.Left };
+                    button.Click += (_, _) =>
+                    {
+                        var message = _chatIntelligenceMessages.FirstOrDefault(item => item.Id == source.MessageId);
+                        if (message != null) DetailMessageText.Text = message.Text;
+                        MainViewModel.Shared.ShowToast($"Source: {source.Label}");
+                    };
+                    sourceStack.Children.Add(button);
+                }
+                ChatIntelligenceExpandedDetails.Children.Add(sourceStack);
+            }
+        }
+
+        private void AddIntelligenceSection(string title, IReadOnlyCollection<string> values)
+        {
+            if (values.Count == 0) return;
+            var stack = new StackPanel { Spacing = 4 };
+            stack.Children.Add(new TextBlock { Text = title, FontSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppTextMutedBrush"] });
+            foreach (var value in values.Take(8))
+            {
+                stack.Children.Add(new TextBlock { Text = $"• {value}", FontSize = 10.5, TextWrapping = TextWrapping.Wrap, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 226, 232, 240)) });
+            }
+            ChatIntelligenceExpandedDetails.Children.Add(stack);
+        }
+
+        private void PopulateIntelligenceQuestions(IEnumerable<string> questions)
+        {
+            ChatIntelligenceQuestionsPanel.Children.Clear();
+            foreach (var question in questions)
+            {
+                var button = new Button
+                {
+                    Content = question,
+                    Tag = question,
+                    FontSize = 10.5,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Background = (Microsoft.UI.Xaml.Media.Brush)Resources["AppPanelBrush"],
+                    BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Resources["AppBorderBrush"],
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(7),
+                    Padding = new Thickness(8, 6, 8, 6)
+                };
+                button.Click += (_, _) => SendIntelligenceQuestion(question);
+                ChatIntelligenceQuestionsPanel.Children.Add(button);
+            }
+            ChatIntelligenceSuggestionsSection.Visibility = ChatIntelligenceQuestionsPanel.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void PopulateIntelligenceChat()
+        {
+            IntelligenceChatLogContainer.Children.Clear();
+            if (_selectedMessage == null || !_intelligenceChatHistory.TryGetValue(_selectedMessage.Id, out var history)) return;
+            foreach (var message in history) IntelligenceChatLogContainer.Children.Add(CreateAiChatBubbleControl(message));
+        }
+
+        private void SendIntelligenceQuestion(string question)
+        {
+            if (_selectedMessage == null || _chatIntelligenceAnalysis == null || string.IsNullOrWhiteSpace(question)) return;
+            if (!_intelligenceChatHistory.TryGetValue(_selectedMessage.Id, out var history))
+            {
+                history = new List<AIChatMessage>();
+                _intelligenceChatHistory[_selectedMessage.Id] = history;
+            }
+            history.Add(new AIChatMessage { IsUser = true, Text = question.Trim() });
+            history.Add(ChatIntelligenceService.Shared.Answer(question.Trim(), _chatIntelligenceAnalysis, _chatIntelligenceMessages, GetChatIntelligenceMetadataMembers()));
+            IntelligenceChatInputBox.Text = string.Empty;
+            PopulateIntelligenceChat();
+        }
+
+        private void OnToggleChatIntelligenceClicked(object sender, RoutedEventArgs e)
+        {
+            _isChatIntelligenceVisible = !_isChatIntelligenceVisible;
+            SetChatIntelligenceVisibility(_isChatIntelligenceVisible);
+        }
+
+        private void OnRefreshChatIntelligenceClicked(object sender, RoutedEventArgs e)
+        {
+            if (_selectedMessage != null)
+            {
+                _analyzedMessageCounts[_selectedMessage.Id] = GetChatIntelligenceMessages().Count;
+                _intelligenceChatHistory.Remove(_selectedMessage.Id);
+            }
+            UpdateChatIntelligence(true);
+        }
+
+        private void OnExpandChatIntelligenceClicked(object sender, RoutedEventArgs e)
+        {
+            _isChatIntelligenceExpanded = !_isChatIntelligenceExpanded;
+            ChatIntelligenceExpandedDetails.Visibility = _isChatIntelligenceExpanded ? Visibility.Visible : Visibility.Collapsed;
+            ChatIntelligenceExpandButton.Content = _isChatIntelligenceExpanded ? "Collapse" : "Expand";
+        }
+
+        private void OnCopyChatSummaryClicked(object sender, RoutedEventArgs e)
+        {
+            if (_chatIntelligenceAnalysis == null) return;
+            CopyText(string.Join(Environment.NewLine, _chatIntelligenceAnalysis.Summary.Select(item => "• " + item)));
+            MainViewModel.Shared.ShowToast("AI summary copied");
+        }
+
+        private void OnSendIntelligenceChatClicked(object sender, RoutedEventArgs e) => SendIntelligenceQuestion(IntelligenceChatInputBox.Text);
+
+        private void OnIntelligenceChatInputKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Enter) SendIntelligenceQuestion(IntelligenceChatInputBox.Text);
+        }
+
+        private void OnCopyMembersClicked(object sender, RoutedEventArgs e)
+        {
+            var members = ChatIntelligenceService.Shared.GroundedMembers(_chatIntelligenceMessages, GetChatIntelligenceMetadataMembers());
+            CopyText(BuildMembersCsv(members));
+            MainViewModel.Shared.ShowToast("Member list copied");
+        }
+
+        private void OnExportMembersCsvClicked(object sender, RoutedEventArgs e)
+        {
+            var members = ChatIntelligenceService.Shared.GroundedMembers(_chatIntelligenceMessages, GetChatIntelligenceMetadataMembers());
+            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            Directory.CreateDirectory(downloads);
+            var path = Path.Combine(downloads, $"PINGGO-group-members-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+            File.WriteAllText(path, BuildMembersCsv(members), Encoding.UTF8);
+            MainViewModel.Shared.ShowToast($"Member CSV exported to Downloads: {Path.GetFileName(path)}");
+        }
+
+        private string BuildMembersCsv(IEnumerable<AIChatMemberItem> members)
+        {
+            static string Csv(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
+            var platform = _selectedMessage?.Platform.Name ?? string.Empty;
+            var rows = members.Select(member => string.Join(",", new[] { member.Name, member.PhoneNumber ?? string.Empty, string.Empty, platform, member.Role, member.Activity }.Select(Csv)));
+            return string.Join(Environment.NewLine, new[] { "Name,Phone Number,Username,Platform,Role,Status" }.Concat(rows));
+        }
+
+        private static void CopyText(string text)
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(text);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
+
         // MARK: - Smart Summary & AI Assistant Chat (Pane 3)
         private void UpdateAiChatAssistant()
         {
@@ -499,7 +754,7 @@ namespace PINGGO.Views
                 // Header with AI Icon
                 var headerSp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 headerSp.Children.Add(new FontIcon { Glyph = "\uE76E", FontSize = 11, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
-                headerSp.Children.Add(new TextBlock { Text = "Smart Summary AI", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
+                headerSp.Children.Add(new TextBlock { Text = "PINGGO AI · Grounded in this chat", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
                 sp.Children.Add(headerSp);
 
                 // Body text
@@ -602,8 +857,7 @@ namespace PINGGO.Views
                         Margin = new Thickness(0, 4, 0, 0)
                     };
                     var memSp = new StackPanel { Spacing = 6 };
-                    bool isGepnic = msg.Members.Any(m => m.Name == "Rahul Sharma" || (m.Name != null && m.Name.IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0)) || (msg.Text != null && msg.Text.IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0);
-                    int displayCount = isGepnic ? 65 : (msg.Members.Count + 1);
+                    int displayCount = msg.Members.Count;
                     if (!string.IsNullOrEmpty(msg.Text))
                     {
                         var mMatch = System.Text.RegularExpressions.Regex.Match(msg.Text, @"(\d+)\s*(Total Members|members)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -619,7 +873,7 @@ namespace PINGGO.Views
 
                     var headerText = new TextBlock
                     {
-                        Text = isGepnic ? "👥 Group Roster (Active Contributors — 65 Total Members):" : $"👥 Group Roster ({displayCount} Members):",
+                        Text = $"👥 Available Group Members ({displayCount}):",
                         FontSize = 10,
                         FontWeight = Microsoft.UI.Text.FontWeights.Bold,
                         Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"],

@@ -654,52 +654,17 @@ final class ConversationSummaryService {
                 executiveOverview = "Identified \(actionCount) action item\(actionCount == 1 ? "" : "s") across \(platformNames.count) platform\(platformNames.count == 1 ? "" : "s") today involving \(senderPreview). \(detectedQuestions.count > 0 ? "\(detectedQuestions.count) question\(detectedQuestions.count == 1 ? "" : "s") awaiting your reply." : "")"
             }
         } else if isMemberQuery {
-            let isGepnicMention = lower.contains("gepnic") || matchingItems.contains(where: { $0.message.sender.localizedCaseInsensitiveContains("gepnic") || $0.message.text.localizedCaseInsensitiveContains("gepnic") })
-            if isGepnicMention {
-                headline = "65 Members in Gepnic Team Group"
-                executiveOverview = "👥 Found **65 members** in **Gepnic Team Group** (including you). 12 active contributors engaged in recent CPWD coordination and infrastructure circulars."
-                if actionItems.isEmpty {
-                    actionItems = [
-                        "Follow up with Rahul Sharma on Maharashtra PWD circular",
-                        "Coordinate with Vikram Malhotra on Gujarat division standards"
-                    ]
-                }
-                if detectedQuestions.isEmpty {
-                    detectedQuestions = [
-                        "How many states are using CPWD in this group?",
-                        "What is to-do for me today?"
-                    ]
-                }
-                if takeaways.isEmpty {
-                    takeaways = [
-                        "[WhatsApp] Gepnic Team Group: 65 participants / members connected",
-                        "[WhatsApp] Rahul Sharma (Engineering Lead): Active coordination on CPWD circulars",
-                        "[WhatsApp] Priya Patel (Product Manager): Shared state alignment updates",
-                        "[WhatsApp] Vikram Malhotra (Operations Lead): Tracking site benchmarks"
-                    ]
-                }
-            } else {
-                headline = matchCount > 0 ? "\(matchCount) Group & Participant Conversations" : "No member conversations found"
-                executiveOverview = matchCount > 0
-                    ? "Found \(matchCount) conversation\(matchCount == 1 ? "" : "s") involving \(senderNames.prefix(3).joined(separator: ", ")) discussing members and participant coordination."
-                    : "No specific member or participant updates found in recent messages."
-            }
+            headline = senderNames.isEmpty ? "No member information available" : "\(senderNames.count) visible conversation participant\(senderNames.count == 1 ? "" : "s")"
+            executiveOverview = senderNames.isEmpty
+                ? "I couldn’t find member metadata in the available conversations."
+                : "Visible participants from accessible chat data: \(senderNames.joined(separator: ", ")). Contact details are shown only when explicitly available."
         } else if isCpwdQuery {
-            headline = "3 States Confirmed Using CPWD in This Group"
-            executiveOverview = "Based on chat messages and shared circulars in this group, **3 states** (Maharashtra, Delhi, Gujarat) are confirmed using CPWD guidelines and schedule of rates."
-            if actionItems.isEmpty {
-                actionItems = [
-                    "Review Maharashtra PWD circular with Rahul Sharma",
-                    "Verify Gujarat CPWD alignment benchmarks"
-                ]
-            }
-            if takeaways.isEmpty {
-                takeaways = [
-                    "[Maharashtra] PWD circular officially adopted CPWD specifications",
-                    "[Delhi] CPWD Delhi zone coordination updates actively referenced",
-                    "[Gujarat] Road & Building division aligned quality benchmarks with CPWD norms"
-                ]
-            }
+            let stateNames = ["Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "Rajasthan", "Madhya Pradesh", "West Bengal", "Punjab", "Haryana", "Telangana", "Kerala", "Bihar", "Odisha", "Assam"]
+            let foundStates = stateNames.filter { state in matchingItems.contains { $0.message.text.localizedCaseInsensitiveContains(state) } }
+            headline = foundStates.isEmpty ? "No CPWD state count found" : "\(foundStates.count) state\(foundStates.count == 1 ? "" : "s") mentioned with CPWD"
+            executiveOverview = foundStates.isEmpty
+                ? "I couldn’t find a state count for CPWD in the accessible messages."
+                : "States explicitly mentioned alongside CPWD: \(foundStates.joined(separator: ", "))."
         } else if isQuestionQuery && !tokens.isEmpty {
             headline = "Smart Answer for \"\(raw)\""
             if matchCount == 0 {
@@ -749,14 +714,9 @@ final class ConversationSummaryService {
         if isTodoQuery {
             related = ["🔥 Urgent Today", "📅 Meetings", "❓ Questions", "📝 Reviews Needed", "💼 Proposals", "Unread Only"]
         } else if isMemberQuery {
-            let isGepnicMention = lower.contains("gepnic") || matchingItems.contains(where: { $0.message.sender.localizedCaseInsensitiveContains("gepnic") || $0.message.text.localizedCaseInsensitiveContains("gepnic") })
-            if isGepnicMention {
-                related = ["👥 65 Members", "Gepnic Team Group", "Rahul Sharma", "📞 Find Phone Numbers", "⚡ To-Do Today", "CPWD Guidelines"]
-            } else {
-                related = ["👥 Group Members", "📞 Contact Numbers", "⚡ To-Do Today", "Recent Updates"]
-            }
+            related = Array(senderNames.prefix(4))
         } else if isCpwdQuery || tokens.contains("cpwd") || lower.contains("cpwd") {
-            related = ["CPWD Guidelines", "State Projects", "Maharashtra PWD", "Gujarat Division", "Delhi Zone", "Rahul Sharma"]
+            related = Array(tokens.prefix(4)) + Array(senderNames.prefix(2))
         } else {
             // Extract co-occurring distinctive words from matching messages
             var wordFreq: [String: Int] = [:]

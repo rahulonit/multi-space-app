@@ -38,7 +38,7 @@ struct CommandPaletteView: View {
         })
 
         // AI Assistant
-        list.append(Item(id: "ai-settings", title: "AI Assistant & Stealth Mode", subtitle: "Manage Google Gemini, ChatGPT & Ollama settings", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: nil) {
+        list.append(Item(id: "ai-settings", title: "AI Assistant & Private Preview", subtitle: "Manage Google Gemini, ChatGPT & Ollama settings", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: nil) {
             store.destination = .settings
         })
         list.append(Item(id: "ai-switch-gemini", title: "Use Google Gemini for Smart Replies", subtitle: "Set Gemini as primary active AI engine", category: "AI Assistant", symbol: "sparkles", platform: nil, badge: store.preferences.aiProvider == "gemini" ? "Active" : nil) {

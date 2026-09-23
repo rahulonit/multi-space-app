@@ -2421,12 +2421,6 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           }
         }
 
-        // Ensure Gepnic group has verified 65 members
-        const isGepnicGroup = (activeContact + ' ' + groupSubtitle + ' ' + (document.title || '')).toLowerCase().includes('gepnic');
-        if (isGepnicGroup && groupMemberCount < 65) {
-          groupMemberCount = 65;
-        }
-
         // Extract comma-separated member names from group subtitle
         if (groupSubtitle && groupSubtitle.includes(',')) {
           const parts = groupSubtitle.split(',').map(s => clean(s.replace(/and \d+ others?/i, ''))).filter(Boolean);
@@ -3132,4 +3126,3 @@ struct AICopilotDrawer: View {
         }
     }
 }
-

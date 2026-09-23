@@ -308,52 +308,27 @@ namespace PINGGO.Services
             }
             else if (isMemberQuery)
             {
-                var isGepnicMention = lower.Contains("gepnic") || matchingMessages.Any(m => (m.Message.Sender ?? "").IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0 || (m.Message.Text ?? "").IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0);
-                if (isGepnicMention)
-                {
-                    headline = "65 Members in Gepnic Team Group";
-                    executiveOverview = "👥 Found **65 members** in **Gepnic Team Group** (including you). 12 active contributors engaged in recent CPWD coordination and infrastructure circulars.";
-                    if (actionItems.Count == 0)
-                    {
-                        actionItems.Add("Follow up with Rahul Sharma on Maharashtra PWD circular");
-                        actionItems.Add("Coordinate with Vikram Malhotra on Gujarat division standards");
-                    }
-                    if (detectedQuestions.Count == 0)
-                    {
-                        detectedQuestions.Add("How many states are using CPWD in this group?");
-                        detectedQuestions.Add("What is to-do for me today?");
-                    }
-                    if (takeaways.Count == 0)
-                    {
-                        takeaways.Add("[WhatsApp] Gepnic Team Group: 65 participants / members connected");
-                        takeaways.Add("[WhatsApp] Rahul Sharma (Engineering Lead): Active coordination on CPWD circulars");
-                        takeaways.Add("[WhatsApp] Priya Patel (Product Manager): Shared state alignment updates");
-                        takeaways.Add("[WhatsApp] Vikram Malhotra (Operations Lead): Tracking site benchmarks");
-                    }
-                }
-                else
-                {
-                    headline = matchCount > 0 ? $"{matchCount} Group & Participant Conversations" : "No member conversations found";
-                    executiveOverview = matchCount > 0
-                        ? $"Found {matchCount} conversation{(matchCount == 1 ? "" : "s")} involving {string.Join(", ", senderNames.Take(3))} discussing members and participant coordination."
-                        : "No specific member or participant updates found in recent messages.";
-                }
+                var visibleParticipants = matchingMessages
+                    .Select(item => item.Message.Sender)
+                    .Where(sender => !string.IsNullOrWhiteSpace(sender))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                headline = visibleParticipants.Count > 0
+                    ? $"{visibleParticipants.Count} Visible Participant{(visibleParticipants.Count == 1 ? "" : "s")}"
+                    : "Participant information unavailable";
+                executiveOverview = visibleParticipants.Count > 0
+                    ? $"Participants visible in the matching conversation evidence: {string.Join(", ", visibleParticipants)}."
+                    : "I couldn’t find participant information in the accessible conversation messages.";
             }
             else if (isCpwdQuery)
             {
-                headline = "3 States Confirmed Using CPWD in This Group";
-                executiveOverview = "Based on chat messages and shared circulars in this group, **3 states** (Maharashtra, Delhi, Gujarat) are confirmed using CPWD guidelines and schedule of rates.";
-                if (actionItems.Count == 0)
-                {
-                    actionItems.Add("Review Maharashtra PWD circular with Rahul Sharma");
-                    actionItems.Add("Verify Gujarat CPWD alignment benchmarks");
-                }
-                if (takeaways.Count == 0)
-                {
-                    takeaways.Add("[Maharashtra] PWD circular officially adopted CPWD specifications");
-                    takeaways.Add("[Delhi] CPWD Delhi zone coordination updates actively referenced");
-                    takeaways.Add("[Gujarat] Road & Building division aligned quality benchmarks with CPWD norms");
-                }
+                var stateNames = new[] { "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi" };
+                var evidence = string.Join(" ", matchingMessages.Select(item => item.Message.Text));
+                var foundStates = stateNames.Where(state => evidence.Contains(state, StringComparison.OrdinalIgnoreCase)).ToList();
+                headline = foundStates.Count == 0 ? "No CPWD state count found" : $"{foundStates.Count} state{(foundStates.Count == 1 ? "" : "s")} mentioned with CPWD";
+                executiveOverview = foundStates.Count == 0
+                    ? "I couldn’t find a state count for CPWD in the accessible messages."
+                    : $"States explicitly mentioned in the matching CPWD evidence: {string.Join(", ", foundStates)}.";
             }
             else if (isQuestionQuery && rawTokens.Count > 0)
             {

@@ -98,7 +98,7 @@
                 <Border Grid.Row="2" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <Ellipse Width="6" Height="6" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Stealth Active · Portals Synced" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Private Preview · Portals Synced" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -356,8 +356,13 @@
         <!-- PANE 3: READER & SMART DOSSIER                                            -->
         <!-- ========================================================================= -->
         <Grid Grid.Column="4" Background="{StaticResource AppBackgroundBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="ChatIntelligenceDividerColumn" Width="1" />
+                <ColumnDefinition x:Name="ChatIntelligenceColumn" Width="390" />
+            </Grid.ColumnDefinitions>
             <!-- MODE A: Conversation Detail View -->
-            <Grid x:Name="ConversationDetailPane" Visibility="Collapsed">
+            <Grid x:Name="ConversationDetailPane" Grid.Column="0" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -399,8 +404,14 @@
 
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <Border Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1" CornerRadius="12" Padding="8,4">
-                                <TextBlock Text="🕶️ Stealth Peek Mode" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppSuccessBrush}" />
+                                <TextBlock Text="🔒 Private Preview" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppSuccessBrush}" />
                             </Border>
+                            <Button Click="OnToggleChatIntelligenceClicked" Background="#266366F1" BorderBrush="#4D6366F1" BorderThickness="1" CornerRadius="12" Padding="9,4">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <FontIcon Glyph="&#xE76E;" FontSize="10" Foreground="{StaticResource AppAccentBrush}" />
+                                    <TextBlock Text="AI" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -417,7 +428,7 @@
                         </Border>
 
                         <!-- Smart Summary & Interactive AI Assistant Chat -->
-                        <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16">
+                        <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Visibility="Collapsed">
                             <StackPanel Spacing="12">
                                 <Grid>
                                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -540,7 +551,7 @@
             </Grid>
 
             <!-- MODE B: Smart Keyword Dossier (Shown when query is active and no single message selected) -->
-            <Grid x:Name="KeywordDossierPane" Visibility="Collapsed">
+            <Grid x:Name="KeywordDossierPane" Grid.Column="0" Grid.ColumnSpan="3" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -684,7 +695,7 @@
             </Grid>
 
             <!-- MODE C: Empty / Welcome State -->
-            <Grid x:Name="EmptyReaderPane" Visibility="Visible">
+            <Grid x:Name="EmptyReaderPane" Grid.Column="0" Grid.ColumnSpan="3" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                     <Border Width="64" Height="64" CornerRadius="32" Background="#1A22C55E" HorizontalAlignment="Center">
                         <FontIcon Glyph="&#xE73E;" FontSize="28" Foreground="{StaticResource AppSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -693,6 +704,99 @@
                     <TextBlock Text="Select a conversation from the left to read messages and generate 1-click AI replies, or ask a question above."
                                FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" MaxWidth="360" TextWrapping="Wrap" TextAlignment="Center" />
                 </StackPanel>
+            </Grid>
+
+            <Border x:Name="ChatIntelligenceDivider" Grid.Column="1" Background="{StaticResource AppBorderBrush}" />
+
+            <!-- Conversation-scoped AI Assistant -->
+            <Grid x:Name="ChatIntelligencePane" Grid.Column="2" Background="{StaticResource AppBackgroundBrush}" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="14,10">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE76E;" FontSize="14" Foreground="{StaticResource AppAccentBrush}" />
+                            <StackPanel Spacing="1">
+                                <TextBlock Text="AI Assistant" FontSize="14" FontWeight="Bold" Foreground="White" />
+                                <TextBlock Text="Private Chat Analysis" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Click="OnToggleChatIntelligenceClicked" HorizontalAlignment="Right" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" Background="Transparent" BorderThickness="0">
+                            <FontIcon Glyph="&#xE76B;" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Button x:Name="ChatIntelligenceNewMessagesButton" Grid.Row="1" Click="OnRefreshChatIntelligenceClicked" Visibility="Collapsed"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="#146366F1" BorderThickness="0" Padding="12,7">
+                    <Grid>
+                        <TextBlock x:Name="ChatIntelligenceNewMessagesText" Text="New messages available — Refresh analysis" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                        <FontIcon Glyph="&#xE72C;" FontSize="10" Foreground="{StaticResource AppAccentBrush}" HorizontalAlignment="Right" />
+                    </Grid>
+                </Button>
+
+                <ScrollViewer Grid.Row="2" Padding="14">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <FontIcon Glyph="&#xE72E;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                            <TextBlock Text="AI analyzes only the selected conversation. Up to 100 messages are processed locally."
+                                       FontSize="9.5" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" MaxWidth="330" />
+                        </StackPanel>
+
+                        <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12">
+                            <StackPanel Spacing="9">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE8D2;" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                                        <TextBlock Text="Conversation Summary" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                                        <Button Click="OnRefreshChatIntelligenceClicked" Content="Refresh" FontSize="9.5" Padding="5,2" />
+                                        <Button Click="OnCopyChatSummaryClicked" Content="Copy" FontSize="9.5" Padding="5,2" />
+                                        <Button x:Name="ChatIntelligenceExpandButton" Click="OnExpandChatIntelligenceClicked" Content="Expand" FontSize="9.5" Padding="5,2" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel x:Name="ChatIntelligenceSummaryItems" Spacing="5" />
+                                <TextBlock x:Name="ChatIntelligenceMessageCountText" FontSize="9.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <StackPanel x:Name="ChatIntelligenceExpandedDetails" Spacing="9" Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel x:Name="ChatIntelligenceSuggestionsSection" Spacing="7">
+                            <TextBlock Text="Suggested Questions" FontSize="12" FontWeight="Bold" Foreground="White" />
+                            <StackPanel x:Name="ChatIntelligenceQuestionsPanel" Spacing="6" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Ask AI" FontSize="12" FontWeight="Bold" Foreground="White" />
+                            <StackPanel x:Name="IntelligenceChatLogContainer" Spacing="8" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="ChatIntelligenceExportActions" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                            <Button Click="OnExportMembersCsvClicked" Content="Export CSV" FontSize="10.5" />
+                            <Button Click="OnCopyMembersClicked" Content="Copy List" FontSize="10.5" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border Grid.Row="3" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,1,0,0" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="IntelligenceChatInputBox" Grid.Column="0" PlaceholderText="Ask anything about this conversation…"
+                                 KeyDown="OnIntelligenceChatInputKeyDown" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" FontSize="11.5" />
+                        <Button Grid.Column="1" Click="OnSendIntelligenceChatClicked" Background="{StaticResource AppAccentBrush}" BorderThickness="0" CornerRadius="6" Padding="10,6" Margin="7,0,0,0">
+                            <FontIcon Glyph="&#xE725;" FontSize="11" Foreground="White" />
+                        </Button>
+                    </Grid>
+                </Border>
             </Grid>
         </Grid>
     </Grid>

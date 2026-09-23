@@ -306,7 +306,7 @@ struct AppPreferences: Codable, Equatable {
     var customPinSalt: String = ""
     var customPinHint: String = ""
 
-    // MARK: - AI Assistant & Stealth Mode Preferences
+    // MARK: - AI Assistant & Private Preview Preferences
     var aiEnabled: Bool = true
     var aiProvider: String = "gemini" // "gemini", "chatgpt", "ollama", "smart"
     var isGeminiLoggedIn: Bool = false

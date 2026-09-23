@@ -202,4 +202,34 @@ namespace PINGGO.Models
         public bool HasMembers => Members != null && Members.Count > 0;
         public bool HasRelatedPrompts => RelatedPrompts != null && RelatedPrompts.Count > 0;
     }
+
+    public class ChatIntelligenceSource
+    {
+        public string MessageId { get; set; } = string.Empty;
+        public string Sender { get; set; } = string.Empty;
+        public string? Time { get; set; }
+        public int MessageNumber { get; set; }
+        public string Label => string.IsNullOrWhiteSpace(Time) ? $"{Sender} · Message {MessageNumber}" : $"{Sender} · {Time}";
+    }
+
+    public class ChatIntelligenceAnalysis
+    {
+        public string ConversationId { get; set; } = string.Empty;
+        public int MessageCount { get; set; }
+        public List<string> Summary { get; set; } = new();
+        public List<string> Topics { get; set; } = new();
+        public List<string> Decisions { get; set; } = new();
+        public List<string> Tasks { get; set; } = new();
+        public List<string> Dates { get; set; } = new();
+        public List<string> People { get; set; } = new();
+        public List<string> PhoneNumbers { get; set; } = new();
+        public List<string> Emails { get; set; } = new();
+        public List<string> Links { get; set; } = new();
+        public List<string> Files { get; set; } = new();
+        public List<string> UnresolvedQuestions { get; set; } = new();
+        public List<string> SuggestedQuestions { get; set; } = new();
+        public List<ChatIntelligenceSource> Sources { get; set; } = new();
+        public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+        public bool HasUsefulContext => MessageCount > 0 && Summary.Count > 0;
+    }
 }

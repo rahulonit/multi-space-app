@@ -63,7 +63,7 @@ final class AIService: ObservableObject {
         }
     }
 
-    // MARK: - Deep Conversation Analysis (Stealth Mode Compatible)
+    // MARK: - Deep Conversation Analysis (Private Preview Compatible)
     func analyzeChat(
         sender: String,
         messageText: String,

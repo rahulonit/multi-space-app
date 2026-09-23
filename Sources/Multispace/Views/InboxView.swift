@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 private enum InboxFolder: String, CaseIterable {
     case unread = "Unread Messages"
@@ -98,7 +99,7 @@ struct UnifiedAlertItem: Identifiable, Equatable {
 }
 
 private enum ConversationViewMode: String, CaseIterable {
-    case stealth = "Stealth Peek"
+    case stealth = "Private Preview"
     case live = "Live Portal"
 }
 
@@ -112,7 +113,7 @@ struct InboxView: View {
     @State private var selectedAlertID: String? = nil
     @State private var selectedAlertCategory: AlertCategoryType = .all
 
-    // Stealth Mode & AI Assistant State
+    // Private Preview & AI Assistant State
     @State private var conversationViewMode: ConversationViewMode = .stealth
     @State private var customPromptInput: String = ""
     @State private var isDraftingReply: Bool = false
@@ -152,6 +153,10 @@ struct InboxView: View {
     @State private var copiedNotice: Bool = false
     @State private var copiedAlertURL: Bool = false
     @State private var copiedReplyIndex: Int? = nil
+    @State private var isChatIntelligenceVisible: Bool = true
+    @State private var isChatSummaryExpanded: Bool = false
+    @State private var analyzedMessageCounts: [String: Int] = [:]
+    @State private var highlightedSourceMessageID: String? = nil
 
     private var query: String {
         searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -468,6 +473,7 @@ struct InboxView: View {
             customPromptInput = ""
             coPilotResponse = nil
             coPilotInput = ""
+            highlightedSourceMessageID = nil
         }
         .onChange(of: selectedAlertID) { _, _ in
             alertDraftedReply = nil
@@ -2259,7 +2265,7 @@ struct InboxView: View {
 
                 Spacer()
 
-                // Action Controls: [ 🕶️ Stealth | 🌐 Live Chat ] | [ ✦ Chat Insights ] | 📞 Audio call | 🎥 Video call | ⋮ More options
+                // Action Controls: private preview/live portal, AI panel, calls, and more.
                 HStack(spacing: 8) {
                     // 1-Click Stealth Peek vs Live Portal Toggle
                     HStack(spacing: 2) {
@@ -2271,7 +2277,7 @@ struct InboxView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "eye.slash.fill")
                                     .font(.system(size: 10))
-                                Text("Stealth")
+                                Text("Private Preview")
                                     .font(.system(size: 11, weight: conversationViewMode == .stealth ? .semibold : .medium))
                             }
                             .padding(.horizontal, 9)
@@ -2280,7 +2286,7 @@ struct InboxView: View {
                             .foregroundStyle(conversationViewMode == .stealth ? Color.green : Palette.muted)
                         }
                         .buttonStyle(.plain)
-                        .help("Incognito reading: zero read receipts or blue ticks")
+                        .help("Review captured messages without opening the live portal")
 
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -2305,14 +2311,16 @@ struct InboxView: View {
                     .background(Palette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
 
-                    // Chat Insights Button
+                    // Collapsible conversation-scoped AI panel
                     Button {
-                        showDailySummarySheet.toggle()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isChatIntelligenceVisible.toggle()
+                        }
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text("Chat Insights")
+                            Text("AI")
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .padding(.horizontal, 12)
@@ -2322,25 +2330,7 @@ struct InboxView: View {
                         .foregroundStyle(Palette.accent)
                     }
                     .buttonStyle(.plain)
-                    .help("AI Chat Insights & Daily Conversation Summary")
-                    .popover(isPresented: $showDailySummarySheet, arrowEdge: .bottom) {
-                        let threadMessages = store.platformActivity[item.accountID]?.messages.filter {
-                            $0.sender.lowercased() == item.message.sender.lowercased()
-                        } ?? [item.message]
-                        let aiResult = AIService.shared.analyzeChat(
-                            sender: item.message.sender,
-                            messageText: item.message.text,
-                            platformName: item.platform.name,
-                            accountName: item.accountName,
-                            preferences: store.preferences,
-                            threadMessages: threadMessages
-                        )
-                        ScrollView {
-                            dailyConversationSummaryCard(summary: aiResult.dailySummary, item: item, platformColor: platformColor)
-                                .padding(16)
-                        }
-                        .frame(width: 480, height: 440)
-                    }
+                    .help(isChatIntelligenceVisible ? "Hide AI Assistant" : "Show AI Assistant")
 
                     // Calling Controls (Platform-Aware)
                     let supportsCalling = item.platform.id.lowercased() == "whatsapp" || item.platform.id.lowercased() == "discord"
@@ -2389,7 +2379,7 @@ struct InboxView: View {
                             Button {
                                 conversationViewMode = .stealth
                             } label: {
-                                Label("Stealth AI Peek (Incognito)", systemImage: conversationViewMode == .stealth ? "checkmark.circle.fill" : "eye.slash")
+                                Label("Private Preview", systemImage: conversationViewMode == .stealth ? "checkmark.circle.fill" : "eye.slash")
                             }
                             Button {
                                 conversationViewMode = .live
@@ -2449,10 +2439,22 @@ struct InboxView: View {
             Divider()
                 .background(Palette.border)
 
-            if conversationViewMode == .stealth {
-                stealthConversationView(item: item, platformColor: platformColor)
-            } else {
-                livePortalConversationView(item: item, platformColor: platformColor)
+            HStack(spacing: 0) {
+                Group {
+                    if conversationViewMode == .stealth {
+                        stealthConversationView(item: item, platformColor: platformColor)
+                    } else {
+                        livePortalConversationView(item: item, platformColor: platformColor)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if isChatIntelligenceVisible {
+                    Divider().background(Palette.border)
+                    chatIntelligencePanel(item: item, platformColor: platformColor)
+                        .frame(width: 390)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
         }
     }
@@ -2560,7 +2562,10 @@ struct InboxView: View {
                                 }
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+                                .background(
+                                    highlightedSourceMessageID == msg.id ? Palette.accent.opacity(0.2) : Palette.panel,
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
                             }
                         }
                     } else {
@@ -2576,10 +2581,7 @@ struct InboxView: View {
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.card, lineWidth: 1))
 
-                // 2. SMART SUMMARY & INTERACTIVE AI ASSISTANT CHAT
-                smartSummaryAIChatCard(item: item, platformColor: platformColor, threadMessages: threadMessages, activeContext: activeCtx)
-
-                // 3. LIGHT SMART SUGGESTION AREA (Clean, 1-Click Actionable)
+                // 2. LIGHT SMART SUGGESTION AREA (Clean, 1-Click Actionable)
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
@@ -2750,7 +2752,316 @@ struct InboxView: View {
         }
     }
 
-    // MARK: - Smart Summary & AI Assistant Chat View (Right Pane)
+    // MARK: - Private, conversation-scoped AI Chat Intelligence panel
+    private func intelligenceThreadMessages(for item: UnifiedMessageItem) -> [PlatformMessagePreview] {
+        if let context = store.activeThreadContext(for: item.accountID, contactName: item.message.sender),
+           !context.messages.isEmpty {
+            return Array(context.messages.suffix(ChatIntelligenceService.maximumMessages)).enumerated().map { index, message in
+                PlatformMessagePreview(
+                    id: "\(item.accountID)-intelligence-\(index)-\(message.sender)",
+                    sender: message.isFromMe ? "You" : message.sender,
+                    text: message.text,
+                    time: message.time,
+                    linkURL: nil,
+                    isUnread: false
+                )
+            }
+        }
+
+        let previews = store.platformActivity[item.accountID]?.messages.filter {
+            $0.sender.localizedCaseInsensitiveCompare(item.message.sender) == .orderedSame
+        } ?? []
+        return Array((previews.isEmpty ? [item.message] : previews).suffix(ChatIntelligenceService.maximumMessages))
+    }
+
+    private func chatIntelligencePanel(item: UnifiedMessageItem, platformColor: Color) -> some View {
+        let messages = intelligenceThreadMessages(for: item)
+        let analysis = ChatIntelligenceService.shared.analyze(conversationID: item.id, messages: messages)
+        let analyzedCount = analyzedMessageCounts[item.id] ?? messages.count
+        let newCount = max(0, messages.count - analyzedCount)
+        let history = aiChatHistory[item.id] ?? []
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("AI Assistant")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("Private Chat Analysis")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                }
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isChatIntelligenceVisible = false }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse AI Assistant")
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 54)
+            .background(Palette.panel)
+
+            Divider().background(Palette.border)
+
+            if newCount > 0 {
+                Button {
+                    analyzedMessageCounts[item.id] = messages.count
+                    aiChatHistory[item.id] = nil
+                } label: {
+                    HStack {
+                        Text("\(newCount) new message\(newCount == 1 ? "" : "s") available — Refresh analysis")
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .foregroundStyle(Palette.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Palette.accent.opacity(0.08))
+                }
+                .buttonStyle(.plain)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "lock.shield.fill")
+                        Text("AI analyzes only the selected conversation. Up to \(ChatIntelligenceService.maximumMessages) messages are processed locally.")
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.muted)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Conversation Summary", systemImage: "text.quote")
+                                .font(.system(size: 12.5, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                            Spacer()
+                            Button("Refresh") {
+                                analyzedMessageCounts[item.id] = messages.count
+                                aiChatHistory[item.id] = nil
+                            }
+                            Button("Copy") { copyIntelligenceSummary(analysis) }
+                            Button(isChatSummaryExpanded ? "Collapse" : "Expand") {
+                                isChatSummaryExpanded.toggle()
+                            }
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .buttonStyle(.plain)
+
+                        if analysis.hasUsefulContext {
+                            ForEach(analysis.summary, id: \.self) { point in
+                                HStack(alignment: .top, spacing: 7) {
+                                    Text("•").foregroundStyle(Palette.accent)
+                                    Text(point).font(.system(size: 11.5)).textSelection(.enabled)
+                                }
+                            }
+                            Text("Analyzed \(analysis.messageCount) message\(analysis.messageCount == 1 ? "" : "s")")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Palette.muted)
+                        } else {
+                            Text("Not enough conversation context yet.")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        if isChatSummaryExpanded {
+                            intelligenceDetailSection("Main topics", values: analysis.topics)
+                            intelligenceDetailSection("Important decisions", values: analysis.decisions)
+                            intelligenceDetailSection("Pending tasks", values: analysis.tasks)
+                            intelligenceDetailSection("Dates & deadlines", values: analysis.dates)
+                            intelligenceDetailSection("Unresolved questions", values: analysis.unresolvedQuestions)
+                            intelligenceDetailSection("Links", values: analysis.links)
+                            intelligenceDetailSection("Phone numbers", values: analysis.phoneNumbers)
+
+                            if !analysis.sources.isEmpty {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("SOURCES")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .foregroundStyle(Palette.muted)
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 5)], spacing: 5) {
+                                        ForEach(analysis.sources.suffix(8)) { source in
+                                            Button(source.label) {
+                                                highlightedSourceMessageID = source.messageID
+                                                conversationViewMode = .stealth
+                                            }
+                                            .font(.system(size: 9.5, weight: .medium))
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Palette.card.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+
+                    if !analysis.suggestedQuestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Suggested Questions")
+                                .font(.system(size: 12, weight: .bold))
+                            ForEach(analysis.suggestedQuestions, id: \.self) { question in
+                                Button {
+                                    sendGroundedAIQuestion(question, item: item, messages: messages, analysis: analysis)
+                                } label: {
+                                    HStack {
+                                        Text(question).multilineTextAlignment(.leading)
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right")
+                                    }
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .padding(8)
+                                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 7))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    if !history.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Ask AI")
+                                .font(.system(size: 12, weight: .bold))
+                            ForEach(history) { message in
+                                Text(message.text)
+                                    .font(.system(size: 11))
+                                    .textSelection(.enabled)
+                                    .padding(9)
+                                    .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
+                                    .background(message.isUser ? Palette.accent.opacity(0.18) : Palette.card, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+
+                    let members = intelligenceMembers(item: item, messages: messages)
+                    if members.count > 1 {
+                        HStack(spacing: 8) {
+                            Button("Export CSV") { exportMembersCSV(members, platform: item.platform.name) }
+                            Button("Copy List") { copyMembers(members, platform: item.platform.name) }
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(14)
+            }
+
+            Divider().background(Palette.border)
+
+            HStack(spacing: 7) {
+                TextField("Ask anything about this conversation…", text: $aiChatInputText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11.5))
+                    .onSubmit {
+                        sendGroundedAIQuestion(aiChatInputText, item: item, messages: messages, analysis: analysis)
+                    }
+                Button {
+                    sendGroundedAIQuestion(aiChatInputText, item: item, messages: messages, analysis: analysis)
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 19))
+                }
+                .buttonStyle(.plain)
+                .disabled(aiChatInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(12)
+            .background(Palette.panel)
+        }
+        .background(Palette.background)
+        .onAppear {
+            if analyzedMessageCounts[item.id] == nil { analyzedMessageCounts[item.id] = messages.count }
+        }
+    }
+
+    @ViewBuilder
+    private func intelligenceDetailSection(_ title: String, values: [String]) -> some View {
+        if !values.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title.uppercased())
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(Palette.muted)
+                ForEach(values.prefix(8), id: \.self) { value in
+                    Text("• \(value)")
+                        .font(.system(size: 10.5))
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    private func sendGroundedAIQuestion(
+        _ question: String,
+        item: UnifiedMessageItem,
+        messages: [PlatformMessagePreview],
+        analysis: ChatIntelligenceAnalysis
+    ) {
+        let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        var history = aiChatHistory[item.id] ?? []
+        history.append(AIChatMessage(id: UUID().uuidString, isUser: true, text: clean, timestamp: .now))
+        let members = store.activeThreadContext(for: item.accountID, contactName: item.message.sender)?.groupMembers
+        history.append(ChatIntelligenceService.shared.answer(question: clean, analysis: analysis, messages: messages, members: members))
+        aiChatHistory[item.id] = history
+        aiChatInputText = ""
+    }
+
+    private func copyIntelligenceSummary(_ analysis: ChatIntelligenceAnalysis) {
+        let text = analysis.summary.map { "• \($0)" }.joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        store.showToast("AI summary copied")
+    }
+
+    private func intelligenceMembers(item: UnifiedMessageItem, messages: [PlatformMessagePreview]) -> [AIChatMemberItem] {
+        var members: [String: AIChatMemberItem] = [:]
+        for member in store.activeThreadContext(for: item.accountID, contactName: item.message.sender)?.groupMembers ?? [] {
+            members[member.name.lowercased()] = member
+        }
+        for sender in Set(messages.map(\.sender)) where !sender.isEmpty && sender.lowercased() != "you" && members[sender.lowercased()] == nil {
+            members[sender.lowercased()] = AIChatMemberItem(
+                name: sender,
+                role: "Conversation participant",
+                activity: "Visible in selected chat",
+                messageCount: messages.filter { $0.sender.localizedCaseInsensitiveCompare(sender) == .orderedSame }.count
+            )
+        }
+        return members.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func membersCSV(_ members: [AIChatMemberItem], platform: String) -> String {
+        func csv(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+        let rows = members.map { member in
+            [member.name, member.phoneNumber ?? "", "", platform, member.role, member.activity].map(csv).joined(separator: ",")
+        }
+        return (["Name,Phone Number,Username,Platform,Role,Status"] + rows).joined(separator: "\n")
+    }
+
+    private func copyMembers(_ members: [AIChatMemberItem], platform: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(membersCSV(members, platform: platform), forType: .string)
+        store.showToast("Member list copied")
+    }
+
+    private func exportMembersCSV(_ members: [AIChatMemberItem], platform: String) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "PINGGO-group-members.csv"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try membersCSV(members, platform: platform).write(to: url, atomically: true, encoding: .utf8)
+            store.showToast("Member CSV exported")
+        } catch {
+            store.showToast("Couldn’t export member CSV")
+        }
+    }
+
+    // MARK: - Legacy Smart Summary components retained for compatibility
     private func smartSummaryAIChatCard(
         item: UnifiedMessageItem,
         platformColor: Color,
@@ -3311,7 +3622,7 @@ struct InboxView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "eye.slash.fill")
-                        Text("Switch to Stealth Peek")
+                        Text("Switch to Private Preview")
                     }
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Palette.accent)

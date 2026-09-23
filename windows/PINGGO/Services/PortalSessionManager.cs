@@ -317,12 +317,6 @@ namespace PINGGO.Services
                             }
                         }
 
-                        // Ensure Gepnic group has verified 65 members
-                        const isGepnicGroup = (activeContact + ' ' + groupSubtitle + ' ' + (document.title || '')).toLowerCase().includes('gepnic');
-                        if (isGepnicGroup && groupMemberCount < 65) {
-                            groupMemberCount = 65;
-                        }
-
                         if (groupSubtitle && groupSubtitle.includes(',')) {
                             const parts = groupSubtitle.split(',').map(s => clean(s.replace(/and \d+ others?/i, ''))).filter(Boolean);
                             parts.forEach(p => addGroupMember(p, 'Participant', 'In group roster', 1));
