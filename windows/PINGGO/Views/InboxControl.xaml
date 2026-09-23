@@ -4,96 +4,696 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:PINGGO.Models">
 
-    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="32">
-        <StackPanel Spacing="24" MaxWidth="900" HorizontalAlignment="Left">
-            <!-- Header -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="Consolidated Inbox &amp; AI Intelligence" FontSize="24" FontWeight="Bold" Foreground="White" />
-                <TextBlock Text="Smart AI summaries, sentiment scoring, and 1-click stealth replies across all conversations" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <Grid.ColumnDefinitions>
+            <!-- PANE 1: Folders & Platforms Rail -->
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="1" />
+            <!-- PANE 2: Message Stream & Smart Summary -->
+            <ColumnDefinition Width="370" />
+            <ColumnDefinition Width="1" />
+            <!-- PANE 3: Reader & Smart Dossier -->
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ========================================================================= -->
+        <!-- PANE 1: LEFT NAVIGATOR RAIL                                              -->
+        <!-- ========================================================================= -->
+        <Border Grid.Column="0" Background="{StaticResource AppSidebarBrush}" Padding="12,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Navigator Header -->
+                <StackPanel Grid.Row="0" Spacing="4" Margin="4,0,4,16">
+                    <TextBlock Text="INBOX" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" CharacterSpacing="100" />
+                    <TextBlock Text="Consolidated Streams" FontSize="15" FontWeight="Bold" Foreground="White" />
+                </StackPanel>
+
+                <!-- Folders and Platforms Lists -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+                        <!-- System Folders -->
+                        <StackPanel Spacing="2">
+                            <Button x:Name="FolderUnreadBtn" Click="OnFolderClicked" Tag="Unread" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Background="#1A6366F1" BorderThickness="0" CornerRadius="7" Padding="10,8">
+                                <Grid HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE719;" FontSize="13" Foreground="{StaticResource AppAccentBrush}" />
+                                        <TextBlock Text="Unread Messages" FontSize="12.5" FontWeight="SemiBold" Foreground="White" />
+                                    </StackPanel>
+                                    <Border x:Name="UnreadBadge" Background="{StaticResource AppAccentBrush}" CornerRadius="9" Padding="6,1" HorizontalAlignment="Right">
+                                        <TextBlock x:Name="UnreadCountText" Text="0" FontSize="10" FontWeight="Bold" Foreground="White" />
+                                    </Border>
+                                </Grid>
+                            </Button>
+
+                            <Button x:Name="FolderAlertsBtn" Click="OnFolderClicked" Tag="Alerts" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Background="Transparent" BorderThickness="0" CornerRadius="7" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xEA8F;" FontSize="13" Foreground="{StaticResource AppWarningBrush}" />
+                                    <TextBlock Text="Alerts &amp; Notices" FontSize="12.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="FolderAllBtn" Click="OnFolderClicked" Tag="All" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Background="Transparent" BorderThickness="0" CornerRadius="7" Padding="10,8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE7B8;" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    <TextBlock Text="All Messages" FontSize="12.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Platform Channels -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="CONNECTED PLATFORMS" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" CharacterSpacing="80" Margin="4,8,4,2" />
+
+                            <Button x:Name="PlatformAllBtn" Click="OnPlatformFilterClicked" Tag="" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Background="#222634" BorderThickness="0" CornerRadius="6" Padding="8,6">
+                                <TextBlock Text="🌐 All Platforms" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                            </Button>
+
+                            <ItemsRepeater x:Name="PlatformsRepeater">
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="models:SocialPlatform">
+                                        <Button Click="OnPlatformFilterClicked" Tag="{x:Bind Id}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,6" Margin="0,1">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="8" Height="8" Fill="{StaticResource AppAccentBrush}" />
+                                                <TextBlock Text="{x:Bind Name}" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Bottom Status -->
+                <Border Grid.Row="2" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse Width="6" Height="6" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Stealth Active · Portals Synced" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Divider 1 -->
+        <Border Grid.Column="1" Background="{StaticResource AppBorderBrush}" />
+
+        <!-- ========================================================================= -->
+        <!-- PANE 2: CENTER MESSAGE STREAM & SMART SUMMARY CARD                       -->
+        <!-- ========================================================================= -->
+        <Grid Grid.Column="2" Background="{StaticResource AppPanelBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Search Bar & Prompt Carousel Header -->
+            <StackPanel Grid.Row="0" Spacing="8" Padding="12,12,12,8" Background="{StaticResource AppPanelBrush}">
+                <!-- Integrated Search Field -->
+                <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <FontIcon Grid.Column="0" Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" Margin="2,0,8,0" VerticalAlignment="Center" />
+
+                        <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search chats or ask (e.g. 'what is to do for me today')…"
+                                 TextChanged="OnSearchTextChanged" Background="Transparent" BorderThickness="0" FontSize="12" Foreground="White"
+                                 VerticalAlignment="Center" />
+
+                        <Button x:Name="ClearSearchBtn" Grid.Column="2" Click="OnClearSearchClicked" Visibility="Collapsed"
+                                Style="{StaticResource IconButtonStyle}" Width="24" Height="24" Background="Transparent" BorderThickness="0" Margin="4,0">
+                            <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                        </Button>
+
+                        <Border Grid.Column="3" Background="#266366F1" CornerRadius="10" Padding="6,2" Margin="4,0,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <FontIcon Glyph="&#xE76E;" FontSize="9" Foreground="{StaticResource AppAccentBrush}" />
+                                <TextBlock Text="Smart Summary" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Quick Suggested Queries Carousel -->
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2">
+                        <TextBlock Text="Ask AI:" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="2,0,2,0" />
+
+                        <Button Click="OnQuickPromptClicked" Tag="what is to do for me today" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="⚡ What's my to-do today?" FontSize="10" FontWeight="Medium" Foreground="{StaticResource AppAccentBrush}" />
+                        </Button>
+
+                        <Button Click="OnQuickPromptClicked" Tag="meeting" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="📅 Meetings" FontSize="10" Foreground="White" />
+                        </Button>
+
+                        <Button Click="OnQuickPromptClicked" Tag="questions" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="❓ Questions" FontSize="10" Foreground="White" />
+                        </Button>
+
+                        <Button Click="OnQuickPromptClicked" Tag="urgent" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="🚨 Urgent" FontSize="10" Foreground="{StaticResource AppErrorBrush}" />
+                        </Button>
+
+                        <Button Click="OnQuickPromptClicked" Tag="cpwd" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="🏢 CPWD updates" FontSize="10" Foreground="White" />
+                        </Button>
+
+                        <Button Click="OnQuickPromptClicked" Tag="proposal" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,3">
+                            <TextBlock Text="💼 Proposals" FontSize="10" Foreground="White" />
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Priority Triage Filters -->
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Click="OnPriorityFilterClicked" Tag="All" Background="#266366F1" BorderThickness="0" CornerRadius="12" Padding="8,2">
+                            <TextBlock Text="All" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                        </Button>
+                        <Button Click="OnPriorityFilterClicked" Tag="Urgent" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="12" Padding="8,2">
+                            <TextBlock Text="🔥 Urgent" FontSize="10" Foreground="{StaticResource AppErrorBrush}" />
+                        </Button>
+                        <Button Click="OnPriorityFilterClicked" Tag="Meeting" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="12" Padding="8,2">
+                            <TextBlock Text="📅 Meetings" FontSize="10" Foreground="White" />
+                        </Button>
+                        <Button Click="OnPriorityFilterClicked" Tag="Question" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="12" Padding="8,2">
+                            <TextBlock Text="❓ Questions" FontSize="10" Foreground="White" />
+                        </Button>
+                        <Button Click="OnPriorityFilterClicked" Tag="Task" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="12" Padding="8,2">
+                            <TextBlock Text="📝 Tasks" FontSize="10" Foreground="White" />
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
             </StackPanel>
 
-            <!-- AI Daily Summary Card -->
-            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
-                <StackPanel Spacing="12">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Border Background="{StaticResource AppAccentBrush}" Width="24" Height="24" CornerRadius="6">
-                            <FontIcon Glyph="&#xE76E;" FontSize="12" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <!-- Divider -->
+            <Border Grid.Row="1" Background="{StaticResource AppBorderBrush}" Height="1" />
+
+            <!-- Smart Summary Card (Collapsible) -->
+            <Border x:Name="SmartSummaryCard" Grid.Row="2" Background="#141822" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="12,10">
+                <StackPanel Spacing="8">
+                    <!-- Summary Card Header -->
+                    <Button Click="OnToggleSummaryExpanded" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="0">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                                <FontIcon Glyph="&#xE76E;" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                                <TextBlock x:Name="SummaryCardTitle" Text="Smart Summary" FontSize="11" FontWeight="Bold" Foreground="White" />
+                                <Border x:Name="SummaryMatchBadge" Background="#266366F1" CornerRadius="8" Padding="5,1">
+                                    <TextBlock x:Name="SummaryMatchCount" Text="0 matches" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                <Border x:Name="SummaryActionsBadge" Background="#26F59E0B" CornerRadius="8" Padding="5,1" Visibility="Collapsed">
+                                    <TextBlock x:Name="SummaryActionsCount" Text="0 to-do" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}" />
+                                </Border>
+                                <FontIcon x:Name="SummaryChevron" Glyph="&#xE70E;" FontSize="9" Foreground="{StaticResource AppTextMutedBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+
+                    <!-- Expanded Content -->
+                    <StackPanel x:Name="SummaryExpandedArea" Spacing="8" Visibility="Visible">
+                        <!-- Overview paragraph -->
+                        <TextBlock x:Name="SummaryOverviewText" Text="Synthesizing matching conversations..." FontSize="11.5" Foreground="#E2E8F0" TextWrapping="Wrap" LineHeight="18" />
+
+                        <!-- Action Items box -->
+                        <Border x:Name="SummaryActionsBox" Background="#14F59E0B" BorderBrush="#40F59E0B" BorderThickness="1" CornerRadius="6" Padding="8,6" Visibility="Collapsed">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource AppWarningBrush}" />
+                                    <TextBlock Text="ACTION ITEMS / TO-DO" FontSize="9" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}" />
+                                </StackPanel>
+                                <ItemsRepeater x:Name="SummaryActionsRepeater">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <CheckBox Content="{x:Bind}" FontSize="11" Foreground="White" Margin="0,2" />
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
                         </Border>
-                        <TextBlock Text="AI EXECUTIVE BRIEFING (STEALTH MODE)" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" VerticalAlignment="Center" />
-                    </StackPanel>
 
-                    <TextBlock x:Name="AiSummaryText" Text="All channels monitored. 0 critical escalations pending. High collaboration sentiment (+0.4) detected across product and engineering discussions. 3 quick approvals awaiting response."
-                               FontSize="14" Foreground="White" TextWrapping="Wrap" LineHeight="22" />
+                        <!-- Highlights List -->
+                        <ItemsRepeater x:Name="SummaryHighlightsRepeater">
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                                        <TextBlock Text="•" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                        <TextBlock Text="{x:Bind}" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
 
-                    <!-- Sentiment Badge -->
-                    <Border Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1" CornerRadius="12" Padding="10,4" HorizontalAlignment="Left">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE73E;" FontSize="11" Foreground="{StaticResource AppSuccessBrush}" />
-                            <TextBlock Text="Sentiment: Warm &amp; Highly Positive (+0.6)" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />
+                        <!-- Related Searches Chips -->
+                        <StackPanel x:Name="SummaryRelatedArea" Spacing="4" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <FontIcon Glyph="&#xE721;" FontSize="9" Foreground="{StaticResource AppAccentBrush}" />
+                                <TextBlock Text="RELATED SEARCHES" FontSize="8.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                            </StackPanel>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <ItemsRepeater x:Name="SummaryRelatedRepeater">
+                                    <ItemsRepeater.Layout>
+                                        <StackLayout Orientation="Horizontal" Spacing="5" />
+                                    </ItemsRepeater.Layout>
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Button Click="OnRelatedSearchChipClicked" Tag="{x:Bind}" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="7,3">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <FontIcon Glyph="&#xE721;" FontSize="8.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                    <TextBlock Text="{x:Bind}" FontSize="9.5" Foreground="White" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </ScrollViewer>
                         </StackPanel>
-                    </Border>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
-            <!-- AI Smart Reply Generator Card -->
-            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
-                <StackPanel Spacing="14">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="AI SMART REPLIES (CONTEXT-AWARE)" FontSize="13" FontWeight="Bold" Foreground="White" />
-                        <TextBlock Text="Select a reply draft to copy or inject into your active chat thread:" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
-                    </StackPanel>
+            <!-- Message Stream Area -->
+            <Grid Grid.Row="3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-                    <!-- Priority Triage Filter Pills -->
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="FilterAllBtn" Click="OnTriageFilterClicked" Tag="All" Background="#263B82F6" BorderBrush="#4D3B82F6" BorderThickness="1" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="All Items" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
-                            </Button>
-                            <Button x:Name="FilterUrgentBtn" Click="OnTriageFilterClicked" Tag="Urgent" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="🚨 Urgent" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppDangerBrush}" />
-                            </Button>
-                            <Button x:Name="FilterMeetingsBtn" Click="OnTriageFilterClicked" Tag="Meetings" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="📅 Meetings" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-                            </Button>
-                            <Button x:Name="FilterQuestionsBtn" Click="OnTriageFilterClicked" Tag="Questions" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="❓ Questions" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-                            </Button>
-                            <Button x:Name="FilterReviewsBtn" Click="OnTriageFilterClicked" Tag="Reviews" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="📝 Reviews" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-                            </Button>
+                <!-- Subheader: Stream counter -->
+                <Border Grid.Row="0" Background="{StaticResource AppPanelBrush}" Padding="14,6" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1">
+                    <TextBlock x:Name="StreamCounterText" Text="CONVERSATIONS" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" CharacterSpacing="80" />
+                </Border>
+
+                <!-- Messages List -->
+                <ListView x:Name="MessagesListView" Grid.Row="1" SelectionChanged="OnMessageSelectionChanged"
+                          SelectionMode="Single" Background="Transparent" Padding="4">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="models:UnifiedMessageItem">
+                            <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Avatar with Platform Badge -->
+                                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16" Background="{StaticResource AppHoverBrush}" Margin="0,0,10,0" VerticalAlignment="Top">
+                                        <TextBlock Text="{x:Bind DisplaySender.Substring(0, 1)}" FontSize="12" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <!-- Content -->
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{x:Bind DisplaySender}" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                                            <TextBlock Text="{x:Bind Platform.Name}" FontSize="10.5" Foreground="{StaticResource AppAccentBrush}" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="{x:Bind Message.Text}" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                                        <!-- Priority / Action Pill -->
+                                        <Border Background="#1A6366F1" CornerRadius="4" Padding="5,1" HorizontalAlignment="Left" Visibility="{x:Bind PriorityBadge, Converter={StaticResource StringToVisibilityConverter}, FallbackValue=Collapsed}">
+                                            <TextBlock Text="{x:Bind PriorityBadge}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Unread Dot / Time -->
+                                    <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                        <TextBlock Text="{x:Bind DisplayTime}" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                                        <Ellipse Width="7" Height="7" Fill="{StaticResource AppAccentBrush}" Visibility="{x:Bind IsUnread, Converter={StaticResource BoolToVisibilityConverter}}" HorizontalAlignment="Right" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Grid>
+
+        <!-- Divider 2 -->
+        <Border Grid.Column="3" Background="{StaticResource AppBorderBrush}" />
+
+        <!-- ========================================================================= -->
+        <!-- PANE 3: READER & SMART DOSSIER                                            -->
+        <!-- ========================================================================= -->
+        <Grid Grid.Column="4" Background="{StaticResource AppBackgroundBrush}">
+            <!-- MODE A: Conversation Detail View -->
+            <Grid x:Name="ConversationDetailPane" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Optional Back-to-Dossier Banner -->
+                <Border x:Name="BackToDossierBanner" Grid.Row="0" Background="#1A6366F1" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="14,7" Visibility="Collapsed">
+                    <Grid>
+                        <Button Click="OnBackToDossierClicked" Background="Transparent" BorderThickness="0" Padding="0">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE72B;" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                                <TextBlock x:Name="BackToDossierText" Text="Back to Smart Dossier" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Text="Viewing chat from search results" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Contextual Header -->
+                <Border Grid.Row="1" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="20,14">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Width="40" Height="40" CornerRadius="20" Background="{StaticResource AppAccentBrush}">
+                                <TextBlock x:Name="DetailAvatarText" Text="U" FontSize="15" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <TextBlock x:Name="DetailSenderText" Text="Sender Name" FontSize="16" FontWeight="Bold" Foreground="White" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse Width="6" Height="6" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="Online" FontSize="11" Foreground="{StaticResource AppSuccessBrush}" />
+                                    <TextBlock Text="·" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    <TextBlock x:Name="DetailPlatformText" Text="Platform" FontSize="11" Foreground="{StaticResource AppAccentBrush}" />
+                                    <TextBlock Text="· 🔒 End-to-end encrypted" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
-                    </ScrollViewer>
 
-                    <ItemsRepeater x:Name="RepliesRepeater">
-                        <ItemsRepeater.ItemTemplate>
-                            <DataTemplate x:DataType="models:SmartReplyOption">
-                                <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,4">
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Border Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                <TextBlock Text="🕶️ Stealth Peek Mode" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppSuccessBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Conversation Body & Reply Generator -->
+                <ScrollViewer Grid.Row="2" Padding="24">
+                    <StackPanel Spacing="20" MaxWidth="720" HorizontalAlignment="Left">
+                        <!-- Message Bubble -->
+                        <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="LATEST MESSAGE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" CharacterSpacing="80" />
+                                <TextBlock x:Name="DetailMessageText" Text="Message contents..." FontSize="13.5" Foreground="White" TextWrapping="Wrap" LineHeight="20" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Smart Summary & Interactive AI Assistant Chat -->
+                        <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <StackPanel Spacing="12">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE76E;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
+                                        <TextBlock Text="✦ SMART SUMMARY &amp; AI CHAT" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                        <Border Background="#1A6366F1" CornerRadius="10" Padding="6,2">
+                                            <TextBlock Text="Ask Anything" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                                        </Border>
+                                        <Button Click="OnResetAiChatClicked" Style="{StaticResource IconButtonStyle}" Width="24" Height="24" Background="Transparent" BorderThickness="0">
+                                            <FontIcon Glyph="&#xE72C;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Quick starter prompt pills -->
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Button Click="OnAiPromptChipClicked" Tag="what is do to for me today" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE7C3;" FontSize="9.5" Foreground="{StaticResource AppWarningBrush}" />
+                                                <TextBlock Text="What's my to-do today?" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="OnAiPromptChipClicked" Tag="how many states are using cpwd in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xEC06;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                <TextBlock Text="States using CPWD" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="OnAiPromptChipClicked" Tag="list all member in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE716;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                <TextBlock Text="List group members" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="OnAiPromptChipClicked" Tag="find the number for all user in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE717;" FontSize="9.5" Foreground="{StaticResource AppSuccessBrush}" />
+                                                <TextBlock Text="Find phone numbers" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </ScrollViewer>
+
+                                <!-- Chat Log Messages Container -->
+                                <StackPanel x:Name="AiChatLogContainer" Spacing="10" />
+
+                                <!-- AI Chat Input Box -->
+                                <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8,4">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-
-                                        <!-- Tone Badge -->
-                                        <Border Grid.Column="0" Background="#1A6366F1" BorderBrush="#4D6366F1" BorderThickness="1" CornerRadius="6" Padding="8,2" Margin="0,0,12,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind Tone}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
-                                        </Border>
-
-                                        <!-- Draft Text -->
-                                        <TextBlock Grid.Column="1" Text="{x:Bind Content}" FontSize="13" Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center" />
-
-                                        <!-- Copy Button -->
-                                        <Button Grid.Column="2" Click="OnCopyReplyClicked" Tag="{x:Bind Content}" Style="{StaticResource IconButtonStyle}" Width="32" Height="32" Margin="10,0,0,0" ToolTipService.ToolTip="Copy reply to clipboard">
-                                            <FontIcon Glyph="&#xE8C8;" FontSize="12" />
+                                        <TextBox x:Name="AiChatInputBox" Grid.Column="0" PlaceholderText="Ask AI about this chat or search group (e.g. 'what is X saying', 'find numbers')..."
+                                                 KeyDown="OnAiChatInputKeyDown" Background="Transparent" BorderThickness="0" FontSize="11.5" Foreground="White" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Click="OnSendAiChatClicked" Background="{StaticResource AppAccentBrush}" BorderThickness="0" CornerRadius="6" Padding="10,5">
+                                            <FontIcon Glyph="&#xE725;" FontSize="11" Foreground="White" />
                                         </Button>
                                     </Grid>
                                 </Border>
-                            </DataTemplate>
-                        </ItemsRepeater.ItemTemplate>
-                    </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- AI Smart Reply Generator -->
+                        <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <StackPanel Spacing="12">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE76E;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
+                                        <TextBlock Text="AI SUGGESTED REPLIES (1-CLICK INJECT / COPY)" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                    </StackPanel>
+
+                                    <!-- Tone selector -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                        <Button Click="OnReplyToneChanged" Tag="Professional" Background="#266366F1" BorderThickness="0" CornerRadius="10" Padding="7,2">
+                                            <TextBlock Text="Professional" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                                        </Button>
+                                        <Button Click="OnReplyToneChanged" Tag="Friendly" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="10" Padding="7,2">
+                                            <TextBlock Text="Friendly" FontSize="9.5" Foreground="White" />
+                                        </Button>
+                                        <Button Click="OnReplyToneChanged" Tag="Direct" Background="{StaticResource AppCardBrush}" BorderThickness="0" CornerRadius="10" Padding="7,2">
+                                            <TextBlock Text="Direct" FontSize="9.5" Foreground="White" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+
+                                <ItemsRepeater x:Name="DetailRepliesRepeater">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,3">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBlock Grid.Column="0" Text="{x:Bind}" FontSize="12.5" Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="10,0,0,0">
+                                                        <Button Click="OnCopyReplyTextClicked" Tag="{x:Bind}" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Copy reply to clipboard">
+                                                            <FontIcon Glyph="&#xE8C8;" FontSize="11" />
+                                                        </Button>
+                                                        <Button Click="OnInjectReplyTextClicked" Tag="{x:Bind}" Background="{StaticResource AppAccentBrush}" BorderThickness="0" CornerRadius="6" Width="30" Height="30" ToolTipService.ToolTip="Inject reply into portal chat">
+                                                            <FontIcon Glyph="&#xE725;" FontSize="11" Foreground="White" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- MODE B: Smart Keyword Dossier (Shown when query is active and no single message selected) -->
+            <Grid x:Name="KeywordDossierPane" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Dossier Header -->
+                <Border Grid.Row="0" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="20,14">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Width="36" Height="36" CornerRadius="18" Background="{StaticResource AppAccentBrush}">
+                                <FontIcon Glyph="&#xE76E;" FontSize="16" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock x:Name="DossierTitleText" Text="Smart Summary Dossier" FontSize="15" FontWeight="Bold" Foreground="White" />
+                                    <TextBlock x:Name="DossierKeywordText" Text="“query”" FontSize="13" Foreground="{StaticResource AppAccentBrush}" />
+                                </StackPanel>
+                                <TextBlock x:Name="DossierSubheaderText" Text="Cross-platform crawl across active channels" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Button Click="OnClearSearchClicked" HorizontalAlignment="Right" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,4">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <TextBlock Text="Clear Search" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Dossier Content ScrollViewer -->
+                <ScrollViewer Grid.Row="1" Padding="24">
+                    <StackPanel Spacing="18" MaxWidth="760" HorizontalAlignment="Left">
+                        <!-- 1. Executive Synthesis Card -->
+                        <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8D2;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
+                                    <TextBlock Text="EXECUTIVE SYNTHESIS" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                </StackPanel>
+                                <TextBlock x:Name="DossierHeadlineText" Text="Headline..." FontSize="14" FontWeight="Bold" Foreground="White" />
+                                <TextBlock x:Name="DossierOverviewText" Text="Overview..." FontSize="12.5" Foreground="#CBD5E1" TextWrapping="Wrap" LineHeight="20" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 2. Action Items & To-Dos -->
+                        <Border x:Name="DossierActionBox" Background="#14F59E0B" BorderBrush="#40F59E0B" BorderThickness="1" CornerRadius="10" Padding="16" Visibility="Collapsed">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource AppWarningBrush}" />
+                                    <TextBlock Text="ACTION ITEMS &amp; TO-DO MATRIX" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}" />
+                                </StackPanel>
+                                <ItemsRepeater x:Name="DossierActionsRepeater">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border Background="{StaticResource AppPanelBrush}" CornerRadius="6" Padding="10,6" Margin="0,3">
+                                                <CheckBox Content="{x:Bind}" FontSize="12" Foreground="White" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 3. Key Highlights Across Chats -->
+                        <Border x:Name="DossierHighlightsBox" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="KEY HIGHLIGHTS ACROSS CHATS" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <ItemsRepeater x:Name="DossierHighlightsRepeater">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
+                                                <Ellipse Width="5" Height="5" Fill="{StaticResource AppAccentBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{x:Bind}" FontSize="12" Foreground="#CBD5E1" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 4. Related Searches Chips -->
+                        <Border x:Name="DossierRelatedBox" Background="#146366F1" BorderBrush="#336366F1" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
+                                    <TextBlock Text="EXPLORE RELATED SEARCHES" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                                </StackPanel>
+                                <ItemsRepeater x:Name="DossierRelatedRepeater">
+                                    <ItemsRepeater.Layout>
+                                        <StackLayout Orientation="Horizontal" Spacing="8" />
+                                    </ItemsRepeater.Layout>
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Button Click="OnRelatedSearchChipClicked" Tag="{x:Bind}" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <FontIcon Glyph="&#xE721;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                    <TextBlock Text="{x:Bind}" FontSize="11" Foreground="White" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 5. Indexed Conversations Breakdown -->
+                        <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock x:Name="DossierIndexedHeader" Text="INDEXED CONVERSATIONS" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <ItemsRepeater x:Name="DossierIndexedRepeater">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="models:UnifiedMessageItem">
+                                            <Button Click="OnOpenIndexedMessageClicked" Tag="{x:Bind Id}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                    Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0" Spacing="3">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{x:Bind DisplaySender}" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+                                                            <TextBlock Text="{x:Bind Platform.Name}" FontSize="10.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{x:Bind Message.Text}" FontSize="11.5" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" MaxLines="2" />
+                                                    </StackPanel>
+
+                                                    <FontIcon Grid.Column="1" Glyph="&#xE76C;" FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- MODE C: Empty / Welcome State -->
+            <Grid x:Name="EmptyReaderPane" Visibility="Visible">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                    <Border Width="64" Height="64" CornerRadius="32" Background="#1A22C55E" HorizontalAlignment="Center">
+                        <FontIcon Glyph="&#xE73E;" FontSize="28" Foreground="{StaticResource AppSuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Inbox Zero — All Caught Up!" FontSize="16" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" />
+                    <TextBlock Text="Select a conversation from the left to read messages and generate 1-click AI replies, or ask a question above."
+                               FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" MaxWidth="360" TextWrapping="Wrap" TextAlignment="Center" />
                 </StackPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Grid>
 </UserControl>

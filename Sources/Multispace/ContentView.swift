@@ -93,7 +93,7 @@ struct ContentView: View {
             if store.preferences.launchWebsites { PortalSessionRegistry.shared.monitor(store.socialPlatforms, accounts: accounts, store: store) }
         }
         .background {
-            BackgroundPortalHost()
+            BackgroundPortalHost(store: store)
                 .frame(width: 1, height: 1)
                 .opacity(0.001)
                 .allowsHitTesting(false)
@@ -122,8 +122,12 @@ struct ContentView: View {
 }
 
 struct BackgroundPortalHost: NSViewRepresentable {
+    @ObservedObject var store: AppStore
+
     func makeNSView(context: Context) -> NSView {
-        NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        PortalSessionRegistry.shared.attachBackgroundWebViews(to: view)
+        return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {

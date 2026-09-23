@@ -93,7 +93,7 @@ namespace PINGGO.Views
                     webView.CoreWebView2,
                     account,
                     platform,
-                    path => DispatcherQueue.TryEnqueue(async () => await ShowDocumentOptionsAsync(path)));
+                    path => DispatcherQueue.TryEnqueue(() => HandleDownloadCompleted(path)));
                 AdBlockEngine.AttachToWebView(webView.CoreWebView2);
 
                 webView.CoreWebView2.Navigate(platform.ResolvedWebsiteURL);
@@ -216,6 +216,36 @@ namespace PINGGO.Views
                 if (_loadedAccountId == account.Id) DisposeCurrentWebView();
                 MainViewModel.Shared.RemoveAccount(account.Id);
                 if (_loadedPlatformId != null) LoadPlatform(_loadedPlatformId);
+            }
+        }
+
+        private void HandleDownloadCompleted(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
+            try
+            {
+                var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
+                if (ext == "pdf")
+                {
+                    // PDF opened in browser
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("msedge", $"\"{filePath}\"") { UseShellExecute = true });
+                    }
+                    catch
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(filePath) { UseShellExecute = true });
+                    }
+                }
+                else
+                {
+                    // Media or other file opened in OS default app
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PortalViewControl] Failed to open download {filePath}: {ex.Message}");
             }
         }
 

@@ -30,6 +30,7 @@ final class AppStore: ObservableObject {
     @Published var editingPlatform: SocialPlatform?
     @Published private(set) var platformActivity: [UUID: PlatformActivitySnapshot] = [:]
     @Published var activeThreadContexts: [UUID: ActiveThreadContext] = [:]
+    @Published var activeThreadContextsByContact: [String: ActiveThreadContext] = [:]
     @Published var platformSummaries: [String: PlatformConversationSummary] = [:]
     @Published var isSplitView: Bool = false
     @Published var splitDestination: AppDestination? = nil
@@ -244,6 +245,39 @@ final class AppStore: ObservableObject {
         activeThreadContexts[accountID]
     }
 
+    func activeThreadContext(for accountID: UUID, contactName: String) -> ActiveThreadContext? {
+        let clean = contactName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = "\(accountID)_\(clean)"
+        if let found = activeThreadContextsByContact[key] {
+            return found
+        }
+        for (storedKey, ctx) in activeThreadContextsByContact where storedKey.hasPrefix("\(accountID)_") {
+            let storedClean = ctx.contactName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if storedClean == clean || storedClean.contains(clean) || clean.contains(storedClean) {
+                return ctx
+            }
+            if ctx.messages.contains(where: { $0.sender.lowercased() == clean || $0.sender.localizedCaseInsensitiveContains(clean) }) {
+                return ctx
+            }
+            if let groupMembers = ctx.groupMembers, groupMembers.contains(where: { $0.name.lowercased() == clean || $0.name.localizedCaseInsensitiveContains(clean) }) {
+                return ctx
+            }
+        }
+        if let current = activeThreadContexts[accountID] {
+            let activeClean = current.contactName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty || activeClean == clean || activeClean.contains(clean) || clean.contains(activeClean) {
+                return current
+            }
+            if current.messages.contains(where: { $0.sender.lowercased() == clean || $0.sender.localizedCaseInsensitiveContains(clean) }) {
+                return current
+            }
+            if let groupMembers = current.groupMembers, groupMembers.contains(where: { $0.name.lowercased() == clean || $0.name.localizedCaseInsensitiveContains(clean) }) {
+                return current
+            }
+        }
+        return nil
+    }
+
     func removeAccount(_ id: UUID) {
         guard let account = account(id), canRemoveAccount(id) else { return }
         PortalSessionRegistry.shared.forget(account, platform: platform(account.platformID))
@@ -330,7 +364,10 @@ final class AppStore: ObservableObject {
         notifications: [String],
         rawNotifications: [[String: String]] = [],
         activeContact: String? = nil,
-        activeThreadMessages: [[String: Any]] = []
+        activeThreadMessages: [[String: Any]] = [],
+        groupMemberCount: Int? = nil,
+        groupSubtitle: String? = nil,
+        groupMembers: [AIChatMemberItem]? = nil
     ) {
         guard let acc = account(accountID) else { return }
         let unread: Int? = {
@@ -340,7 +377,7 @@ final class AppStore: ObservableObject {
             }
             return nil
         }()
-        let previews = messages.prefix(15).enumerated().compactMap { index, item -> PlatformMessagePreview? in
+        let previews = messages.prefix(100).enumerated().compactMap { index, item -> PlatformMessagePreview? in
             let sender = (item["sender"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let content = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let time = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -352,16 +389,16 @@ final class AppStore: ObservableObject {
             guard !content.isEmpty else { return nil }
             return .init(id: "\(accountID)-\(index)-\(sender)-\(content)",
                          sender: String(sender.prefix(80)),
-                         text: String(content.prefix(240)),
+                         text: String(content.prefix(500)),
                          time: time.isEmpty ? nil : String(time.prefix(30)),
                          linkURL: link.isEmpty ? nil : link,
                          isUnread: unreadFlag)
         }
         let alerts = Array(Set(notifications.map {
             String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
-        }.filter { !$0.isEmpty })).sorted().prefix(12)
+        }.filter { !$0.isEmpty })).sorted().prefix(25)
 
-        let notifPreviews: [PlatformNotificationPreview] = rawNotifications.prefix(15).enumerated().compactMap { index, item in
+        let notifPreviews: [PlatformNotificationPreview] = rawNotifications.prefix(25).enumerated().compactMap { index, item in
             let itemTitle = (item["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let itemText = (item["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let itemTime = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -381,7 +418,7 @@ final class AppStore: ObservableObject {
         // Process Active Conversation Thread if present
         let cleanContact = (activeContact ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanContact.isEmpty || !activeThreadMessages.isEmpty {
-            let threadMsgs: [ActiveChatMessage] = activeThreadMessages.prefix(15).enumerated().compactMap { idx, dict in
+            let threadMsgs: [ActiveChatMessage] = activeThreadMessages.prefix(200).enumerated().compactMap { idx, dict in
                 let sender = (dict["sender"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let text = (dict["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let isFromMe = (dict["isFromMe"] as? Bool) ?? (sender.lowercased() == "you" || sender.lowercased() == "me")
@@ -399,9 +436,14 @@ final class AppStore: ObservableObject {
                 contactName: cleanContact.isEmpty ? (threadMsgs.first(where: { !$0.isFromMe })?.sender ?? "Current Chat") : cleanContact,
                 platformID: acc.platformID,
                 messages: threadMsgs,
+                groupMemberCount: groupMemberCount,
+                groupSubtitle: groupSubtitle,
+                groupMembers: groupMembers,
                 updatedAt: .now
             )
             activeThreadContexts[accountID] = ctx
+            let cacheKey = "\(accountID)_\(ctx.contactName.lowercased())"
+            activeThreadContextsByContact[cacheKey] = ctx
         }
 
         let next = PlatformActivitySnapshot(
@@ -505,12 +547,28 @@ final class AppStore: ObservableObject {
 
     func refreshAllPortals() {
         for account in platformAccounts {
-            PortalSessionRegistry.shared.wakeSession(accountID: account.id)
-            if let session = PortalSessionRegistry.shared.existingSession(for: account.id) {
-                session.wake()
-                session.resume()
-                session.forceCollect()
+            guard let platform = platform(account.platformID),
+                  let url = platform.resolvedWebsiteURL else { continue }
+            let session = PortalSessionRegistry.shared.session(for: account, url: url)
+            if session.activityHandler == nil {
+                session.activityHandler = { [weak self] title, messages, notifications, rawNotifications, activeContact, activeThreadMessages, groupMemberCount, groupSubtitle, groupMembers in
+                    self?.updatePlatformActivity(
+                        accountID: account.id,
+                        title: title,
+                        messages: messages,
+                        notifications: notifications,
+                        rawNotifications: rawNotifications,
+                        activeContact: activeContact,
+                        activeThreadMessages: activeThreadMessages,
+                        groupMemberCount: groupMemberCount,
+                        groupSubtitle: groupSubtitle,
+                        groupMembers: groupMembers
+                    )
+                }
             }
+            session.wake()
+            session.resume()
+            session.forceCollect()
         }
     }
 

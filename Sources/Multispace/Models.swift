@@ -41,8 +41,8 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
     var resolvedWebsiteURL: URL? {
         var address = websiteURL ?? Self.defaultWebsites[id]
             ?? Self.defaultWebsites[officialIdentity?.id ?? ""] ?? officialIdentity?.websiteURL
-        if (id == "linkedin" || officialIdentity?.id == "linkedin") && (address == nil || address == "https://www.linkedin.com/login" || address == "https://www.linkedin.com/feed/") {
-            address = "https://www.linkedin.com/messaging/"
+        if (id == "linkedin" || officialIdentity?.id == "linkedin") && (address == nil || address == "https://www.linkedin.com/login") {
+            address = "https://www.linkedin.com/feed/"
         }
         guard let address, let url = URL(string: address),
               url.scheme?.lowercased() == "https", url.host != nil else { return nil }
@@ -105,14 +105,15 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
 
     static let defaultWebsites: [String: String] = [
         "whatsapp": "https://web.whatsapp.com/",
-        "instagram": "https://www.instagram.com/direct/inbox/",
+        "instagram": "https://www.instagram.com/",
         "telegram": "https://web.telegram.org/a/",
-        "facebook": "https://www.facebook.com/messages/t/",
-        "linkedin": "https://www.linkedin.com/messaging/",
-        "x": "https://x.com/messages",
+        "facebook": "https://www.facebook.com/",
+        "linkedin": "https://www.linkedin.com/feed/",
+        "x": "https://x.com/home",
         "slack": "https://app.slack.com/client",
-        "reddit": "https://www.reddit.com/message/inbox",
-        "teams": "https://teams.microsoft.com"
+        "reddit": "https://www.reddit.com/",
+        "teams": "https://teams.microsoft.com",
+        "discord": "https://discord.com/channels/@me"
     ]
 
     static let defaults: [SocialPlatform] = [
@@ -124,8 +125,8 @@ struct SocialPlatform: Identifiable, Codable, Hashable {
 
     static let suggestions: [SocialPlatform] = [
         .init(id: "discord", name: "Discord", symbol: "bubble.left.and.bubble.right.fill", color: "purple", websiteURL: "https://discord.com/app"),
-        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/messaging/"),
-        .init(id: "x", name: "X", symbol: "at", color: "purple", websiteURL: "https://x.com/messages"),
+        .init(id: "linkedin", name: "LinkedIn", symbol: "person.2.fill", color: "blue", websiteURL: "https://www.linkedin.com/feed/"),
+        .init(id: "x", name: "X", symbol: "at", color: "purple", websiteURL: "https://x.com/home"),
         .init(id: "snapchat", name: "Snapchat", symbol: "camera.fill", color: "orange", websiteURL: "https://web.snapchat.com/"),
         .init(id: "tiktok", name: "TikTok", symbol: "video.fill", color: "pink", websiteURL: "https://www.tiktok.com/")
     ]
@@ -185,10 +186,40 @@ struct ActiveChatMessage: Identifiable, Hashable, Codable {
     var time: String? = nil
 }
 
+struct AIChatPhoneNumberItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String { "\(name)-\(number)" }
+    var name: String
+    var number: String
+    var context: String
+}
+
+struct AIChatMemberItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String { name }
+    var name: String
+    var role: String
+    var activity: String
+    var messageCount: Int
+    var phoneNumber: String? = nil
+}
+
+struct AIChatMessage: Identifiable, Equatable, Codable {
+    var id: String
+    var isUser: Bool
+    var text: String
+    var timestamp: Date
+    var actionItems: [String]? = nil
+    var phoneNumbers: [AIChatPhoneNumberItem]? = nil
+    var members: [AIChatMemberItem]? = nil
+    var relatedPrompts: [String]? = nil
+}
+
 struct ActiveThreadContext: Hashable, Codable {
     var contactName: String
     var platformID: String
     var messages: [ActiveChatMessage]
+    var groupMemberCount: Int? = nil
+    var groupSubtitle: String? = nil
+    var groupMembers: [AIChatMemberItem]? = nil
     var updatedAt: Date = .now
 
     var contextSnippet: String {
