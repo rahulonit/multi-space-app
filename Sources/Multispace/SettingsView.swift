@@ -710,11 +710,13 @@ struct SettingsView: View {
                             .font(.system(size: 12.5, weight: .semibold))
                         Spacer()
                         Picker("Model", selection: $store.preferences.geminiModelTier) {
-                            Text("gemini-3.5-flash").tag("gemini-3.5-flash")
-                            Text("gemini-3.1-flash-lite").tag("gemini-3.1-flash-lite")
+                            Text("gemini-2.5-flash").tag("gemini-2.5-flash")
+                            Text("gemini-2.5-pro").tag("gemini-2.5-pro")
+                            Text("gemini-1.5-flash").tag("gemini-1.5-flash")
+                            Text("gemini-1.5-pro").tag("gemini-1.5-pro")
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 155)
                     }
 
                     HStack(spacing: 8) {

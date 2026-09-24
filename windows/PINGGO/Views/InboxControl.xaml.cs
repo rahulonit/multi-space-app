@@ -483,6 +483,26 @@ namespace PINGGO.Views
                 _chatIntelligenceAnalysis.HasUsefulContext ? _chatIntelligenceAnalysis.Summary : new List<string> { "Not enough conversation context yet." });
             PopulateExpandedIntelligenceDetails(_chatIntelligenceAnalysis);
             PopulateIntelligenceQuestions(_chatIntelligenceAnalysis.SuggestedQuestions);
+            if (resolution.CanPerformGenerativeAI)
+            {
+                var targetId = _selectedMessage.Id;
+                var currentMsgs = _chatIntelligenceMessages;
+                var displaySender = _selectedMessage.DisplaySender;
+                _ = Task.Run(async () =>
+                {
+                    var aiPrompts = await ChatIntelligenceService.Shared.GenerateContextualPromptsAsync(currentMsgs, displaySender, prefs);
+                    if (aiPrompts != null && aiPrompts.Count > 0)
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            if (_selectedMessage?.Id == targetId)
+                            {
+                                PopulateIntelligenceQuestions(aiPrompts);
+                            }
+                        });
+                    }
+                });
+            }
             PopulateIntelligenceChat();
 
             var members = ChatIntelligenceService.Shared.GroundedMembers(_chatIntelligenceMessages, GetChatIntelligenceMetadataMembers());
@@ -591,7 +611,17 @@ namespace PINGGO.Views
             PopulateIntelligenceChat();
 
             var prefs = AppPreferences.Shared;
-            var aiMsg = await ChatIntelligenceService.Shared.AnswerAsync(clean, _chatIntelligenceAnalysis, _chatIntelligenceMessages, GetChatIntelligenceMetadataMembers(), prefs);
+            var activeCtx = MainViewModel.Shared.GetActiveThreadContext(_selectedMessage.AccountId, _selectedMessage.DisplaySender);
+            var aiMsg = await ChatIntelligenceService.Shared.AnswerAsync(
+                clean,
+                _chatIntelligenceAnalysis,
+                _chatIntelligenceMessages,
+                activeCtx?.GroupMembers ?? GetChatIntelligenceMetadataMembers(),
+                prefs,
+                priorContext: activeCtx?.ContextSnippet,
+                conversationTitle: _selectedMessage.DisplaySender,
+                groupMemberCount: activeCtx?.GroupMemberCount,
+                groupSubtitle: activeCtx?.GroupSubtitle);
             history.Add(aiMsg);
             PopulateIntelligenceChat();
         }

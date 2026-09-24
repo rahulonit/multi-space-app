@@ -108,6 +108,50 @@ namespace PINGGO.Services
                     "Looks good, please send over the final agreement."
                 };
             }
+            else if (lower.Contains("karwata") || lower.Contains("karwa") || lower.Contains("kaam") ||
+                     lower.Contains("ho jayega") || lower.Contains("dekh leta") || lower.Contains("handle") ||
+                     lower.Contains("will do") || lower.Contains("take care") || lower.Contains("on it") ||
+                     lower.Contains("done by") || lower.Contains("working on it"))
+            {
+                intent = "🤝 Work Commitment";
+                urgency = "Actionable";
+                contextSummary = $"{message.Sender} committed to handling or completing the work.";
+                actionItem = $"Follow up with {message.Sender} on completion";
+                replies = new List<string>
+                {
+                    "Theek hai, update dete rehna.",
+                    "Kab tak ho jayega?",
+                    "Dhanyawad, koi zaroorat ho to batana."
+                };
+            }
+            else if (lower.Contains("otp") || lower.Contains("verification code") || lower.Contains("security code") ||
+                     lower.Contains("one time password") || lower.Contains("passcode"))
+            {
+                intent = "🔐 Verification Code";
+                urgency = "High Priority";
+                contextSummary = $"{message.Sender} received or shared a verification code.";
+                actionItem = "Review or use verification code before expiry";
+                replies = new List<string>
+                {
+                    "Received, thanks!",
+                    "Code confirmed.",
+                    "Expired, please resend."
+                };
+            }
+            else if (lower.Contains("tender") || lower.Contains("bid") || lower.Contains("rfp") ||
+                     lower.Contains("procurement") || lower.Contains("quotation"))
+            {
+                intent = "📋 Tender & Procurement";
+                urgency = "High Priority";
+                contextSummary = $"{message.Sender} shared a tender notice or procurement document.";
+                actionItem = "Review tender requirements and submission deadlines";
+                replies = new List<string>
+                {
+                    "Reviewing tender specs now.",
+                    "What is the final submission date?",
+                    "Preparing the bid documents."
+                };
+            }
             else
             {
                 intent = "💬 General Discussion";

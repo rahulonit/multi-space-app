@@ -3145,8 +3145,15 @@ struct InboxView: View {
         aiChatHistory[item.id] = state.history
         aiChatInputText = ""
 
-        let members = store.activeThreadContext(for: item.accountID, contactName: item.message.sender)?.groupMembers
+        let threadCtx = store.activeThreadContext(for: item.accountID, contactName: item.message.sender)
+        let members = threadCtx?.groupMembers
+        let memberCount = threadCtx?.groupMemberCount
+        let subtitle = threadCtx?.groupSubtitle
         let prefs = store.preferences
+        let priorTurns = state.history.suffix(4)
+        let priorContext = String(priorTurns.map {
+            "\($0.isUser ? "User" : "Pinggo AI"): \($0.text)"
+        }.joined(separator: "\n\n").prefix(6_000))
 
         Task {
             let aiMsg = await ChatIntelligenceService.shared.answer(
@@ -3154,7 +3161,11 @@ struct InboxView: View {
                 analysis: analysis,
                 messages: messages,
                 members: members,
-                preferences: prefs
+                preferences: prefs,
+                priorContext: priorContext,
+                conversationTitle: item.message.sender,
+                groupMemberCount: memberCount,
+                groupSubtitle: subtitle
             )
             await MainActor.run {
                 var cur = conversationAIStates[item.id] ?? ConversationAIState()

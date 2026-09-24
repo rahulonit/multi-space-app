@@ -559,8 +559,8 @@ struct AppPreferences: Codable, Equatable {
     var chatGptAccountEmail: String = ""
     var geminiApiKey: String = ""
     var openAiApiKey: String = ""
-    var aiModelTier: String = "gemini-3.5-flash"
-    var geminiModelTier: String = "gemini-3.5-flash"
+    var aiModelTier: String = "gemini-2.5-flash"
+    var geminiModelTier: String = "gemini-2.5-flash"
     var openAiModelTier: String = "gpt-4o-mini"
     var ollamaModelTier: String = "llama3.2"
     var ollamaEndpoint: String = "http://localhost:11434"
@@ -615,11 +615,10 @@ struct AppPreferences: Codable, Equatable {
         chatGptAccountEmail = try c.decodeIfPresent(String.self, forKey: .chatGptAccountEmail) ?? ""
         geminiApiKey = ""
         openAiApiKey = ""
-        aiModelTier = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-3.5-flash"
-        let savedGeminiModel = try c.decodeIfPresent(String.self, forKey: .geminiModelTier)
-        geminiModelTier = savedGeminiModel == nil || savedGeminiModel?.hasPrefix("gemini-1.5") == true
-            ? "gemini-3.5-flash"
-            : savedGeminiModel!
+        let rawAiModel = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-2.5-flash"
+        aiModelTier = rawAiModel.contains("gemini-3.5") ? "gemini-2.5-flash" : rawAiModel
+        let rawGeminiModel = try c.decodeIfPresent(String.self, forKey: .geminiModelTier) ?? "gemini-2.5-flash"
+        geminiModelTier = rawGeminiModel.contains("gemini-3.5") ? "gemini-2.5-flash" : rawGeminiModel
         openAiModelTier = try c.decodeIfPresent(String.self, forKey: .openAiModelTier) ?? (aiModelTier.contains("gpt") ? aiModelTier : "gpt-4o-mini")
         ollamaModelTier = try c.decodeIfPresent(String.self, forKey: .ollamaModelTier) ?? (try c.decodeIfPresent(String.self, forKey: .ollamaModel) ?? "llama3.2")
         ollamaEndpoint = try c.decodeIfPresent(String.self, forKey: .ollamaEndpoint) ?? "http://localhost:11434"

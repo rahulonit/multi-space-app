@@ -132,7 +132,7 @@
 
                         <FontIcon Grid.Column="0" Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" Margin="2,0,8,0" VerticalAlignment="Center" />
 
-                        <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search conversations or ask AI..."
+                        <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search conversations..."
                                  TextChanged="OnSearchTextChanged" Background="Transparent" BorderThickness="0" FontSize="12" Foreground="White"
                                  VerticalAlignment="Center" />
 

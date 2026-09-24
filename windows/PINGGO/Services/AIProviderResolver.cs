@@ -64,7 +64,8 @@ namespace PINGGO.Services
             switch (provider)
             {
                 case "gemini":
-                    var geminiModel = string.IsNullOrWhiteSpace(preferences.GeminiModelTier) ? "gemini-3.5-flash" : preferences.GeminiModelTier;
+                    var rawGeminiModel = string.IsNullOrWhiteSpace(preferences.GeminiModelTier) ? "gemini-2.5-flash" : preferences.GeminiModelTier;
+                    var geminiModel = rawGeminiModel.Contains("gemini-3.5") ? "gemini-2.5-flash" : rawGeminiModel;
                     var geminiKey = (preferences.GeminiApiKey ?? string.Empty).Trim();
 
                     if (!string.IsNullOrEmpty(geminiKey))

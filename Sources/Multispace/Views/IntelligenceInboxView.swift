@@ -74,6 +74,9 @@ struct IntelligenceInboxView: View {
     @State private var aiTasksSubFilter: String = "All"
     @State private var showAllPrompts: Bool = false
     @State private var summaryDisplayMode: SummaryDisplayMode = .focus
+    @State private var dynamicPromptsByConversation: [String: [String]] = [:]
+    @State private var isGeneratingPrompts: Bool = false
+    @State private var promptGenerationTask: Task<Void, Never>? = nil
 
     // Context & Thread Q&A Isolation State
     @State private var activeConversationContexts: [String: ConversationContext] = [:]
@@ -90,10 +93,6 @@ struct IntelligenceInboxView: View {
     @State private var pendingExternalAction: String?
     @State private var audits: [IntelligenceAuditEntry] = []
     @State private var completedTaskIDs: Set<String> = []
-    @State private var openQuestions: [String] = [
-        "What is the final cut-off time for the staging deployment?",
-        "Has the stakeholder approval sign-off been received?"
-    ]
 
     // MARK: - Conversations Data
     private var conversations: [IntelligenceConversation] {
@@ -101,8 +100,9 @@ struct IntelligenceInboxView: View {
             guard let platform = store.platform(account.platformID),
                   let snapshot = store.platformActivity[account.id] else { return [] }
             let grouped = Dictionary(grouping: snapshot.messages, by: \.sender)
-            return grouped.compactMap { sender, messages in
-                guard let latest = messages.first else { return nil }
+            let sortedSenders = grouped.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            return sortedSenders.compactMap { sender in
+                guard let messages = grouped[sender], let latest = messages.last ?? messages.first else { return nil }
                 let unreadCount = messages.filter(\.unread).count
                 let priority: String = {
                     if unreadCount > 2 { return "🔥 Urgent" }
@@ -124,7 +124,16 @@ struct IntelligenceInboxView: View {
                 )
             }
         }
-        return live.isEmpty ? previewConversations : live.sorted { $0.unread > $1.unread }
+        if live.isEmpty { return previewConversations }
+        return live.sorted { a, b in
+            if a.unread != b.unread {
+                return a.unread > b.unread
+            }
+            if a.sender != b.sender {
+                return a.sender.localizedCaseInsensitiveCompare(b.sender) == .orderedAscending
+            }
+            return a.id < b.id
+        }
     }
 
     private var filteredConversations: [IntelligenceConversation] {
@@ -154,7 +163,10 @@ struct IntelligenceInboxView: View {
     }
 
     private var selected: IntelligenceConversation {
-        conversations.first(where: { $0.id == selectedID }) ?? conversations.first ?? previewConversations[0]
+        if let id = selectedID, let match = conversations.first(where: { $0.id == id }) {
+            return match
+        }
+        return conversations.first ?? previewConversations[0]
     }
 
     private var selectedSummary: PlatformConversationSummary? {
@@ -431,10 +443,14 @@ struct IntelligenceInboxView: View {
         let summary: String
         if analysis.messageCount == 0 {
             summary = "No indexed messages are available for this conversation yet."
-        } else if analysis.summary.isEmpty {
-            summary = "No important actions or decisions were detected in the indexed messages."
-        } else {
+        } else if !analysis.decisions.isEmpty || !analysis.tasks.isEmpty {
             summary = analysis.summary.map(cleanExtractedText).joined(separator: " ")
+        } else if let latestMsg = conv.messages.last {
+            let msgAnalysis = ConversationSummaryService.shared.analyzeMessage(latestMsg)
+            let quote = latestMsg.text.count > 100 ? String(latestMsg.text.prefix(100)) + "…" : latestMsg.text
+            summary = "\(conv.sender): \"\(quote)\". \(msgAnalysis.contextSummary)"
+        } else {
+            summary = "Direct conversation with \(conv.sender). All messages indexed under current scope."
         }
 
         let status: String
@@ -518,6 +534,14 @@ struct IntelligenceInboxView: View {
             if selectedID == nil { selectedID = conversations.first?.id }
             store.refreshAllPortals()
             store.refreshSummaries()
+            loadDynamicPrompts(for: selected)
+        }
+        .onChange(of: selectedID) { _, _ in
+            loadDynamicPrompts(for: selected)
+        }
+        .onChange(of: selected.messages.count) { _, _ in
+            dynamicPromptsByConversation.removeValue(forKey: selected.id)
+            loadDynamicPrompts(for: selected)
         }
         .sheet(isPresented: $showAccess) { accessSheet }
         .confirmationDialog(
@@ -583,6 +607,10 @@ struct IntelligenceInboxView: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
 
                 Button {
+                    if !searchText.isEmpty {
+                        question = searchText
+                        searchText = ""
+                    }
                     aiTab = .ask
                 } label: {
                     HStack(spacing: 4) {
@@ -848,11 +876,13 @@ struct IntelligenceInboxView: View {
         VStack(spacing: 14) {
             importantBriefCard
 
-            if currentContext.needsAttention.isEmpty &&
-                currentContext.tasks.filter({ !$0.isDone }).isEmpty &&
-                currentContext.decisions.isEmpty &&
-                currentContext.deadlines.isEmpty {
-                importantEmptyState
+            let totalActionItems = currentContext.needsAttention.count +
+                                   currentContext.tasks.filter({ !$0.isDone }).count +
+                                   currentContext.decisionCount +
+                                   currentContext.deadlineCount
+
+            if totalActionItems == 0 {
+                conversationalHubView
             } else {
                 if !currentContext.needsAttention.isEmpty || !currentContext.tasks.filter({ !$0.isDone }).isEmpty {
                     topPrioritiesCard
@@ -874,9 +904,17 @@ struct IntelligenceInboxView: View {
 
     private var detailedSummaryContent: some View {
         VStack(spacing: 14) {
-                // 1. Conversation Summary Card + Metrics
-                conversationSummaryCard
+            // 1. Conversation Summary Card + Metrics
+            conversationSummaryCard
 
+            let totalActionItems = currentContext.needsAttention.count +
+                                   currentContext.tasks.filter({ !$0.isDone }).count +
+                                   currentContext.decisionCount +
+                                   currentContext.deadlineCount
+
+            if totalActionItems == 0 {
+                conversationalHubView
+            } else {
                 // 2. Project Status & Needs Attention
                 HStack(alignment: .top, spacing: 12) {
                     projectStatusCard
@@ -921,6 +959,7 @@ struct IntelligenceInboxView: View {
                         if currentContext.isPreview { workstreamStatusCard }
                     }
                 }
+            }
         }
     }
 
@@ -948,31 +987,72 @@ struct IntelligenceInboxView: View {
                 .lineSpacing(3)
                 .lineLimit(4)
 
-            HStack(spacing: 8) {
-                importantMetric(
-                    "\(currentContext.needsAttention.count)",
-                    "Attention",
-                    icon: "exclamationmark.triangle.fill",
-                    color: .orange
-                )
-                importantMetric(
-                    "\(currentContext.tasks.filter { !$0.isDone }.count)",
-                    "Open actions",
-                    icon: "checklist",
-                    color: .blue
-                )
-                importantMetric(
-                    "\(currentContext.decisionCount)",
-                    "Decisions",
-                    icon: "checkmark.seal.fill",
-                    color: .teal
-                )
-                importantMetric(
-                    "\(currentContext.deadlineCount)",
-                    "Dates",
-                    icon: "calendar.badge.clock",
-                    color: .purple
-                )
+            let totalActionItems = currentContext.needsAttention.count +
+                                   currentContext.tasks.filter({ !$0.isDone }).count +
+                                   currentContext.decisionCount +
+                                   currentContext.deadlineCount
+
+            if totalActionItems > 0 {
+                HStack(spacing: 8) {
+                    importantMetric(
+                        "\(currentContext.needsAttention.count)",
+                        "Attention",
+                        icon: "exclamationmark.triangle.fill",
+                        color: .orange
+                    )
+                    importantMetric(
+                        "\(currentContext.tasks.filter { !$0.isDone }.count)",
+                        "Open actions",
+                        icon: "checklist",
+                        color: .blue
+                    )
+                    importantMetric(
+                        "\(currentContext.decisionCount)",
+                        "Decisions",
+                        icon: "checkmark.seal.fill",
+                        color: .teal
+                    )
+                    importantMetric(
+                        "\(currentContext.deadlineCount)",
+                        "Dates",
+                        icon: "calendar.badge.clock",
+                        color: .purple
+                    )
+                }
+            } else {
+                let targetMessages = selected.messages.isEmpty ? previewMessages(for: selected.sender) : selected.messages
+                let latestMsg = targetMessages.last
+                let msgAnalysis = latestMsg != nil ? ConversationSummaryService.shared.analyzeMessage(latestMsg!) : nil
+                let rawIntent = msgAnalysis?.detectedIntent ?? "💬 Message"
+                let intentParts = rawIntent.components(separatedBy: " ")
+                let intentLabel = intentParts.count > 1 ? intentParts.dropFirst().joined(separator: " ") : rawIntent
+
+                HStack(spacing: 8) {
+                    importantMetric(
+                        "\(currentContext.indexedMessageCount)",
+                        currentContext.indexedMessageCount == 1 ? "Message" : "Messages",
+                        icon: "bubble.left.fill",
+                        color: .blue
+                    )
+                    importantMetric(
+                        currentContext.contributors.count <= 1 ? "1-on-1" : "\(currentContext.contributors.count)",
+                        currentContext.contributors.count <= 1 ? "Channel" : "Members",
+                        icon: currentContext.contributors.count <= 1 ? "person.fill" : "person.2.fill",
+                        color: .indigo
+                    )
+                    importantMetric(
+                        intentLabel,
+                        "Intent",
+                        icon: "sparkles",
+                        color: .teal
+                    )
+                    importantMetric(
+                        msgAnalysis?.actionItem != nil ? "Actionable" : "Received",
+                        "Status",
+                        icon: "clock.badge.checkmark",
+                        color: .purple
+                    )
+                }
             }
 
             HStack {
@@ -1057,26 +1137,168 @@ struct IntelligenceInboxView: View {
         }
     }
 
-    private var importantEmptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: currentContext.indexedMessageCount == 0 ? "tray" : "checkmark.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(currentContext.indexedMessageCount == 0 ? Palette.muted : Color.green)
-            Text(currentContext.indexedMessageCount == 0 ? "Nothing analyzed yet" : "No urgent items detected")
-                .font(.system(size: 13, weight: .semibold))
-            Text(currentContext.indexedMessageCount == 0
-                 ? "Open or sync the conversation to index its messages."
-                 : "No decisions, action items, unresolved questions, or dates were found in the indexed messages.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Palette.muted)
-                .multilineTextAlignment(.center)
-            Button("View conversation") { centerTab = .messages }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(Palette.accent)
+    private var conversationalHubView: some View {
+        let targetMessages = selected.messages.isEmpty ? previewMessages(for: selected.sender) : selected.messages
+        let latestMsg = targetMessages.last
+        let msgAnalysis = latestMsg != nil ? ConversationSummaryService.shared.analyzeMessage(latestMsg!) : nil
+
+        return VStack(spacing: 12) {
+            smartRepliesCard(analysis: msgAnalysis, latestMsg: latestMsg)
+            recentMessagesCard(messages: targetMessages)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+    }
+
+    @ViewBuilder
+    private func smartRepliesCard(analysis: ConversationMessageSummary?, latestMsg: PlatformMessagePreview?) -> some View {
+        if let replies = analysis?.suggestedReplies, !replies.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Smart Replies & Next Steps", systemImage: "sparkles")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Palette.accent)
+                    Spacer()
+                    Text("One-click copy & reply")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.muted)
+                }
+
+                if let actionItem = analysis?.actionItem {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.yellow)
+                        Text("Recommended: \(actionItem)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.text)
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                FlowLayout(spacing: 6) {
+                    ForEach(replies, id: \.self) { reply in
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(reply, forType: .string)
+                            store.showToast("Copied reply: \"\(reply)\"")
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(reply)
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 8.5))
+                            }
+                            .font(.system(size: 10.5, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.accent.opacity(0.35)))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.accent)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        centerTab = .messages
+                    } label: {
+                        Label("Open Chat & Reply", systemImage: "arrowshape.turn.up.left.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.text)
+
+                    Button {
+                        let note = "Follow up with \(selected.sender) on: \"\(latestMsg?.text ?? "Update")\""
+                        audits.insert(.init(title: note, detail: "Reminder logged in Pinggo"), at: 0)
+                        store.showToast("Follow-up reminder set")
+                    } label: {
+                        Label("Remind Follow-up", systemImage: "bell.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.text)
+
+                    Spacer()
+
+                    Button {
+                        aiTab = .ask
+                        question = "What should I do or reply regarding \(selected.sender)'s message?"
+                        ask(question)
+                    } label: {
+                        Label("Ask AI", systemImage: "scope")
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Palette.accent.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.accent)
+                }
+                .padding(.top, 4)
+            }
+            .cardStyle()
+        }
+    }
+
+    @ViewBuilder
+    private func recentMessageRow(for msg: PlatformMessagePreview) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(Palette.accent.opacity(0.2))
+                    .frame(width: 24, height: 24)
+                Text(String(msg.sender.prefix(1)).uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(msg.sender)
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(Palette.text)
+                    if let time = msg.time, !time.isEmpty {
+                        Text("· \(time)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                }
+                Text(msg.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.text)
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recentMessagesCard(messages: [PlatformMessagePreview]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Recent Message Stream", systemImage: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Button("View all (\(messages.count))") {
+                    centerTab = .messages
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(Array(messages.suffix(4)), id: \.id) { (msg: PlatformMessagePreview) in
+                    recentMessageRow(for: msg)
+                }
+            }
+        }
         .cardStyle()
     }
 
@@ -1154,13 +1376,34 @@ struct IntelligenceInboxView: View {
             Text(currentContext.summaryText)
                 .font(.system(size: 11.5)).foregroundStyle(.primary.opacity(0.9)).lineSpacing(3)
 
-            // Metrics Strip - Derived strictly from currentContext
-            HStack(spacing: 8) {
-                metric("\(currentContext.topicCount)", "Key Topics", "checkmark.seal.fill", .purple)
-                metric("\(currentContext.decisionCount)", "Decisions", "checkmark.circle.fill", .teal)
-                metric("\(currentContext.taskCount - currentContext.completedTaskCount)", "Pending Tasks", "tray.full.fill", .blue)
-                metric("\(currentContext.deadlineCount)", "Deadlines", "calendar.badge.clock", .orange)
-                metric("\(currentContext.fileCount)", "Shared Files", "doc.fill", .indigo)
+            // Metrics Strip - Adaptive based on whether formal project items exist
+            let totalActionItems = currentContext.needsAttention.count +
+                                   currentContext.tasks.filter({ !$0.isDone }).count +
+                                   currentContext.decisionCount +
+                                   currentContext.deadlineCount
+
+            if totalActionItems > 0 {
+                HStack(spacing: 8) {
+                    metric("\(currentContext.topicCount)", "Key Topics", "checkmark.seal.fill", .purple)
+                    metric("\(currentContext.decisionCount)", "Decisions", "checkmark.circle.fill", .teal)
+                    metric("\(currentContext.taskCount - currentContext.completedTaskCount)", "Pending Tasks", "tray.full.fill", .blue)
+                    metric("\(currentContext.deadlineCount)", "Deadlines", "calendar.badge.clock", .orange)
+                    metric("\(currentContext.fileCount)", "Shared Files", "doc.fill", .indigo)
+                }
+            } else {
+                let targetMessages = selected.messages.isEmpty ? previewMessages(for: selected.sender) : selected.messages
+                let latestMsg = targetMessages.last
+                let msgAnalysis = latestMsg != nil ? ConversationSummaryService.shared.analyzeMessage(latestMsg!) : nil
+                let rawIntent = msgAnalysis?.detectedIntent ?? "💬 Message"
+                let intentParts = rawIntent.components(separatedBy: " ")
+                let intentLabel = intentParts.count > 1 ? intentParts.dropFirst().joined(separator: " ") : rawIntent
+
+                HStack(spacing: 8) {
+                    metric("\(currentContext.indexedMessageCount)", currentContext.indexedMessageCount == 1 ? "Message" : "Messages", "bubble.left.fill", .blue)
+                    metric(currentContext.contributors.count <= 1 ? "1-on-1" : "\(currentContext.contributors.count) Members", "Channel", currentContext.contributors.count <= 1 ? "person.fill" : "person.2.fill", .indigo)
+                    metric(intentLabel, "Intent", "sparkles", .teal)
+                    metric(msgAnalysis?.actionItem != nil ? "Actionable" : "Up to Date", "Status", "clock.badge.checkmark", .purple)
+                }
             }
         }
         .cardStyle()
@@ -1519,9 +1762,10 @@ struct IntelligenceInboxView: View {
 
     // 8. Open Questions Card
     private var openQuestionsCard: some View {
-        dashboardCard(title: "Open Questions", icon: "questionmark.circle.fill", color: .yellow) {
+        let questions = currentContext.openQuestions
+        return dashboardCard(title: "Open Questions", icon: "questionmark.circle.fill", color: .yellow) {
             VStack(alignment: .leading, spacing: 7) {
-                ForEach(openQuestions, id: \.self) { q in
+                ForEach(questions, id: \.self) { q in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(q)
                             .font(.system(size: 10, weight: .medium))
@@ -1536,7 +1780,7 @@ struct IntelligenceInboxView: View {
                             .buttonStyle(.bordered).controlSize(.mini).tint(Palette.accent)
                         }
                     }
-                    if q != openQuestions.last {
+                    if q != questions.last {
                         Divider().background(Palette.border)
                     }
                 }
@@ -1924,29 +2168,10 @@ struct IntelligenceInboxView: View {
     // 1. Ask Tab
     private var aiAskTab: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Input Field
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Palette.muted)
-                TextField("Ask anything about this conversation...", text: $question)
-                    .textFieldStyle(.plain)
-                    .onSubmit { ask(question) }
-                Button {
-                    ask(question)
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.black)
-                        .frame(width: 26, height: 26)
-                        .background(Palette.navActiveBg, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+            // Isolated Input Field (typing keystrokes stay local to this bar and never re-render Inbox conversation list)
+            AIAssistantInputBar(promptToInject: $question, isThinking: isThinking) { q in
+                ask(q)
             }
-            .font(.system(size: 11))
-            .padding(.horizontal, 10).frame(height: 38)
-            .background(Palette.card.opacity(0.6), in: Capsule())
-            .overlay(Capsule().stroke(Palette.accent.opacity(0.7)))
 
             // Thinking Indicator
             if isThinking {
@@ -2025,22 +2250,31 @@ struct IntelligenceInboxView: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
             }
 
-            // Suggested Contextual Prompts (3 primary + 4 expandable)
+            // Suggested Contextual Prompts (Dynamic, Chat-Grounded)
+            let allPrompts = contextualPrompts
+            let remainingCount = max(0, allPrompts.count - 3)
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Label("Contextual Prompts", systemImage: "sparkles")
                         .font(.system(size: 11, weight: .semibold))
-                    Spacer()
-                    Button(showAllPrompts ? "Show less" : "+ Show 4 more") {
-                        showAllPrompts.toggle()
+                    if isGeneratingPrompts {
+                        ProgressView()
+                            .scaleEffect(0.55)
+                            .frame(width: 12, height: 12)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(Palette.accent)
+                    Spacer()
+                    if remainingCount > 0 {
+                        Button(showAllPrompts ? "Show less" : "+ Show \(remainingCount) more") {
+                            showAllPrompts.toggle()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                    }
                 }
 
                 FlowLayout(spacing: 5) {
-                    ForEach(contextualPrompts, id: \.self) { prompt in
+                    ForEach(visiblePrompts, id: \.self) { prompt in
                         Button(prompt) {
                             question = prompt
                             ask(prompt)
@@ -2059,20 +2293,75 @@ struct IntelligenceInboxView: View {
     }
 
     private var contextualPrompts: [String] {
-        let primaryPrompts = [
-            "What do I need to do today?",
-            "What decisions were made?",
-            "What is the latest project status?"
-        ]
+        if let dynamic = dynamicPromptsByConversation[selected.id], !dynamic.isEmpty {
+            return dynamic
+        }
+        let targetMessages = selected.messages.isEmpty ? previewMessages(for: selected.sender) : selected.messages
+        let analysis = ChatIntelligenceService.shared.analyze(conversationID: selected.id, messages: targetMessages)
+        return ChatIntelligenceService.shared.generateDynamicPrompts(
+            messages: targetMessages,
+            conversationTitle: selected.sender,
+            tasks: analysis.tasks,
+            decisions: analysis.decisions,
+            dates: analysis.dates,
+            links: analysis.links,
+            files: analysis.files,
+            phones: analysis.phoneNumbers,
+            topics: analysis.topics,
+            people: analysis.people
+        )
+    }
 
-        let additionalPrompts = [
-            "Which tasks are still pending?",
-            "Show upcoming deadlines",
-            "Which files need review?",
-            "What changed since yesterday?"
-        ]
+    private var visiblePrompts: [String] {
+        let all = contextualPrompts
+        if showAllPrompts || all.count <= 3 {
+            return all
+        }
+        return Array(all.prefix(3))
+    }
 
-        return showAllPrompts ? (primaryPrompts + additionalPrompts) : primaryPrompts
+    private func loadDynamicPrompts(for conv: IntelligenceConversation) {
+        let targetId = conv.id
+        let targetMessages = conv.messages.isEmpty ? previewMessages(for: conv.sender) : conv.messages
+        let sender = conv.sender
+
+        // If already loaded and cached, don't re-query
+        if dynamicPromptsByConversation[targetId] != nil {
+            return
+        }
+
+        // 1. Immediately provide dynamic heuristic prompts derived from the chat's actual messages
+        let analysis = ChatIntelligenceService.shared.analyze(conversationID: targetId, messages: targetMessages)
+        let immediate = ChatIntelligenceService.shared.generateDynamicPrompts(
+            messages: targetMessages,
+            conversationTitle: sender,
+            tasks: analysis.tasks,
+            decisions: analysis.decisions,
+            dates: analysis.dates,
+            links: analysis.links,
+            files: analysis.files,
+            phones: analysis.phoneNumbers,
+            topics: analysis.topics,
+            people: analysis.people
+        )
+        dynamicPromptsByConversation[targetId] = immediate
+
+        // 2. If generative AI is ready (OpenAI, Gemini, Ollama), trigger deep model-based contextual question generation
+        if aiResolution.canPerformGenerativeAI {
+            promptGenerationTask?.cancel()
+            isGeneratingPrompts = true
+            promptGenerationTask = Task { @MainActor in
+                let aiPrompts = await ChatIntelligenceService.shared.generateContextualPrompts(
+                    messages: targetMessages,
+                    conversationTitle: sender,
+                    preferences: store.preferences
+                )
+                if !Task.isCancelled && !aiPrompts.isEmpty {
+                    dynamicPromptsByConversation[targetId] = aiPrompts
+                }
+                isGeneratingPrompts = false
+            }
+        }
     }
 
     private var filteredAITasks: [ProjectTaskItem] {
@@ -2313,7 +2602,7 @@ struct IntelligenceInboxView: View {
         let clean = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         let currentTargetId = selected.id
-        let targetMessages = selected.messages
+        let targetMessages = selected.messages.isEmpty ? previewMessages(for: selected.sender) : selected.messages
         let priorTurns = (chatHistory[currentTargetId] ?? []).suffix(4)
         let priorContext = String(priorTurns.map {
             "User: \($0.question)\nPinggo AI: \($0.answer)"
@@ -2322,6 +2611,22 @@ struct IntelligenceInboxView: View {
         let queryTaskId = UUID()
         activeTaskId = queryTaskId
         isThinking = true
+
+        let threadContext: ActiveThreadContext? = {
+            if let accountID = selected.accountID {
+                return store.activeThreadContext(for: accountID, contactName: selected.sender)
+            }
+            for account in store.platformAccounts {
+                if let ctx = store.activeThreadContext(for: account.id, contactName: selected.sender) {
+                    return ctx
+                }
+            }
+            return nil
+        }()
+        let threadMembers = threadContext?.groupMembers
+        let threadMemberCount = threadContext?.groupMemberCount
+        let threadSubtitle = threadContext?.groupSubtitle
+        let conversationTitle = selected.sender
 
         Task { @MainActor in
             let analysis = ChatIntelligenceService.shared.analyze(
@@ -2332,9 +2637,12 @@ struct IntelligenceInboxView: View {
                 question: clean,
                 analysis: analysis,
                 messages: targetMessages,
-                members: nil,
+                members: threadMembers,
                 preferences: preferences,
-                priorContext: priorContext
+                priorContext: priorContext,
+                conversationTitle: conversationTitle,
+                groupMemberCount: threadMemberCount,
+                groupSubtitle: threadSubtitle
             )
 
             // Context guard: never place a delayed answer in a different conversation.
@@ -2533,6 +2841,54 @@ struct IntelligenceInboxView: View {
                 isPreview: true
             )
         }
+    }
+}
+
+// MARK: - Isolated AI Assistant Input Bar (Prevents Parent View Re-renders on Keystroke)
+private struct AIAssistantInputBar: View {
+    @Binding var promptToInject: String
+    let isThinking: Bool
+    let onAsk: (String) -> Void
+
+    @State private var inputText: String = ""
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Palette.accent)
+                .font(.system(size: 11))
+            TextField("Ask anything about this conversation...", text: $inputText)
+                .textFieldStyle(.plain)
+                .onSubmit { submit() }
+            Button {
+                submit()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.black)
+                    .frame(width: 26, height: 26)
+                    .background(Palette.navActiveBg, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isThinking)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 10).frame(height: 38)
+        .background(Palette.card.opacity(0.6), in: Capsule())
+        .overlay(Capsule().stroke(Palette.accent.opacity(0.7)))
+        .onChange(of: promptToInject) { _, newPrompt in
+            if !newPrompt.isEmpty {
+                inputText = newPrompt
+                promptToInject = ""
+            }
+        }
+    }
+
+    private func submit() {
+        let clean = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, !isThinking else { return }
+        inputText = ""
+        onAsk(clean)
     }
 }
 

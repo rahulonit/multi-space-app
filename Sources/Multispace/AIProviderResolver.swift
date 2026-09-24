@@ -91,10 +91,11 @@ final class AIProviderResolver {
 
         switch rawProvider {
         case "gemini":
-            let model = preferences.geminiModelTier.isEmpty ? "gemini-3.5-flash" : preferences.geminiModelTier
+            let rawModel = preferences.geminiModelTier.isEmpty ? "gemini-2.5-flash" : preferences.geminiModelTier
+            let model = rawModel.contains("gemini-3.5") ? "gemini-2.5-flash" : rawModel
             let apiKey = preferences.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !apiKey.isEmpty && preferences.isGeminiLoggedIn {
+            if !apiKey.isEmpty {
                 return AIProviderResolution(
                     provider: .gemini,
                     model: model,
@@ -102,15 +103,6 @@ final class AIProviderResolver {
                     availability: .ready,
                     capabilities: .fullSuite,
                     displayBadge: "Google Gemini · \(model)"
-                )
-            } else if !apiKey.isEmpty {
-                return AIProviderResolution(
-                    provider: .gemini,
-                    model: model,
-                    authMode: .directApiKey,
-                    availability: .authenticationRequired("Validate the saved Gemini credential in Settings > AI."),
-                    capabilities: .localHeuristic,
-                    displayBadge: "Gemini (Validation Required)"
                 )
             } else {
                 return AIProviderResolution(
@@ -127,7 +119,7 @@ final class AIProviderResolver {
             let model = preferences.openAiModelTier.isEmpty ? "gpt-4o-mini" : preferences.openAiModelTier
             let apiKey = preferences.openAiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !apiKey.isEmpty && preferences.isChatGptLoggedIn {
+            if !apiKey.isEmpty {
                 return AIProviderResolution(
                     provider: .chatgpt,
                     model: model,
@@ -135,15 +127,6 @@ final class AIProviderResolver {
                     availability: .ready,
                     capabilities: .fullSuite,
                     displayBadge: "OpenAI · \(model)"
-                )
-            } else if !apiKey.isEmpty {
-                return AIProviderResolution(
-                    provider: .chatgpt,
-                    model: model,
-                    authMode: .directApiKey,
-                    availability: .authenticationRequired("Validate the saved OpenAI credential in Settings > AI."),
-                    capabilities: .localHeuristic,
-                    displayBadge: "OpenAI (Validation Required)"
                 )
             } else {
                 return AIProviderResolution(

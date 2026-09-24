@@ -80,10 +80,10 @@ namespace PINGGO.Models
         public string OpenAiApiKey { get; set; } = string.Empty;
 
         [JsonPropertyName("aiModelTier")]
-        public string AiModelTier { get; set; } = "gemini-3.5-flash";
+        public string AiModelTier { get; set; } = "gemini-2.5-flash";
 
         [JsonPropertyName("geminiModelTier")]
-        public string GeminiModelTier { get; set; } = "gemini-3.5-flash";
+        public string GeminiModelTier { get; set; } = "gemini-2.5-flash";
 
         [JsonPropertyName("openAiModelTier")]
         public string OpenAiModelTier { get; set; } = "gpt-4o-mini";

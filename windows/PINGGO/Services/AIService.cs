@@ -112,7 +112,8 @@ namespace PINGGO.Services
                 {
                     try
                     {
-                        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{resolution.Model}:streamGenerateContent?alt=sse";
+                        var targetModel = (resolution.Model ?? "").Contains("gemini-3.5") ? "gemini-2.5-flash" : (string.IsNullOrWhiteSpace(resolution.Model) ? "gemini-2.5-flash" : resolution.Model);
+                        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{targetModel}:streamGenerateContent?alt=sse";
                         var contentsList = new List<object>();
                         if (history != null)
                         {
@@ -310,7 +311,7 @@ namespace PINGGO.Services
             return AskCoPilotAsync(prompt);
         }
 
-        public async Task<(bool Success, string Message)> TestConnectionAsync(string provider, string keyOrEndpoint, string model = "gemini-3.5-flash")
+        public async Task<(bool Success, string Message)> TestConnectionAsync(string provider, string keyOrEndpoint, string model = "gemini-2.5-flash")
         {
             try
             {
@@ -327,7 +328,8 @@ namespace PINGGO.Services
                 else if (provider == "gemini")
                 {
                     if (string.IsNullOrWhiteSpace(keyOrEndpoint)) return (false, "Gemini API key is required.");
-                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
+                    var targetModel = (model ?? "").Contains("gemini-3.5") ? "gemini-2.5-flash" : (string.IsNullOrWhiteSpace(model) ? "gemini-2.5-flash" : model);
+                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{targetModel}:generateContent";
                     var payload = new { contents = new[] { new { parts = new[] { new { text = "Respond with CONNECTED" } } } } };
                     using var req = new HttpRequestMessage(HttpMethod.Post, url);
                     req.Headers.Add("x-goog-api-key", keyOrEndpoint);

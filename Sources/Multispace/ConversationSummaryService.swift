@@ -237,6 +237,40 @@ final class ConversationSummaryService {
                 "Acknowledged. Monitoring the deployment closely.",
                 "Can you share the logs or error traceback?"
             ]
+        } else if lower.contains("karwata") || lower.contains("karwa") || lower.contains("kaam") ||
+                  lower.contains("ho jayega") || lower.contains("will do") || lower.contains("take care") ||
+                  lower.contains("on it") || lower.contains("working on") || lower.contains("handled") ||
+                  lower.contains("karta hu") || lower.contains("dekh leta") {
+            intent = "🤝 Work Commitment"
+            urgency = .normal
+            contextSummary = isOutgoing ? "You committed to taking care of the work." : "\(message.sender) confirmed they will take care of the work."
+            actionItem = isOutgoing ? "Complete the committed task and send an update" : "Follow up with \(message.sender) on completion"
+            replies = [
+                "Theek hai, update dete rehna.",
+                "Kab tak ho jayega?",
+                "Dhanyawad, koi zaroorat ho to batana."
+            ]
+        } else if lower.contains("otp") || lower.contains("verification code") || lower.contains("security code") ||
+                  lower.contains("pin ") || lower.contains("one time password") {
+            intent = "🔐 Verification Code"
+            urgency = .high
+            contextSummary = "\(message.sender) sent a security verification code or OTP."
+            actionItem = "Use the verification code before expiry"
+            replies = [
+                "Received the code, thank you.",
+                "Verified successfully.",
+                "Please resend if expired."
+            ]
+        } else if lower.contains("tender") || lower.contains("eproc") || lower.contains("bid") || lower.contains("nit") {
+            intent = "📑 Tender Notice"
+            urgency = .medium
+            contextSummary = "\(message.sender) sent a tender or official portal notification."
+            actionItem = "Review tender submission instructions"
+            replies = [
+                "Noted. Reviewing tender requirements.",
+                "Details are being compiled for submission.",
+                "Confirmed receipt of notice."
+            ]
         } else {
             // General conversation / Inquiry
             if detectedQuestion != nil {
@@ -250,7 +284,7 @@ final class ConversationSummaryService {
                     "No problem, happy to help with this."
                 ]
             } else {
-                intent = "💬 Message / Check-in"
+                intent = "💬 Message / Update"
                 urgency = .normal
                 contextSummary = "\(message.sender) sent a chat message or update."
                 replies = [

@@ -9,7 +9,7 @@ namespace PINGGO.Services
 {
     public sealed class ChatIntelligenceService
     {
-        public const int MaximumMessages = 100;
+        public const int MaximumMessages = 250;
         public static ChatIntelligenceService Shared { get; } = new();
 
         private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
@@ -94,15 +94,18 @@ namespace PINGGO.Services
                 foreach (var message in scoped.TakeLast(5).Reverse()) AddUnique(result.Summary, Compact(message.Text));
             }
 
-            if (result.Tasks.Count > 0) result.SuggestedQuestions.Add("What tasks are pending for me?");
-            if (result.Decisions.Count > 0) result.SuggestedQuestions.Add("What decisions were made?");
-            if (result.Dates.Count > 0) result.SuggestedQuestions.Add("What deadlines or dates were mentioned?");
-            if (result.UnresolvedQuestions.Count > 0) result.SuggestedQuestions.Add("Summarize unresolved questions.");
-            if (result.Links.Count > 0) result.SuggestedQuestions.Add("Show all links shared in this chat.");
-            if (result.PhoneNumbers.Count > 0) result.SuggestedQuestions.Add("List all phone numbers shared in this conversation.");
-            if (result.People.Count > 1) result.SuggestedQuestions.Add("List all members in this group.");
-            if (result.People.FirstOrDefault() is string person) result.SuggestedQuestions.Add($"What is {person} saying in this conversation?");
-            result.SuggestedQuestions = result.SuggestedQuestions.Take(6).ToList();
+            var primarySender = result.People.FirstOrDefault() ?? "this chat";
+            result.SuggestedQuestions = GenerateDynamicPrompts(
+                scoped,
+                primarySender,
+                result.Tasks,
+                result.Decisions,
+                result.Dates,
+                result.Links,
+                result.Files,
+                result.PhoneNumbers,
+                result.Topics,
+                result.People);
             return result;
         }
 
@@ -111,9 +114,136 @@ namespace PINGGO.Services
             ChatIntelligenceAnalysis analysis,
             IEnumerable<PlatformMessagePreview> messages,
             IEnumerable<AIChatMemberItem>? metadataMembers,
-            AppPreferences? preferences = null)
+            AppPreferences? preferences = null,
+            string? priorContext = null,
+            string? conversationTitle = null,
+            int? groupMemberCount = null,
+            string? groupSubtitle = null)
         {
-            var scoped = messages.TakeLast(MaximumMessages).ToList();
+            var scoped = messages.Where(m => !string.IsNullOrWhiteSpace(m.Text)).TakeLast(MaximumMessages).ToList();
+            var clean = question.Trim();
+            if (string.IsNullOrWhiteSpace(clean))
+            {
+                return new AIChatMessage { IsUser = false, Text = "Please enter a question to analyze." };
+            }
+
+            var resolution = preferences != null ? AIProviderResolver.Resolve(preferences) : null;
+
+            // =============================================================
+            // PATH A: Connected Generative AI Provider (Deep Grounded Analysis)
+            // =============================================================
+            if (preferences != null && resolution != null && resolution.CanPerformGenerativeAI)
+            {
+                var fullTranscript = string.Join("\n", scoped.Select((m, i) => $"[#{i + 1} | {(string.IsNullOrWhiteSpace(m.Sender) ? "Unknown" : m.Sender)} [{(m.Time ?? "")}]]: {m.Text}"));
+                var availableMembers = GroundedMembers(scoped, metadataMembers);
+                var uniqueSenders = scoped.Select(m => m.Sender).Where(s => !string.IsNullOrWhiteSpace(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+                var title = !string.IsNullOrWhiteSpace(conversationTitle) ? conversationTitle : (analysis.People.FirstOrDefault() ?? "Current Thread");
+
+                var isExplicitGroup = (groupMemberCount ?? 0) > 2 || !string.IsNullOrWhiteSpace(groupSubtitle) || availableMembers.Count > 1 || uniqueSenders.Count > 1;
+                var totalCount = groupMemberCount ?? Math.Max(availableMembers.Count, Math.Max(1, uniqueSenders.Count));
+                var channelType = isExplicitGroup ? $"Group Chat ({totalCount} members)" : "Direct 1-on-1 / Service Notification Channel";
+
+                var membersList = availableMembers.Count == 0
+                    ? (uniqueSenders.Count == 0 ? title : string.Join(", ", uniqueSenders))
+                    : string.Join("; ", availableMembers.Select(m => $"{m.Name} ({(string.IsNullOrEmpty(m.PhoneNumber) ? "No phone" : m.PhoneNumber)}) - {m.Role}"));
+
+                var userPrompt = $@"=== CONVERSATION SCOPE & COMPOSITION ===
+• Thread Title: {title}
+• Channel Type: {channelType}
+• Total Messages Indexed: {scoped.Count}
+• Member Count: {(isExplicitGroup ? $"{totalCount} members" : "1 participant (Direct 1-on-1 Channel)")}
+• Group Subtitle / Description: {groupSubtitle ?? "None"}
+• Identified Participants: {membersList}
+• Active Message Senders: {(uniqueSenders.Count == 0 ? title : string.Join(", ", uniqueSenders))}
+
+=== CONVERSATION METADATA ===
+Detected Decisions: {(analysis.Decisions.Count == 0 ? "None" : string.Join(" | ", analysis.Decisions))}
+Detected Action Items: {(analysis.Tasks.Count == 0 ? "None" : string.Join(" | ", analysis.Tasks))}
+Mentioned Dates/Deadlines: {(analysis.Dates.Count == 0 ? "None" : string.Join(" | ", analysis.Dates))}
+Referenced Files: {(analysis.Files.Count == 0 ? "None" : string.Join(", ", analysis.Files))}
+Shared Links: {(analysis.Links.Count == 0 ? "None" : string.Join(", ", analysis.Links))}
+Shared Contact Numbers: {(analysis.PhoneNumbers.Count == 0 ? "None" : string.Join(", ", analysis.PhoneNumbers))}
+
+=== FULL CONVERSATION TRANSCRIPT ({scoped.Count} messages) ===
+{fullTranscript}
+
+=== PREVIOUS PINGGO AI CONTEXT ===
+{(!string.IsNullOrWhiteSpace(priorContext) ? priorContext : "No prior AI turns.")}
+
+=== USER QUESTION ===
+{clean}";
+
+                try
+                {
+                    var answer = await AIService.Shared.AskCoPilotAsync(userPrompt, context: null, tone: "Professional");
+                    if (!string.IsNullOrWhiteSpace(answer))
+                    {
+                        var lower = clean.ToLowerInvariant();
+                        return new AIChatMessage
+                        {
+                            IsUser = false,
+                            Text = answer,
+                            ActionItems = ContainsAny(lower, "task", "todo", "to-do", "action item") ? analysis.Tasks.Select(StripReference).ToList() : new(),
+                            PhoneNumbers = ContainsAny(lower, "phone", "mobile", "contact") ? analysis.PhoneNumbers.Select(num =>
+                            {
+                                var owner = scoped.FirstOrDefault(m => m.Text.Contains(num))?.Sender ?? "Shared contact";
+                                return new AIChatPhoneNumberItem { Name = owner, Number = num, Context = "Found in selected conversation" };
+                            }).ToList() : null,
+                            RelatedPrompts = analysis.SuggestedQuestions,
+                            Source = new AIResponseSource
+                            {
+                                SourceType = AIResponseSourceType.ProviderGenerated,
+                                Provider = resolution.Provider.ToString(),
+                                Model = resolution.Model
+                            }
+                        };
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var localFallback = PerformDeterministicExtraction(clean, analysis, scoped, metadataMembers, title, groupMemberCount, groupSubtitle);
+                    var fallbackText = localFallback != null ? localFallback.Text : SearchEvidenceFallback(clean, scoped);
+
+                    return new AIChatMessage
+                    {
+                        IsUser = false,
+                        Text = $"⚠️ **{resolution.DisplayBadge} could not complete the request** ({ex.Message}).\n*Falling back to local extraction:*\n\n{fallbackText}",
+                        ActionItems = localFallback?.ActionItems ?? new(),
+                        PhoneNumbers = localFallback?.PhoneNumbers,
+                        Members = localFallback?.Members,
+                        RelatedPrompts = new List<string> { "Retry Question", "Check Settings > AI" }.Concat(analysis.SuggestedQuestions.Take(2)).ToList(),
+                        Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic }
+                    };
+                }
+            }
+
+            // =============================================================
+            // PATH B: Offline / Unconfigured AI Provider (Local Heuristics)
+            // =============================================================
+            var deterministicResult = PerformDeterministicExtraction(clean, analysis, scoped, metadataMembers, conversationTitle, groupMemberCount, groupSubtitle);
+            if (deterministicResult != null)
+            {
+                return deterministicResult;
+            }
+
+            return new AIChatMessage
+            {
+                IsUser = false,
+                Text = $"💡 **AI provider is not connected for generative reasoning.**\n\nTo ask deep, freeform questions across this conversation (e.g. *“{clean}”*), connect **Google Gemini**, **OpenAI ChatGPT**, or **Ollama** in **Settings > AI**.\n\nLocal extraction is currently active for: *tasks*, *decisions*, *deadlines*, *members*, *phone numbers*, *files*, and *links*.",
+                RelatedPrompts = analysis.SuggestedQuestions,
+                Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic }
+            };
+        }
+
+        private AIChatMessage? PerformDeterministicExtraction(
+            string question,
+            ChatIntelligenceAnalysis analysis,
+            IList<PlatformMessagePreview> scoped,
+            IEnumerable<AIChatMemberItem>? metadataMembers,
+            string? conversationTitle = null,
+            int? groupMemberCount = null,
+            string? groupSubtitle = null)
+        {
             var clean = question.Trim();
             var lower = clean.ToLowerInvariant();
             var response = new AIChatMessage
@@ -179,7 +309,7 @@ namespace PINGGO.Services
             }
 
             // 8. Members
-            if (ContainsAny(lower, "member", "participant", "who is in", "people in this group", "list all member"))
+            if (ContainsAny(lower, "member", "participant", "who is in", "who are in", "people in this group", "list all member", "how many member"))
             {
                 var available = GroundedMembers(scoped, metadataMembers);
                 if (available.Count == 0)
@@ -188,8 +318,18 @@ namespace PINGGO.Services
                     return response;
                 }
                 response.Members = available;
-                response.Text = $"👥 **Group Members ({available.Count})**\n\n" + string.Join("\n", available.Select(m =>
-                    $"• **{m.Name}** — {(string.IsNullOrEmpty(m.PhoneNumber) ? "Phone unavailable" : m.PhoneNumber)} ({m.Role})"));
+                var title = !string.IsNullOrWhiteSpace(conversationTitle) ? conversationTitle : (analysis.People.FirstOrDefault() ?? "Current Thread");
+                if (available.Count == 1)
+                {
+                    var single = available[0];
+                    response.Text = $"💬 **Direct 1-on-1 Channel ({title})**\n\nThis conversation is a direct 1-on-1 thread with **{single.Name}** (not a multi-member group).\n\n• **Participant**: **{single.Name}** — {single.Role}";
+                }
+                else
+                {
+                    var countStr = groupMemberCount.HasValue ? groupMemberCount.Value.ToString() : available.Count.ToString();
+                    response.Text = $"👥 **Group Members — {title} ({countStr})**\n\n" + string.Join("\n", available.Select(m =>
+                        $"• **{m.Name}** — {(string.IsNullOrEmpty(m.PhoneNumber) ? "Phone unavailable" : m.PhoneNumber)} ({m.Role})"));
+                }
                 return response;
             }
 
@@ -222,53 +362,38 @@ namespace PINGGO.Services
                 return response;
             }
 
-            // STEP 2: Freeform / Semantic AI Reasoning
-            if (preferences != null)
+            // 11. Keyword Evidence Search Fallback
+            var tokens = SearchTokens(clean);
+            var evidence = scoped.Where(m => tokens.Count > 0 && tokens.Any(t => m.Text.Contains(t, StringComparison.OrdinalIgnoreCase) || m.Sender.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (evidence.Count > 0)
             {
-                var resolution = AIProviderResolver.Resolve(preferences);
-                if (resolution.CanPerformGenerativeAI)
-                {
-                    var recentMessages = string.Join("\n", scoped.TakeLast(25).Select((m, i) => $"({i + 1}) {m.Sender} [{(m.Time ?? "")}]: {m.Text}"));
-                    var userPrompt = $"Conversation Summary:\n{string.Join("\n", analysis.Summary.Select(s => "• " + s))}\n\nParticipants: {string.Join(", ", analysis.People)}\n\nRecent Transcript:\n{recentMessages}\n\nQuestion: {clean}";
-
-                    try
-                    {
-                        var answer = await AIService.Shared.GenerateResponseAsync(userPrompt);
-                        response.Text = answer;
-                        response.Source = new AIResponseSource
-                        {
-                            SourceType = AIResponseSourceType.ProviderGenerated,
-                            Provider = resolution.Provider.ToString(),
-                            Model = resolution.Model
-                        };
-                        return response;
-                    }
-                    catch (Exception ex)
-                    {
-                        response.Text = $"⚠️ **{resolution.DisplayBadge} could not complete the request**:\n{ex.Message}";
-                        response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
-                        return response;
-                    }
-                }
-                else
-                {
-                    response.Text = $"💡 **AI provider is not configured for generative reasoning.**\n\nTo ask freeform questions like *“{clean}”*, please configure **Google Gemini**, **OpenAI ChatGPT**, or **Ollama** in **Settings > AI**.";
-                    response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
-                    return response;
-                }
+                response.Text = FormatMessages("Relevant conversation evidence", evidence);
+                response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
+                return response;
             }
 
-            // Fallback: keyword search
-            var tokens = SearchTokens(question);
-            var evidence = scoped.Where(m => tokens.Count > 0 && tokens.Any(t => m.Text.Contains(t, StringComparison.OrdinalIgnoreCase) || m.Sender.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
-            response.Text = evidence.Count == 0 ? "I couldn’t find that information in this conversation." : FormatMessages("Relevant conversation evidence", evidence);
-            response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
-            return response;
+            return null;
         }
 
-        public AIChatMessage Answer(string question, ChatIntelligenceAnalysis analysis, IEnumerable<PlatformMessagePreview> messages, IEnumerable<AIChatMemberItem>? metadataMembers)
+        private static string SearchEvidenceFallback(string question, IList<PlatformMessagePreview> scoped)
         {
-            return AnswerAsync(question, analysis, messages, metadataMembers).GetAwaiter().GetResult();
+            var tokens = SearchTokens(question);
+            var evidence = scoped.Where(m => tokens.Count > 0 && tokens.Any(t => m.Text.Contains(t, StringComparison.OrdinalIgnoreCase) || m.Sender.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
+            return evidence.Count == 0 ? "I couldn’t find that information in this conversation." : FormatMessages("Relevant conversation evidence", evidence);
+        }
+
+        public AIChatMessage Answer(
+            string question,
+            ChatIntelligenceAnalysis analysis,
+            IEnumerable<PlatformMessagePreview> messages,
+            IEnumerable<AIChatMemberItem>? metadataMembers,
+            AppPreferences? preferences = null,
+            string? priorContext = null,
+            string? conversationTitle = null,
+            int? groupMemberCount = null,
+            string? groupSubtitle = null)
+        {
+            return AnswerAsync(question, analysis, messages, metadataMembers, preferences, priorContext, conversationTitle, groupMemberCount, groupSubtitle).GetAwaiter().GetResult();
         }
 
         public List<AIChatMemberItem> GroundedMembers(IEnumerable<PlatformMessagePreview> messages, IEnumerable<AIChatMemberItem>? metadataMembers)
@@ -287,6 +412,203 @@ namespace PINGGO.Services
                 }
             }
             return result.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        public List<string> GenerateDynamicPrompts(
+            IList<PlatformMessagePreview> messages,
+            string conversationTitle,
+            IList<string>? tasks = null,
+            IList<string>? decisions = null,
+            IList<string>? dates = null,
+            IList<string>? links = null,
+            IList<string>? files = null,
+            IList<string>? phones = null,
+            IList<string>? topics = null,
+            IList<string>? people = null)
+        {
+            var title = (conversationTitle ?? "").Trim();
+            var displayTitle = string.IsNullOrWhiteSpace(title) ? "this sender" : title;
+            var prompts = new List<string>();
+
+            var combinedText = string.Join("\n", messages.Select(m => m.Text)).ToLowerInvariant();
+
+            // 1. Verification codes / OTP / Security PIN
+            if (combinedText.Contains("otp") || combinedText.Contains("verification code") || combinedText.Contains("security code") || combinedText.Contains("one time password") || combinedText.Contains("login code") || combinedText.Contains("pin ") || combinedText.Contains(" pin"))
+            {
+                prompts.Add("What is the verification code / OTP?");
+                prompts.Add("When does this code or link expire?");
+            }
+
+            // 2. Financial / Payments / Invoices / Billing
+            if (combinedText.Contains("$") || combinedText.Contains("₹") || combinedText.Contains("rs.") || combinedText.Contains("inr") || combinedText.Contains("usd") || combinedText.Contains("eur") || combinedText.Contains("payment") || combinedText.Contains("invoice") || combinedText.Contains("paid") || combinedText.Contains("bill") || combinedText.Contains("refund") || combinedText.Contains("due date"))
+            {
+                prompts.Add("What is the payment amount or bill status?");
+                prompts.Add("What payment instructions were given?");
+            }
+
+            // 3. Deadlines & Dates
+            if (dates != null && dates.Count > 0)
+            {
+                prompts.Add($"What is scheduled for {dates[0]}?");
+            }
+
+            // 4. Questions from sender
+            var questionsFromSender = messages.Where(m => !m.Sender.Equals("you", StringComparison.OrdinalIgnoreCase) && m.Text.Contains('?')).ToList();
+            if (questionsFromSender.Count > 0)
+            {
+                prompts.Add($"What did {displayTitle} ask?");
+                prompts.Add($"Draft a reply to {displayTitle}");
+            }
+
+            // 5. Action items & Tasks
+            if (tasks != null && tasks.Count > 0)
+            {
+                prompts.Add("What action items are required from me?");
+            }
+
+            // 6. Tender / Notice keywords
+            if (combinedText.Contains("tender") || combinedText.Contains("bid") || combinedText.Contains("eproc") || combinedText.Contains("notice") || combinedText.Contains("cpwd"))
+            {
+                prompts.Add("What are the tender / notice requirements?");
+            }
+
+            // 7. Delivery / Orders / Tracking
+            if (combinedText.Contains("order") || combinedText.Contains("tracking") || combinedText.Contains("deliver") || combinedText.Contains("shipment") || combinedText.Contains("courier"))
+            {
+                prompts.Add("What is the order or delivery status?");
+                prompts.Add("What is the tracking number?");
+            }
+
+            // 8. Shared Links
+            if (links != null && links.Count > 0)
+            {
+                prompts.Add("Show all links shared in this chat");
+            }
+
+            // 9. Shared Files
+            if (files != null && files.Count > 0)
+            {
+                prompts.Add("List files or attachments referenced");
+            }
+
+            // 10. Decisions
+            if (decisions != null && decisions.Count > 0)
+            {
+                prompts.Add("What was decided in this conversation?");
+            }
+
+            // 11. Phone numbers
+            if (phones != null && phones.Count > 0)
+            {
+                prompts.Add("List phone numbers shared here");
+            }
+
+            // 12. Topics
+            if (topics != null)
+            {
+                foreach (var topic in topics.Take(2))
+                {
+                    var q = $"What was discussed regarding {topic}?";
+                    if (!prompts.Contains(q)) prompts.Add(q);
+                }
+            }
+
+            // 13. Sender fallbacks
+            if (prompts.Count == 0)
+            {
+                if (messages.Count <= 1)
+                {
+                    prompts.Add($"Summarize this message from {displayTitle}");
+                    prompts.Add($"What action does {displayTitle} expect?");
+                }
+                else
+                {
+                    prompts.Add($"Summarize recent messages from {displayTitle}");
+                    prompts.Add("What are the key points in this chat?");
+                }
+            }
+            else if (prompts.Count < 3)
+            {
+                prompts.Add($"Summarize recent messages from {displayTitle}");
+            }
+
+            var unique = new List<string>();
+            foreach (var p in prompts)
+            {
+                if (!unique.Contains(p, StringComparer.OrdinalIgnoreCase))
+                {
+                    unique.Add(p);
+                }
+            }
+            return unique.Take(6).ToList();
+        }
+
+        public async Task<List<string>> GenerateContextualPromptsAsync(
+            IList<PlatformMessagePreview> messages,
+            string conversationTitle,
+            AppPreferences? preferences = null)
+        {
+            var scoped = messages.Where(m => !string.IsNullOrWhiteSpace(m.Text)).TakeLast(25).ToList();
+            if (scoped.Count == 0)
+            {
+                return GenerateDynamicPrompts(scoped, conversationTitle);
+            }
+
+            var prefs = preferences ?? AppPreferences.Shared;
+            var resolution = AIProviderResolver.Resolve(prefs);
+            if (!resolution.CanPerformGenerativeAI)
+            {
+                return GenerateDynamicPrompts(scoped, conversationTitle);
+            }
+
+            var transcript = string.Join("\n", scoped.Select(m => $"{(string.IsNullOrWhiteSpace(m.Sender) ? "Unknown" : m.Sender)}{(string.IsNullOrWhiteSpace(m.Time) ? "" : $" [{m.Time}]")}: {m.Text}"));
+            var prompt = $@"You are Pinggo AI's conversation suggestion assistant.
+Analyze the provided chat transcript and generate 3 to 5 concise, highly relevant suggested questions that the user might want to ask about this specific chat.
+
+RULES:
+1. Every question MUST directly relate to the specific content, entities, requests, codes, or actions in this conversation.
+2. NEVER suggest generic template questions like 'What is the project status?', 'What do I need to do today?', 'What decisions were made?', or 'What changed since yesterday?' unless they are explicitly discussed in the chat.
+3. If the chat is a single alert, notification, or OTP, ask specifically about that notification or code.
+4. Keep each question brief (under 50 characters).
+5. Format: Output ONLY the questions, each on a new line starting with a dash (- ). No introductory text, no conversational commentary.
+
+Conversation with: {conversationTitle}
+Transcript ({scoped.Count} messages):
+{transcript}
+
+Suggested questions:";
+
+            try
+            {
+                var rawText = await AIService.Shared.AskCoPilotAsync(prompt, context: null, tone: "Direct");
+                if (!string.IsNullOrWhiteSpace(rawText))
+                {
+                    var lines = rawText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(line =>
+                        {
+                            var trimmed = line.Trim();
+                            if (trimmed.StartsWith("-") || trimmed.StartsWith("•") || trimmed.StartsWith("*"))
+                                trimmed = trimmed[1..].Trim();
+                            var dotIdx = trimmed.IndexOf('.');
+                            if (dotIdx > 0 && dotIdx < 4 && int.TryParse(trimmed[..dotIdx], out _))
+                                trimmed = trimmed[(dotIdx + 1)..].Trim();
+                            return trimmed;
+                        })
+                        .Where(line => line.Length > 5 && line.Length < 90 && !line.StartsWith("here are", StringComparison.OrdinalIgnoreCase) && !line.StartsWith("suggested", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (lines.Count >= 2)
+                    {
+                        return lines.Take(6).ToList();
+                    }
+                }
+            }
+            catch
+            {
+                // Fall through to dynamic heuristics
+            }
+
+            return GenerateDynamicPrompts(scoped, conversationTitle);
         }
 
         private static string FormatList(string title, IEnumerable<string> values)

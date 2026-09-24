@@ -953,7 +953,7 @@ final class AIService: ObservableObject {
     // MARK: - Direct Generative API Integrations
     func callGeminiAPI(
         apiKey: String,
-        model: String = "gemini-3.5-flash",
+        model: String = "gemini-2.5-flash",
         prompt: String,
         systemInstruction: String? = nil
     ) async throws -> String {
@@ -962,28 +962,27 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Gemini API key is empty."])
         }
 
-        let targetModel = model.isEmpty ? "gemini-3.5-flash" : model
+        var targetModel = model.isEmpty ? "gemini-2.5-flash" : model
+        if targetModel.contains("gemini-3.5") {
+            targetModel = "gemini-2.5-flash"
+        }
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):generateContent") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini endpoint URL."])
         }
 
-        var contents: [[String: Any]] = []
-        if let system = systemInstruction, !system.isEmpty {
-            contents.append([
-                "role": "user",
-                "parts": [["text": "System instructions: \(system)"]]
-            ])
-            contents.append([
-                "role": "model",
-                "parts": [["text": "Understood. I will follow these instructions."]]
-            ])
+        var bodyDict: [String: Any] = [:]
+        if let system = systemInstruction?.trimmingCharacters(in: .whitespacesAndNewlines), !system.isEmpty {
+            bodyDict["system_instruction"] = [
+                "parts": [["text": system]]
+            ]
         }
-        contents.append([
-            "role": "user",
-            "parts": [["text": prompt]]
-        ])
+        bodyDict["contents"] = [
+            [
+                "role": "user",
+                "parts": [["text": prompt]]
+            ]
+        ]
 
-        let bodyDict: [String: Any] = ["contents": contents]
         let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
 
         var request = URLRequest(url: url)
@@ -991,7 +990,7 @@ final class AIService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(cleanKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = bodyData
-        request.timeoutInterval = 20
+        request.timeoutInterval = 30
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -1031,19 +1030,22 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "OpenAI API key is empty."])
         }
 
-        guard let url = URL(string: "https://api.openai.com/v1/responses") else {
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OpenAI endpoint URL."])
         }
 
         let targetModel = model.isEmpty ? "gpt-4o-mini" : model
-        var bodyDict: [String: Any] = [
-            "model": targetModel,
-            "input": prompt,
-            "store": false
-        ]
+        var messages: [[String: String]] = []
         if let system = systemInstruction?.trimmingCharacters(in: .whitespacesAndNewlines), !system.isEmpty {
-            bodyDict["instructions"] = system
+            messages.append(["role": "system", "content": system])
         }
+        messages.append(["role": "user", "content": prompt])
+
+        let bodyDict: [String: Any] = [
+            "model": targetModel,
+            "messages": messages,
+            "temperature": 0.3
+        ]
         let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
 
         var request = URLRequest(url: url)
@@ -1051,7 +1053,7 @@ final class AIService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(cleanKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = bodyData
-        request.timeoutInterval = 20
+        request.timeoutInterval = 30
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -1068,30 +1070,15 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API Error (\(httpResponse.statusCode)): \(str)"])
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let firstChoice = choices.first,
+              let message = firstChoice["message"] as? [String: Any],
+              let text = message["content"] as? String else {
             throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to parse response from OpenAI."])
         }
 
-        if let outputText = json["output_text"] as? String,
-           !outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return outputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        let output = json["output"] as? [[String: Any]] ?? []
-        let textParts = output.flatMap { item -> [String] in
-            guard item["type"] as? String == "message",
-                  let content = item["content"] as? [[String: Any]] else { return [] }
-            return content.compactMap { part in
-                guard part["type"] as? String == "output_text" else { return nil }
-                return part["text"] as? String
-            }
-        }
-        let content = textParts.joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else {
-            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "OpenAI returned no text output."])
-        }
-        return content
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func callOllamaAPI(
@@ -1148,7 +1135,7 @@ final class AIService: ObservableObject {
     // MARK: - Streaming Generative API Integrations (Server-Sent Events)
     func streamGeminiAPI(
         apiKey: String,
-        model: String = "gemini-3.5-flash",
+        model: String = "gemini-2.5-flash",
         prompt: String,
         systemInstruction: String? = nil,
         onChunk: @escaping @Sendable (String) -> Void
@@ -1158,7 +1145,10 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Gemini API key is empty."])
         }
 
-        let targetModel = model.isEmpty ? "gemini-3.5-flash" : model
+        var targetModel = model.isEmpty ? "gemini-2.5-flash" : model
+        if targetModel.contains("gemini-3.5") {
+            targetModel = "gemini-2.5-flash"
+        }
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):streamGenerateContent?alt=sse") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini endpoint URL."])
         }
