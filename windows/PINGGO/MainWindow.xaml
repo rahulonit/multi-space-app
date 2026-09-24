@@ -35,7 +35,6 @@
                     <views:HomeControl x:Name="HomeViewHost" Visibility="Visible" />
                     <views:PortalViewControl x:Name="PortalViewHost" Visibility="Collapsed" />
                     <views:SplitPortalControl x:Name="SplitPortalHost" Visibility="Collapsed" />
-                    <views:InboxControl x:Name="InboxViewHost" Visibility="Collapsed" />
                     <views:BrowserViewControl x:Name="BrowserViewHost" Visibility="Collapsed" />
                     <views:SettingsControl x:Name="SettingsViewHost" Visibility="Collapsed" />
                 </Grid>

@@ -638,7 +638,7 @@ final class AppStore: ObservableObject {
                 splitDestination = .platform(platformID)
                 ensureDifferentSplitAccount(for: platformID)
             } else {
-                splitDestination = .inbox
+                splitDestination = .browser
             }
             isSplitView = true
         }

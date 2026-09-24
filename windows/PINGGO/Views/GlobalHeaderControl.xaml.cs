@@ -53,34 +53,20 @@ namespace PINGGO.Views
             OverviewTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Overview ? activeBg : inactiveBg;
             OverviewTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Overview ? whiteText : mutedText;
 
-            InboxTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Inbox ? activeBg : inactiveBg;
-            InboxTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Inbox ? whiteText : mutedText;
-
             BrowserTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Browser ? activeBg : inactiveBg;
             BrowserTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Browser ? whiteText : mutedText;
-
-            if (ViewModel.TotalUnreadCount > 0)
-            {
-                InboxBadge.Visibility = Visibility.Visible;
-                InboxBadgeText.Text = ViewModel.TotalUnreadCount.ToString();
-            }
-            else
-            {
-                InboxBadge.Visibility = Visibility.Collapsed;
-            }
         }
 
         private void OnBrandClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Overview);
         private void OnPlatformTabClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Platform);
         private void OnOverviewTabClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Overview);
-        private void OnInboxTabClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Inbox);
         private void OnBrowserTabClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Browser);
 
         private void OnSearchKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
             if (e.Key == Windows.System.VirtualKey.Enter)
             {
-                ViewModel.Navigate(NavigationDestination.Inbox);
+                ViewModel.IsCommandPaletteOpen = true;
             }
         }
 

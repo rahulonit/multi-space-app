@@ -43,16 +43,6 @@
                     </StackPanel>
                 </Button>
 
-                <Button x:Name="InboxTabBtn" Click="OnInboxTabClicked" Style="{StaticResource PillNavButtonStyle}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE8BD;" FontSize="12" />
-                        <TextBlock Text="Inbox" TextWrapping="NoWrap" MaxLines="1" />
-                        <Border x:Name="InboxBadge" Background="{StaticResource AppErrorColor}" CornerRadius="10" Padding="6,1" Visibility="Collapsed">
-                            <TextBlock x:Name="InboxBadgeText" FontSize="10" FontWeight="Bold" Foreground="White" TextWrapping="NoWrap" MaxLines="1" />
-                        </Border>
-                    </StackPanel>
-                </Button>
-
                 <Button x:Name="BrowserTabBtn" Click="OnBrowserTabClicked" Style="{StaticResource PillNavButtonStyle}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE774;" FontSize="12" />

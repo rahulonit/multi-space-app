@@ -57,19 +57,15 @@ struct HomeView: View {
                 // Status Pills
                 HStack(spacing: 8) {
                     if store.totalUnreadCount > 0 {
-                        Button { store.destination = .inbox } label: {
-                            HStack(spacing: 6) {
-                                Circle().fill(.red).frame(width: 8, height: 8)
-                                Text("\(store.totalUnreadCount) Unread")
-                                    .font(.system(size: 11, weight: .bold))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.12), in: Capsule())
-                            .overlay(Capsule().stroke(Color.red.opacity(0.3), lineWidth: 1))
+                        HStack(spacing: 6) {
+                            Circle().fill(.red).frame(width: 8, height: 8)
+                            Text("\(store.totalUnreadCount) Unread")
+                                .font(.system(size: 11, weight: .bold))
                         }
-                        .buttonStyle(.plain)
-                        .help("View unread messages in Inbox")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(Color.red.opacity(0.3), lineWidth: 1))
                     } else {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle.fill")
@@ -118,17 +114,14 @@ struct HomeView: View {
     private var bentoStatsRow: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
             // Stat 1: Unread Messages
-            Button { store.destination = .inbox } label: {
-                statTile(
-                    title: "Unread Messages",
-                    value: "\(store.totalUnreadCount)",
-                    subtitle: store.totalUnreadCount == 0 ? "Inbox is zero" : "Across connected apps",
-                    symbol: "bubble.left.and.bubble.right.fill",
-                    color: store.totalUnreadCount > 0 ? .red : Palette.accent,
-                    actionText: "View Inbox →"
-                )
-            }
-            .buttonStyle(.plain)
+            statTile(
+                title: "Unread Messages",
+                value: "\(store.totalUnreadCount)",
+                subtitle: store.totalUnreadCount == 0 ? "All caught up" : "Across connected apps",
+                symbol: "bubble.left.and.bubble.right.fill",
+                color: store.totalUnreadCount > 0 ? .red : Palette.accent,
+                actionText: nil
+            )
 
             // Stat 2: Active Accounts
             Button { store.triggerAddPlatform() } label: {
@@ -177,7 +170,7 @@ struct HomeView: View {
         }
     }
 
-    private func statTile(title: String, value: String, subtitle: String, symbol: String, color: Color, actionText: String) -> some View {
+    private func statTile(title: String, value: String, subtitle: String, symbol: String, color: Color, actionText: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(title)
@@ -199,11 +192,20 @@ struct HomeView: View {
                     .foregroundStyle(Palette.muted)
             }
 
-            HStack {
-                Text(actionText)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(color)
-                Spacer()
+            if let actionText = actionText, !actionText.isEmpty {
+                HStack {
+                    Text(actionText)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(color)
+                    Spacer()
+                }
+            } else {
+                HStack {
+                    Text("Live status")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                    Spacer()
+                }
             }
         }
         .padding(14)

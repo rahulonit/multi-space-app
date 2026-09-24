@@ -7,8 +7,7 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let isInboxScreen = store.destination == .inbox
-            let compact = (isInboxScreen && geometry.size.width < 1280) || geometry.size.width < 820 || sidebarCollapsed
+            let compact = geometry.size.width < 820 || sidebarCollapsed
             VStack(spacing: 0) {
                 // Standardized 64px Global Header
                 GlobalHeaderView(windowWidth: geometry.size.width)
@@ -108,7 +107,6 @@ struct ContentView: View {
             } else {
                 switch store.destination {
                 case .home: HomeView()
-                case .inbox: IntelligenceInboxView()
                 case .browser: BrowserView()
                 case .platform(let id): PlatformPortalView(platformID: id)
                 case .channel, .conversation, .profile, .settings:

@@ -13,7 +13,6 @@ namespace PINGGO.ViewModels
     {
         Overview,
         Platform,
-        Inbox,
         Browser,
         Settings
     }
@@ -59,7 +58,6 @@ namespace PINGGO.ViewModels
         public Dictionary<Guid, ActiveThreadContext> AccountThreadContexts { get; } = new();
         public Dictionary<string, ActiveThreadContext> AccountThreadContextsByContact { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<Guid, PlatformActivitySnapshot> PlatformActivity { get; } = new();
-        public event Action? OnInboxDataChanged;
 
         public MainViewModel()
         {
@@ -88,7 +86,6 @@ namespace PINGGO.ViewModels
                 App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdateUnreadCounts();
-                    OnInboxDataChanged?.Invoke();
                 });
             };
 

@@ -595,24 +595,29 @@ namespace PINGGO.Views
             DraftContentBox.Text = "";
 
             var ctx = _loadedAccountId.HasValue && MainViewModel.Shared.AccountThreadContexts.TryGetValue(_loadedAccountId.Value, out var c) ? c : null;
-            var contextSnippet = ctx?.ContextSnippet ?? "";
+            var fullTranscript = ctx?.FullTranscript ?? "";
+            var isGroup = ctx?.IsGroupChat ?? false;
+            var members = ctx?.EffectiveMembers ?? new List<AIChatMemberItem>();
+            var memberCount = ctx?.GroupMemberCount ?? members.Count;
+            var channelType = isGroup ? $"Group Chat ({memberCount} members)" : $"Direct 1-on-1 Chat with {CopilotContactName.Text}";
+            var membersInfo = string.Join("\n", members.Select(m => $"{m.Name}{(string.IsNullOrEmpty(m.PhoneNumber) ? "" : $" ({m.PhoneNumber})")} - {(m.Role.ToLowerInvariant().Contains("admin") ? "👑 " + m.Role : m.Role)} ({m.MessageCount} messages)"));
 
             _copilotHistory.Add(new CopilotMessage { Role = "user", Content = prompt });
-            if (_copilotHistory.Count > 10) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 10);
+            if (_copilotHistory.Count > 30) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 30);
             RenderCopilotHistory();
 
             try
             {
-                var fullResponse = await AIService.Shared.StreamCoPilotAsync(prompt, contextSnippet, _activeTone, chunk =>
+                var fullResponse = await AIService.Shared.StreamCoPilotAsync(prompt, fullTranscript, _activeTone, chunk =>
                 {
                     DispatcherQueue?.TryEnqueue(() =>
                     {
                         DraftContentBox.Text += chunk;
                     });
-                }, _copilotHistory);
+                }, _copilotHistory, channelType, membersInfo);
 
                 _copilotHistory.Add(new CopilotMessage { Role = "assistant", Content = fullResponse });
-                if (_copilotHistory.Count > 10) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 10);
+                if (_copilotHistory.Count > 30) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 30);
                 RenderCopilotHistory();
             }
             catch (Exception ex)

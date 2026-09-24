@@ -84,7 +84,6 @@ struct SplitPortalView: View {
                     }
                 }
                 Divider()
-                Button("Inbox") { store.splitDestination = .inbox }
                 Button("Browser") { store.splitDestination = .browser }
             } label: {
                 HStack(spacing: 4) {
@@ -220,7 +219,6 @@ struct SplitPortalView: View {
     private func paneView(for destination: AppDestination?, isSplitPane: Bool) -> some View {
         switch destination {
         case .home: HomeView()
-        case .inbox: IntelligenceInboxView()
         case .browser: BrowserView()
         case .platform(let id):
             if isSplitPane {
@@ -252,7 +250,6 @@ struct SplitPortalView: View {
         guard let destination else { return "Choose pane app" }
         switch destination {
         case .home: return "Home"
-        case .inbox: return "Inbox"
         case .browser: return "Browser"
         case .platform(let id):
             return store.platform(id)?.name ?? "Platform"

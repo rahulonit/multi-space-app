@@ -83,6 +83,82 @@ namespace PINGGO.Models
             Messages.Count == 0
                 ? (string.IsNullOrEmpty(ContactName) ? "" : $"Active conversation with {ContactName}.")
                 : $"Conversation with {ContactName}:\n" + string.Join("\n", Messages.ConvertAll(m => $"{(m.IsFromMe ? "You" : m.Sender)}: {m.Text}"));
+
+        public bool IsGroupChat =>
+            (GroupMemberCount.HasValue && GroupMemberCount.Value > 2) ||
+            (!string.IsNullOrEmpty(GroupSubtitle) && (GroupSubtitle.ToLowerInvariant().Contains("participant") || GroupSubtitle.ToLowerInvariant().Contains("member") || GroupSubtitle.Contains(","))) ||
+            (GroupMembers != null && GroupMembers.Count > 1) ||
+            (Messages.Where(m => !string.IsNullOrEmpty(m.Sender) && m.Sender.ToLowerInvariant() != "you" && m.Sender.ToLowerInvariant() != "me").Select(m => m.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+
+        public List<AIChatMemberItem> EffectiveMembers
+        {
+            get
+            {
+                var dict = new Dictionary<string, AIChatMemberItem>(StringComparer.OrdinalIgnoreCase);
+                if (GroupMembers != null)
+                {
+                    foreach (var gm in GroupMembers)
+                    {
+                        if (!string.IsNullOrWhiteSpace(gm.Name)) dict[gm.Name] = gm;
+                    }
+                }
+                foreach (var msg in Messages)
+                {
+                    var s = (msg.Sender ?? "").Trim();
+                    if (!string.IsNullOrEmpty(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase) && !s.Equals("me", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (dict.TryGetValue(s, out var existing))
+                        {
+                            existing.MessageCount = Math.Max(existing.MessageCount, Messages.Count(m => string.Equals(m.Sender, s, StringComparison.OrdinalIgnoreCase)));
+                        }
+                        else
+                        {
+                            dict[s] = new AIChatMemberItem
+                            {
+                                Name = s,
+                                Role = "Member",
+                                Activity = "Active in chat",
+                                MessageCount = Messages.Count(m => string.Equals(m.Sender, s, StringComparison.OrdinalIgnoreCase))
+                            };
+                        }
+                    }
+                }
+                var list = dict.Values.ToList();
+                list.Sort((a, b) =>
+                {
+                    bool aAdmin = a.Role.ToLowerInvariant().Contains("admin");
+                    bool bAdmin = b.Role.ToLowerInvariant().Contains("admin");
+                    if (aAdmin && !bAdmin) return -1;
+                    if (!aAdmin && bAdmin) return 1;
+                    return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+                });
+                return list;
+            }
+        }
+
+        public List<AIChatMemberItem> GroupAdmins =>
+            EffectiveMembers.Where(m => m.Role.ToLowerInvariant().Contains("admin") || m.Role.ToLowerInvariant().Contains("owner")).ToList();
+
+        public string FullTranscript =>
+            Messages.Count == 0
+                ? (string.IsNullOrEmpty(ContactName) ? "No active messages." : $"Conversation with {ContactName}.")
+                : string.Join("\n", Messages.Select((m, i) => $"[#{i + 1} | {(m.IsFromMe ? "You" : m.Sender)}{(!string.IsNullOrEmpty(m.Time) ? $" [{m.Time}]" : "")}]: {m.Text}"));
+
+        public string TopicSummary
+        {
+            get
+            {
+                if (Messages.Count == 0) return $"Active conversation with {ContactName}. Awaiting incoming messages.";
+                var lastIncoming = Messages.LastOrDefault(m => !m.IsFromMe);
+                var text = lastIncoming?.Text ?? Messages.LastOrDefault()?.Text ?? "";
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var truncated = text.Length > 120 ? text.Substring(0, 117) + "..." : text;
+                    return $"\"{truncated}\"";
+                }
+                return $"Conversation with {ContactName} ({Messages.Count} messages exchanged).";
+            }
+        }
     }
 
     public class PlatformMessagePreview

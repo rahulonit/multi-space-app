@@ -89,7 +89,7 @@ namespace PINGGO.Services
             return GenerateLocalSmartSummary(prompt);
         }
 
-        public async Task<string> StreamCoPilotAsync(string prompt, string context, string tone, Action<string> onChunk, List<CopilotMessage>? history = null)
+        public async Task<string> StreamCoPilotAsync(string prompt, string context, string tone, Action<string> onChunk, List<CopilotMessage>? history = null, string? channelType = null, string? membersInfo = null)
         {
             var prefs = DataStoreService.Shared.CurrentData.Preferences;
             var personaInstruction = prefs.PersonaStyle switch
@@ -100,8 +100,31 @@ namespace PINGGO.Services
                 _ => "Adopt a direct, concise, and action-oriented communication style. Omit pleasantries and fluff."
             };
 
-            var systemPrompt = $"You are PINGGO Co-Pilot, an intelligent personal communication assistant. {personaInstruction} Draft clear, concise, and context-aware responses in a {tone} tone. {(string.IsNullOrEmpty(prefs.CustomAiPrompt) ? "" : "User guidelines: " + prefs.CustomAiPrompt)}";
-            var fullPrompt = string.IsNullOrWhiteSpace(context) ? prompt : $"Context:\n{context}\n\nInstruction/Question:\n{prompt}";
+            var groupContextSection = "";
+            if (!string.IsNullOrEmpty(channelType)) groupContextSection += $"• Channel / Chat Type: {channelType}\n";
+            if (!string.IsNullOrEmpty(membersInfo)) groupContextSection += $"• Group Members & Roster Info:\n{membersInfo}\n";
+
+            var systemPrompt = $@"You are PINGGO Co-Pilot, an advanced AI workplace intelligence and communication assistant operating with FULL UNRESTRICTED ACCESS to the active chat thread.
+You behave with the analytical power, depth, and helpfulness of ChatGPT and Google Gemini.
+
+{personaInstruction}
+Default response tone: {tone}.
+{(string.IsNullOrEmpty(prefs.CustomAiPrompt) ? "" : "User guidelines: " + prefs.CustomAiPrompt)}
+
+CORE CAPABILITIES & MANDATE:
+1. Full Conversational & Analytical Intelligence:
+   - Answer ANY question about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
+   - When asked about group information, member count, or group admins: inspect the verified Group Roster & Admin Information provided below. Clearly identify admins and participants with their roles and contact details.
+   - When asked if this is a group chat or 1-on-1 chat: clearly state the chat type and participants.
+2. Direct Answering vs. Reply Drafting:
+   - If the user asks a question about the chat: answer directly with deep analysis and clean markdown.
+   - If the user asks to draft a reply: craft an articulate, ready-to-send draft in the requested {tone} tone.
+3. Presentation:
+   - Use clean markdown formatting matching ChatGPT and Google Gemini presentation standards.";
+
+            var fullPrompt = (string.IsNullOrEmpty(groupContextSection) ? "" : $"=== VERIFIED CONVERSATION ROSTER & METADATA ===\n{groupContextSection}\n\n") +
+                             (string.IsNullOrEmpty(context) ? "" : $"=== CONVERSATION THREAD TRANSCRIPT ===\n{context}\n\n") +
+                             $"=== USER REQUEST / QUESTION ===\n{prompt}";
 
             var accumulated = new StringBuilder();
             var resolution = AIProviderResolver.Resolve(prefs);

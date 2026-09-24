@@ -37,7 +37,6 @@ namespace PINGGO.Views
 
             // Navigation
             _allCommands.Add(new PaletteCommand { Title = "Go to Overview Dashboard", Category = "Navigation", Action = () => vm.Navigate(NavigationDestination.Overview) });
-            _allCommands.Add(new PaletteCommand { Title = "Go to Unified Inbox", Category = "Navigation", Action = () => vm.Navigate(NavigationDestination.Inbox) });
             _allCommands.Add(new PaletteCommand { Title = "Open Private Browser", Category = "Navigation", Action = () => vm.Navigate(NavigationDestination.Browser) });
             _allCommands.Add(new PaletteCommand { Title = "Open Settings & Accounts", Category = "Navigation", Action = () => vm.Navigate(NavigationDestination.Settings) });
 

@@ -4,7 +4,6 @@ import AppKit
 enum HeaderNavTab: String, CaseIterable, Identifiable {
     case platform = "Platform"
     case overview = "Overview"
-    case inbox = "Inbox"
     case browser = "Browser"
 
     var id: String { rawValue }
@@ -13,7 +12,6 @@ enum HeaderNavTab: String, CaseIterable, Identifiable {
         switch self {
         case .platform: return "square.stack.3d.up.fill"
         case .overview: return "square.grid.2x2.fill"
-        case .inbox: return "bubble.left.and.bubble.right.fill"
         case .browser: return "globe.americas.fill"
         }
     }
@@ -30,8 +28,6 @@ struct GlobalHeaderView: View {
         switch store.destination {
         case .browser:
             return .browser
-        case .inbox:
-            return .inbox
         case .home:
             return .overview
         case .platform, .channel, .conversation:
@@ -109,16 +105,6 @@ struct GlobalHeaderView: View {
                             .font(.system(size: 13, weight: isActive ? .semibold : .medium))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
-                        
-                        if tab == .inbox && store.totalUnreadCount > 0 {
-                            Text("\(store.totalUnreadCount)")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundStyle(isActive ? Palette.navActiveText : .white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1.5)
-                                .background(isActive ? Color.black.opacity(0.18) : Color.red, in: Capsule())
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 14)
@@ -156,8 +142,6 @@ struct GlobalHeaderView: View {
                 }
             case .overview:
                 store.destination = .home
-            case .inbox:
-                store.destination = .inbox
             case .browser:
                 store.destination = .browser
             }
@@ -311,9 +295,7 @@ struct GlobalHeaderView: View {
     // MARK: - Notifications Button (40 px)
     private var notificationsButton: some View {
         Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                store.destination = .inbox
-            }
+            store.showToast(store.totalUnreadCount > 0 ? "\(store.totalUnreadCount) unread notifications" : "All notifications up to date")
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bell.fill")
@@ -335,7 +317,7 @@ struct GlobalHeaderView: View {
             }
         }
         .buttonStyle(.plain)
-        .help("Notifications & Inbox (\(store.totalUnreadCount) unread)")
+        .help("Notifications (\(store.totalUnreadCount) unread)")
     }
 
     // MARK: - Profile Avatar Button (40–44 px)
@@ -382,7 +364,6 @@ struct MobileBottomNavView: View {
     private var activeTab: HeaderNavTab {
         switch store.destination {
         case .browser: return .browser
-        case .inbox: return .inbox
         case .home: return .overview
         default: return .platform
         }
@@ -402,16 +383,6 @@ struct MobileBottomNavView: View {
                             .font(.system(size: 13, weight: isActive ? .semibold : .medium))
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
-
-                        if tab == .inbox && store.totalUnreadCount > 0 {
-                            Text("\(store.totalUnreadCount)")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(isActive ? Palette.navActiveText : .white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(isActive ? Color.black.opacity(0.18) : Color.red, in: Capsule())
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
                     }
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
@@ -436,8 +407,6 @@ struct MobileBottomNavView: View {
                 store.destination = .platform(targetID)
             case .overview:
                 store.destination = .home
-            case .inbox:
-                store.destination = .inbox
             case .browser:
                 store.destination = .browser
             }

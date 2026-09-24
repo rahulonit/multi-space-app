@@ -145,6 +145,66 @@ struct PlatformMessagePreview: Identifiable, Hashable, Codable {
     }
 }
 
+struct UnifiedMessageItem: Identifiable, Equatable {
+    var id: String { "\(accountID)-\(message.id)" }
+    let accountID: UUID
+    let accountName: String
+    let platform: SocialPlatform
+    let message: PlatformMessagePreview
+    let snapshotDate: Date
+    let isUnread: Bool
+}
+
+enum AlertCategoryType: String, CaseIterable, Codable {
+    case all = "All"
+    case mention = "Mentions"
+    case request = "Requests"
+    case security = "Security"
+    case reaction = "Reactions"
+    case reply = "Replies"
+    case stream = "Notices Hub"
+
+    var icon: String {
+        switch self {
+        case .all: return "tray.2"
+        case .mention: return "at"
+        case .request: return "person.badge.shield.checkmark"
+        case .security: return "lock.shield"
+        case .reaction: return "hand.thumbsup"
+        case .reply: return "arrowshape.turn.up.left"
+        case .stream: return "bell.badge"
+        }
+    }
+}
+
+struct UnifiedAlertItem: Identifiable, Equatable {
+    let id: String
+    let account: PlatformAccount
+    let platform: SocialPlatform
+    let title: String
+    let alertText: String
+    let time: String?
+    let directURL: URL?
+    let category: String
+    let isLiveExtracted: Bool
+
+    var categoryType: AlertCategoryType {
+        switch category.lowercased() {
+        case "mention": return .mention
+        case "request": return .request
+        case "security": return .security
+        case "reaction": return .reaction
+        case "reply": return .reply
+        case "stream": return .stream
+        default: return .stream
+        }
+    }
+
+    var displayTime: String {
+        time ?? (isLiveExtracted ? "Recent" : "Live Stream")
+    }
+}
+
 struct PlatformNotificationPreview: Identifiable, Hashable, Codable {
     let id: String
     let title: String
@@ -473,6 +533,75 @@ struct ActiveThreadContext: Hashable, Codable {
         let list = messages.map { "\($0.isFromMe ? "You" : $0.sender): \($0.text)" }.joined(separator: "\n")
         return "Conversation with \(contactName):\n\(list)"
     }
+
+    var isGroupChat: Bool {
+        if let count = groupMemberCount, count > 2 { return true }
+        if let sub = groupSubtitle, !sub.isEmpty {
+            let low = sub.lowercased()
+            if low.contains("participant") || low.contains("member") || low.contains("subscriber") || low.contains(",") {
+                return true
+            }
+        }
+        if let members = groupMembers, members.count > 1 { return true }
+        let senders = Set(messages.map(\.sender).filter { !$0.isEmpty && $0.lowercased() != "you" && $0.lowercased() != "me" && $0.lowercased() != "contact" })
+        return senders.count > 1
+    }
+
+    var effectiveMembers: [AIChatMemberItem] {
+        var map: [String: AIChatMemberItem] = [:]
+        for m in groupMembers ?? [] {
+            map[m.name.lowercased()] = m
+        }
+        for msg in messages {
+            let s = msg.sender.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty && s.lowercased() != "you" && s.lowercased() != "me" && s.lowercased() != "contact" {
+                if let existing = map[s.lowercased()] {
+                    var updated = existing
+                    let count = messages.filter { $0.sender.localizedCaseInsensitiveCompare(s) == .orderedSame }.count
+                    updated.messageCount = max(updated.messageCount, count)
+                    map[s.lowercased()] = updated
+                } else {
+                    let count = messages.filter { $0.sender.localizedCaseInsensitiveCompare(s) == .orderedSame }.count
+                    map[s.lowercased()] = AIChatMemberItem(name: s, role: "Member", activity: "Active in chat", messageCount: count)
+                }
+            }
+        }
+        return map.values.sorted {
+            if $0.role.lowercased().contains("admin") && !$1.role.lowercased().contains("admin") { return true }
+            if !$0.role.lowercased().contains("admin") && $1.role.lowercased().contains("admin") { return false }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    var groupAdmins: [AIChatMemberItem] {
+        effectiveMembers.filter { $0.role.lowercased().contains("admin") || $0.role.lowercased().contains("owner") || $0.role.lowercased().contains("creator") }
+    }
+
+    var fullTranscript: String {
+        guard !messages.isEmpty else {
+            return contactName.isEmpty ? "No active messages." : "Conversation with \(contactName)."
+        }
+        return messages.enumerated().map { idx, msg in
+            let timeStr = (msg.time?.isEmpty == false) ? " [\(msg.time!)]" : ""
+            let sender = msg.isFromMe ? "You" : msg.sender
+            return "[#\(idx + 1) | \(sender)\(timeStr)]: \(msg.text)"
+        }.joined(separator: "\n")
+    }
+
+    var topicSummary: String {
+        if messages.isEmpty {
+            return "Active conversation with \(contactName). Awaiting incoming messages."
+        }
+        let incoming = messages.filter { !$0.isFromMe }
+        if let last = incoming.last?.text, !last.isEmpty {
+            let truncated = last.count > 120 ? String(last.prefix(117)) + "..." : last
+            return "\"\(truncated)\""
+        } else if let last = messages.last?.text, !last.isEmpty {
+            let truncated = last.count > 120 ? String(last.prefix(117)) + "..." : last
+            return "\"\(truncated)\""
+        }
+        return "Conversation with \(contactName) (\(messages.count) messages exchanged)."
+    }
 }
 
 struct SentimentResult: Hashable, Codable {
@@ -523,7 +652,6 @@ struct AppData: Codable {
 
 enum AppDestination: Hashable {
     case home
-    case inbox
     case browser
     case platform(String)
     case channel(UUID)

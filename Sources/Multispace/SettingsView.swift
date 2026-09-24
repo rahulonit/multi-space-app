@@ -632,7 +632,7 @@ struct SettingsView: View {
 
                 Divider()
 
-                settingsRow("Private Preview Default", "When opening unread chats in Inbox, inspect captured messages and private AI analysis without loading the interactive portal.") {
+                settingsRow("Private Preview Default", "When opening unread chats, inspect captured messages and private AI analysis without loading the interactive portal.") {
                     Toggle("Private Preview", isOn: $store.preferences.stealthModeDefault)
                         .labelsHidden()
                         .toggleStyle(.switch)
@@ -1413,7 +1413,7 @@ struct SettingsView: View {
             if name == "Privacy" {
                 Text("Your platform sessions are stored by WebKit on this Mac. Chat previews and website alerts shown on Home stay in memory and clear when PINGGO quits. Your local profile, chats, and posts are saved in Application Support. PINGGO does not read passwords.")
             } else {
-                Text("Choose a social app in the sidebar. Use the account menu beside its name to add, switch, or rename accounts. Each added account has its own website login. Home and Inbox show chat previews when the websites expose them; Feeds opens the selected social feed. Use the sidebar plus button to add a platform.")
+                Text("Choose a social app in the sidebar. Use the account menu beside its name to add, switch, or rename accounts. Each added account has its own website login. Home shows chat previews when the websites expose them. Use the sidebar plus button to add a platform.")
             }
             Spacer()
             Button("Done") { detail = nil }.buttonStyle(.borderedProminent).tint(Palette.accent)

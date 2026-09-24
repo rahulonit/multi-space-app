@@ -85,7 +85,6 @@ namespace PINGGO
             HomeViewHost.Visibility = Visibility.Collapsed;
             PortalViewHost.Visibility = Visibility.Collapsed;
             SplitPortalHost.Visibility = Visibility.Collapsed;
-            InboxViewHost.Visibility = Visibility.Collapsed;
             BrowserViewHost.Visibility = Visibility.Collapsed;
             SettingsViewHost.Visibility = Visibility.Collapsed;
 
@@ -101,12 +100,9 @@ namespace PINGGO
                     }
                     else
                     {
-                        PortalViewHost.Visibility = Visibility.Visible;
                         PortalViewHost.LoadPlatform(ViewModel.ActivePlatformId);
+                        PortalViewHost.Visibility = Visibility.Visible;
                     }
-                    break;
-                case NavigationDestination.Inbox:
-                    InboxViewHost.Visibility = Visibility.Visible;
                     break;
                 case NavigationDestination.Browser:
                     BrowserViewHost.Visibility = Visibility.Visible;

@@ -26,11 +26,8 @@ struct PinggoApp: App {
                 Button("Home") { store.destination = .home }
                     .keyboardShortcut("1", modifiers: .command)
                     .disabled(store.isAppLocked)
-                Button("Inbox") { store.destination = .inbox }
-                    .keyboardShortcut("2", modifiers: .command)
-                    .disabled(store.isAppLocked)
                 Button("Browser") { store.destination = .browser }
-                    .keyboardShortcut("3", modifiers: .command)
+                    .keyboardShortcut("2", modifiers: .command)
                     .disabled(store.isAppLocked)
                 Button("Settings…") { store.destination = .settings }
                     .keyboardShortcut(",", modifiers: .command)
@@ -57,10 +54,6 @@ struct PinggoApp: App {
                 }
             }
             Divider()
-            Button("Unified Inbox") {
-                store.destination = .inbox
-                NSApp.activate(ignoringOtherApps: true)
-            }
             Button("Private Browser") {
                 store.destination = .browser
                 NSApp.activate(ignoringOtherApps: true)

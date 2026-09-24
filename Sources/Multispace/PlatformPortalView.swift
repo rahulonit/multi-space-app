@@ -1425,7 +1425,8 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             let role = (dict["role"] as? String) ?? "Participant"
             let activity = (dict["activity"] as? String) ?? "In group roster"
             let count = (dict["messageCount"] as? Int) ?? 1
-            return AIChatMemberItem(name: name, role: role, activity: activity, messageCount: count)
+            let phone = (dict["phoneNumber"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AIChatMemberItem(name: name, role: role, activity: activity, messageCount: count, phoneNumber: (phone?.isEmpty == false) ? phone : nil)
         }
 
         let cleanContact = (activeContact ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2356,7 +2357,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         const groupMembers = [];
         const seenMemberNames = new Set();
 
-        const addGroupMember = (name, role, activity, count) => {
+        const addGroupMember = (name, role, activity, count, phone) => {
           const cleanName = clean(name);
           if (!cleanName || cleanName.toLowerCase() === 'you' || cleanName.toLowerCase() === 'me' || cleanName === activeContact) return;
           if (!seenMemberNames.has(cleanName)) {
@@ -2365,7 +2366,8 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
               name: cleanName,
               role: role || 'Participant',
               activity: activity || 'In group roster',
-              messageCount: count || 1
+              messageCount: count || 1,
+              phoneNumber: phone || undefined
             });
           }
         };
@@ -2432,9 +2434,11 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           const nameEl = row.querySelector('span[title], span[dir="auto"], div[title]');
           if (nameEl) {
             const n = clean(nameEl.getAttribute('title') || nameEl.innerText);
-            const adminEl = row.querySelector('[data-testid*="admin"], span[class*="admin"]');
+            const adminEl = row.querySelector('[data-testid*="admin"], span[class*="admin"], div[title*="Admin"], div[aria-label*="Admin"]');
             const role = adminEl ? 'Group Admin' : 'Group Participant';
-            addGroupMember(n, role, 'Active in group', 1);
+            const phoneEl = row.querySelector('span[title*="+"], span[dir="auto"]._ao3e, div[class*="secondary"] span');
+            const phone = phoneEl ? clean(phoneEl.getAttribute('title') || phoneEl.innerText) : undefined;
+            addGroupMember(n, role, 'Active in group', 1, phone);
           }
         });
 
@@ -2680,19 +2684,36 @@ struct AICopilotDrawer: View {
     let onClose: () -> Void
 
     @EnvironmentObject private var store: AppStore
-    @State private var activeTone: AIReplyTone = .friendly
-    @State private var generatedDraft: String = ""
-    @State private var isGenerating: Bool = false
     @State private var customPrompt: String = ""
-    @State private var isCopied: Bool = false
-    @State private var isInserted: Bool = false
+    @State private var isGenerating: Bool = false
+    @State private var streamingText: String = ""
+    @State private var insertedMsgID: UUID? = nil
+    @State private var copiedMsgID: UUID? = nil
+    @State private var showingGroupRoster: Bool = false
 
     private var activeContext: ActiveThreadContext? {
         session.activeThread ?? store.activeThreadContext(for: account.id)
     }
 
+    private var isGroup: Bool {
+        activeContext?.isGroupChat ?? false
+    }
+
     private var contactTitle: String {
         activeContext?.contactName.isEmpty == false ? activeContext!.contactName : platform.name
+    }
+
+    private var effectiveMembers: [AIChatMemberItem] {
+        activeContext?.effectiveMembers ?? []
+    }
+
+    private var groupAdmins: [AIChatMemberItem] {
+        activeContext?.groupAdmins ?? []
+    }
+
+    private var defaultTone: AIReplyTone {
+        let name = store.preferences.defaultReplyTone.lowercased()
+        return AIReplyTone(rawValue: name) ?? .friendly
     }
 
     private var sentimentResult: SentimentResult {
@@ -2712,334 +2733,9 @@ struct AICopilotDrawer: View {
         return "💬 Normal"
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(Palette.accent)
-                        .font(.system(size: 13, weight: .bold))
-                    Text("Co-Pilot")
-                        .font(.system(size: 14, weight: .bold))
-                }
-
-                Spacer()
-
-                // AI Provider badge
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(providerIndicatorColor)
-                        .frame(width: 6, height: 6)
-                    Text(providerLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Palette.hover, in: Capsule())
-
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Palette.panel)
-
-            Divider()
-
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 14) {
-                    // 1. Active Thread Context & Sentiment Card
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("ACTIVE CHAT")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(Palette.muted)
-                                Text(contactTitle)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Text(urgencyLevel)
-                                .font(.system(size: 10.5, weight: .bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(urgencyBackgroundColor, in: Capsule())
-                                .foregroundStyle(urgencyForegroundColor)
-                        }
-
-                        // Sentiment Gauge Bar
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("Sentiment: \(sentimentResult.classification)")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.muted)
-                                Spacer()
-                                Text(String(format: "%+.1f", sentimentResult.score))
-                                    .font(.system(size: 10.5, weight: .semibold))
-                                    .foregroundStyle(sentimentColor)
-                            }
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(Palette.hover)
-                                        .frame(height: 5)
-                                    let normalized = CGFloat((sentimentResult.score + 1.0) / 2.0)
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(sentimentColor)
-                                        .frame(width: max(8, geo.size.width * normalized), height: 5)
-                                }
-                            }
-                            .frame(height: 5)
-                        }
-
-                        // Thread summary / latest incoming snippet
-                        if let lastIncoming = activeContext?.messages.last(where: { !$0.isFromMe }) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Latest message:")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Palette.muted)
-                                Text("\"\(lastIncoming.text)\"")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(3)
-                            }
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Palette.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                    }
-                    .padding(12)
-                    .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
-
-                    // 2. 1-Click Smart Reply Tones
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("SMART REPLIES")
-                            .font(.system(size: 9.5, weight: .bold))
-                            .foregroundStyle(Palette.muted)
-
-                        let tones: [(AIReplyTone, String, String)] = [
-                            (.professional, "Professional", "briefcase.fill"),
-                            (.friendly, "Friendly", "face.smiling.fill"),
-                            (.concise, "Concise", "bolt.fill"),
-                            (.casual, "Casual", "sunglasses.fill"),
-                            (.politeDecline, "Decline", "xmark.circle.fill"),
-                            (.proposeTime, "Propose Time", "calendar.badge.clock")
-                        ]
-
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                            ForEach(tones, id: \.0) { tone, label, icon in
-                                Button {
-                                    activeTone = tone
-                                    triggerSmartReply(tone: tone)
-                                } label: {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: icon)
-                                            .font(.system(size: 10))
-                                        Text(label)
-                                            .font(.system(size: 11, weight: .medium))
-                                            .lineLimit(1)
-                                    }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(activeTone == tone ? Palette.accent.opacity(0.18) : Palette.hover, in: RoundedRectangle(cornerRadius: 6))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(activeTone == tone ? Palette.accent.opacity(0.5) : Color.clear, lineWidth: 1)
-                                    )
-                                    .foregroundStyle(activeTone == tone ? Palette.accent : .primary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    // 2.5 Multi-turn Dialogue Memory (Recent conversation turns)
-                    if !session.copilotHistory.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("CONVERSATION MEMORY (\(session.copilotHistory.count))")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(Palette.muted)
-                                Spacer()
-                                Button {
-                                    session.clearCopilotHistory()
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "arrow.counterclockwise")
-                                        Text("Reset")
-                                    }
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Palette.muted)
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            VStack(spacing: 6) {
-                                ForEach(session.copilotHistory) { msg in
-                                    HStack {
-                                        if msg.role == "user" {
-                                            Spacer(minLength: 24)
-                                            Text(msg.content)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.white)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 6)
-                                                .background(Palette.accent, in: RoundedRectangle(cornerRadius: 10))
-                                        } else {
-                                            Text(msg.content)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.primary)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 6)
-                                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
-                                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
-                                            Spacer(minLength: 24)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding(10)
-                        .background(Palette.hover.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    // 3. Generated Reply Draft & Action Controls
-                    if !generatedDraft.isEmpty || isGenerating {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("REPLY DRAFT (\(activeTone.rawValue.capitalized))")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(Palette.muted)
-                                Spacer()
-                                if isGenerating {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                }
-                            }
-
-                            Text(generatedDraft)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
-
-                            // Action Buttons: Insert into chat & Copy
-                            HStack(spacing: 8) {
-                                Button {
-                                    session.insertTextIntoChat(generatedDraft)
-                                    isInserted = true
-                                    Task {
-                                        try? await Task.sleep(for: .seconds(2))
-                                        isInserted = false
-                                    }
-                                } label: {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: isInserted ? "checkmark" : "arrow.down.doc.fill")
-                                            .font(.system(size: 10, weight: .bold))
-                                        Text(isInserted ? "Inserted!" : "Insert into Chat")
-                                            .font(.system(size: 11, weight: .semibold))
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
-                                    .foregroundStyle(.white)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isGenerating)
-
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(generatedDraft, forType: .string)
-                                    isCopied = true
-                                    Task {
-                                        try? await Task.sleep(for: .seconds(2))
-                                        isCopied = false
-                                    }
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                                            .font(.system(size: 10))
-                                        Text(isCopied ? "Copied" : "Copy")
-                                            .font(.system(size: 11))
-                                    }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
-                                    .foregroundStyle(Palette.muted)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isGenerating)
-
-                                Spacer()
-
-                                Button {
-                                    triggerSmartReply(tone: activeTone)
-                                } label: {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 11))
-                                        .padding(6)
-                                        .background(Palette.hover, in: Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .help("Regenerate reply")
-                                .disabled(isGenerating)
-                            }
-                        }
-                    }
-
-                    // 4. Custom Co-Pilot Prompt Input with Streaming Output
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("ASK CO-PILOT")
-                            .font(.system(size: 9.5, weight: .bold))
-                            .foregroundStyle(Palette.muted)
-
-                        HStack(spacing: 6) {
-                            TextField("Ask Co-Pilot about this chat...", text: $customPrompt)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 11.5))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 6))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.hover, lineWidth: 1))
-                                .onSubmit {
-                                    triggerCustomPrompt()
-                                }
-
-                            Button {
-                                triggerCustomPrompt()
-                            } label: {
-                                Image(systemName: "arrow.up.circle.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? Palette.muted : Palette.accent)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
-                        }
-                    }
-                }
-                .padding(14)
-            }
-        }
-        .frame(width: 330)
-        .background(Palette.panel)
-        .overlay(Rectangle().frame(width: 1).foregroundStyle(Palette.hover), alignment: .leading)
-    }
-
     private var providerLabel: String {
         let prefs = store.preferences
-        if prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty { return "Gemini" }
+        if prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty { return "Gemini 2.5 Flash" }
         if prefs.aiProvider == "chatgpt" && !prefs.openAiApiKey.isEmpty { return "ChatGPT" }
         if prefs.aiProvider == "ollama" { return "Ollama (\(prefs.ollamaModel))" }
         return "Smart Engine"
@@ -3054,75 +2750,588 @@ struct AICopilotDrawer: View {
         return .orange
     }
 
-    private var sentimentColor: Color {
-        let score = sentimentResult.score
-        if score >= 0.2 { return .green }
-        if score <= -0.2 { return .red }
-        return .orange
+    var body: some View {
+        VStack(spacing: 0) {
+            // 1. Top Navigation Bar (48 px)
+            topToolbar
+
+            Divider()
+
+            // 2. Summary Header (Chat Type, Live Topic, Group/Admin Info)
+            summaryHeaderView
+
+            Divider()
+
+            // 3. Conversational Message Stream (ChatGPT & Google AI UI)
+            chatStreamView
+
+            Divider()
+
+            // 4. Bottom Input Bar (ChatGPT / Gemini style)
+            bottomInputBar
+        }
+        .frame(width: 360)
+        .background(Palette.panel)
+        .overlay(Rectangle().frame(width: 1).foregroundStyle(Palette.hover), alignment: .leading)
     }
 
-    private var urgencyBackgroundColor: Color {
-        let score = sentimentResult.score
-        if score <= -0.4 { return Color.red.opacity(0.15) }
-        if score >= 0.3 { return Color.green.opacity(0.15) }
-        return Palette.hover
+    // MARK: - 1. Top Navigation Bar
+    private var topToolbar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Palette.accent)
+                    .font(.system(size: 13, weight: .bold))
+                Text("Co-Pilot")
+                    .font(.system(size: 14, weight: .bold))
+            }
+
+            Spacer()
+
+            // AI Provider pill
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(providerIndicatorColor)
+                    .frame(width: 6, height: 6)
+                Text(providerLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Palette.hover, in: Capsule())
+
+            // Sync Chat DOM button
+            Button {
+                session.forceCollect()
+                store.showToast("Synced active chat")
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("Re-scan active chat messages and roster")
+
+            // Reset conversation memory button
+            Button {
+                session.clearCopilotHistory()
+                store.showToast("Conversation memory reset")
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("Clear Co-Pilot dialogue history")
+
+            // Close button
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("Close Co-Pilot")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Palette.panel)
     }
 
-    private var urgencyForegroundColor: Color {
-        let score = sentimentResult.score
-        if score <= -0.4 { return .red }
-        if score >= 0.3 { return .green }
-        return Palette.muted
-    }
+    // MARK: - 2. Summary Header
+    private var summaryHeaderView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Row 1: Chat Type Badge & Status
+            HStack(spacing: 6) {
+                if isGroup {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.3.fill")
+                            .font(.system(size: 10))
+                        Text("Group Chat (\(activeContext?.groupMemberCount ?? effectiveMembers.count))")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Palette.accent.opacity(0.15), in: Capsule())
+                    .foregroundStyle(Palette.accent)
 
-    private func triggerSmartReply(tone: AIReplyTone) {
-        guard !isGenerating else { return }
-        isGenerating = true
-        generatedDraft = ""
-        let contextSnippet = activeContext?.contextSnippet ?? ""
-        let contact = contactTitle
-        let userInstruction = "Draft a \(tone.rawValue) reply to \(contact)."
+                    // Admins & Members Toggle Button
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingGroupRoster.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("👑 \(groupAdmins.count) Admins · Info")
+                                .font(.system(size: 10.5, weight: .semibold))
+                            Image(systemName: showingGroupRoster ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 8))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Palette.hover, in: Capsule())
+                        .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 10))
+                        Text("Direct Chat")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.green)
 
-        Task {
-            session.appendCopilotMessage(role: "user", content: userInstruction)
-            let result = await AIService.shared.streamCoPilotResponse(
-                prompt: userInstruction,
-                context: contextSnippet,
-                tone: tone,
-                history: session.copilotHistory,
-                preferences: store.preferences,
-                onChunk: { chunk in
-                    generatedDraft += chunk
+                    Text(contactTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                 }
-            )
-            session.appendCopilotMessage(role: "assistant", content: result)
-            isGenerating = false
+
+                Spacer()
+
+                // Urgency / Sentiment Tag
+                Text(urgencyLevel)
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Palette.hover, in: Capsule())
+            }
+
+            // Row 2: Live Conversation Summary Header
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 9))
+                    Text("LIVE SUMMARY & STATUS")
+                        .font(.system(size: 9.5, weight: .bold))
+                }
+                .foregroundStyle(Palette.muted)
+
+                Text(activeContext?.topicSummary ?? "Monitoring live conversation thread...")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.sidebar.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
+
+            // Row 3: Expandable Group Members & Admin Roster (Only in Groups)
+            if isGroup && showingGroupRoster {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Group Admins Highlight
+                    if !groupAdmins.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("GROUP ADMINS")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.orange)
+
+                            ForEach(groupAdmins) { admin in
+                                HStack(spacing: 6) {
+                                    Text("👑")
+                                        .font(.system(size: 11))
+                                    Text(admin.name)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.primary)
+                                    if let phone = admin.phoneNumber, !phone.isEmpty {
+                                        Text("(\(phone))")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Palette.muted)
+                                    }
+                                    Spacer()
+                                    if let phone = admin.phoneNumber, !phone.isEmpty {
+                                        Button {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(phone, forType: .string)
+                                            store.showToast("Copied \(phone)")
+                                        } label: {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Copy phone number")
+                                    }
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                    }
+
+                    // All Participants Roster
+                    if !effectiveMembers.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("ROSTER & PARTICIPANTS (\(effectiveMembers.count))")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Palette.muted)
+
+                            ScrollView(.vertical, showsIndicators: true) {
+                                VStack(spacing: 3) {
+                                    ForEach(effectiveMembers) { m in
+                                        HStack(spacing: 6) {
+                                            Text(m.name)
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Text(m.role)
+                                                .font(.system(size: 9.5))
+                                                .foregroundStyle(m.role.lowercased().contains("admin") ? Color.orange : Palette.muted)
+                                            Text("· \(m.messageCount) msgs")
+                                                .font(.system(size: 9.5))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: 110)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Palette.hover.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(12)
+        .background(Palette.sidebar)
+    }
+
+    // MARK: - 3. Conversational Message Stream (ChatGPT & Google AI style)
+    private var chatStreamView: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 14) {
+                    if session.copilotHistory.isEmpty && !isGenerating {
+                        emptyStateGreetingView
+                    } else {
+                        ForEach(session.copilotHistory) { msg in
+                            if msg.role == "user" {
+                                userMessageBubble(msg)
+                            } else {
+                                assistantMessageCard(msg)
+                            }
+                        }
+
+                        // Live Streaming Bubble
+                        if isGenerating {
+                            streamingAssistantCard
+                        }
+                    }
+                    Color.clear.frame(height: 1).id("bottomMarker")
+                }
+                .padding(14)
+            }
+            .onChange(of: session.copilotHistory.count) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo("bottomMarker", anchor: .bottom)
+                }
+            }
+            .onChange(of: streamingText) {
+                proxy.scrollTo("bottomMarker", anchor: .bottom)
+            }
         }
     }
 
-    private func triggerCustomPrompt() {
-        let prompt = customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isGenerating else { return }
-        isGenerating = true
-        generatedDraft = ""
-        let query = prompt
+    // Empty State Greeting (ChatGPT / Gemini style)
+    private var emptyStateGreetingView: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Palette.accent.opacity(0.12))
+                    .frame(width: 52, height: 52)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+            }
+            .padding(.top, 16)
+
+            VStack(spacing: 4) {
+                Text("How can I help with this chat?")
+                    .font(.system(size: 15, weight: .bold))
+                Text("Full unrestricted access active. I can read all messages, analyze group members & admins, and draft context-aware replies.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+
+            VStack(spacing: 6) {
+                starterChip("📋 Summarize everything in this chat") {
+                    sendQuery("Summarize everything discussed in this conversation in clear executive bullet points.")
+                }
+                starterChip("📌 What are the key action items and deadlines?") {
+                    sendQuery("What are the key action items, commitments, deliverables, or deadlines mentioned?")
+                }
+                if isGroup {
+                    starterChip("👑 Who are the group admins and participants?") {
+                        sendQuery("Identify the group admins, participants, and summarize their roles and contact details.")
+                    }
+                }
+                starterChip("✍️ Draft a reply in my default \(store.preferences.defaultReplyTone) tone") {
+                    sendQuery("Draft a reply to \(contactTitle) in a \(store.preferences.defaultReplyTone) tone addressing the latest message.")
+                }
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func starterChip(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // User Message Bubble
+    private func userMessageBubble(_ msg: CopilotMessage) -> some View {
+        HStack {
+            Spacer(minLength: 32)
+            Text(msg.content)
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Palette.accent, in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    // Assistant Message Card (ChatGPT & Google AI UI)
+    private func assistantMessageCard(_ msg: CopilotMessage) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Text(providerLabel)
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Spacer()
+            }
+
+            Text(LocalizedStringKey(msg.content))
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineSpacing(3)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Action Toolbar (Insert into Chat, Copy, Regenerate)
+            HStack(spacing: 8) {
+                // Insert into Chat button
+                Button {
+                    session.insertTextIntoChat(msg.content)
+                    insertedMsgID = msg.id
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        insertedMsgID = nil
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: insertedMsgID == msg.id ? "checkmark" : "arrow.down.doc.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(insertedMsgID == msg.id ? "Inserted!" : "Insert into Chat")
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .help("Insert text directly into WhatsApp/Telegram/Slack chat input")
+
+                // Copy button
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(msg.content, forType: .string)
+                    copiedMsgID = msg.id
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        copiedMsgID = nil
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: copiedMsgID == msg.id ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 9))
+                        Text(copiedMsgID == msg.id ? "Copied" : "Copy")
+                            .font(.system(size: 10.5))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 6))
+                    .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Regenerate button
+                Button {
+                    sendQuery("Regenerate a new response or alternative.")
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10))
+                        .padding(5)
+                        .background(Palette.hover, in: Circle())
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Regenerate response")
+            }
+            .padding(.top, 4)
+        }
+        .padding(12)
+        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
+    }
+
+    // Live Streaming Assistant Card
+    private var streamingAssistantCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Text("Thinking & Generating...")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                ProgressView().controlSize(.mini)
+                Spacer()
+            }
+
+            if !streamingText.isEmpty {
+                Text(LocalizedStringKey(streamingText))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+    }
+
+    // MARK: - 4. Bottom Input Bar (ChatGPT & Google AI UI)
+    private var bottomInputBar: some View {
+        VStack(spacing: 6) {
+            // Status Tag Row: Tone default + Access pill
+            HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "lock.open.fill")
+                        .font(.system(size: 8))
+                    Text("Full Access Active")
+                        .font(.system(size: 9.5, weight: .semibold))
+                }
+                .foregroundStyle(Color.green)
+
+                Spacer()
+
+                // Default tone tag from settings (user requested: "keep it default from settings")
+                HStack(spacing: 4) {
+                    Text("Tone:")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.muted)
+                    Text("\(store.preferences.defaultReplyTone)")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Palette.accent)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Palette.hover, in: Capsule())
+            }
+
+            // Input TextField with Send Button
+            HStack(spacing: 8) {
+                TextField("Ask anything about this chat, members, or draft a reply...", text: $customPrompt)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
+                    .onSubmit {
+                        sendQuery(customPrompt)
+                    }
+
+                Button {
+                    sendQuery(customPrompt)
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? Palette.muted : Palette.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
+            }
+        }
+        .padding(12)
+        .background(Palette.panel)
+    }
+
+    // MARK: - Query Execution
+    private func sendQuery(_ queryText: String) {
+        let clean = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, !isGenerating else { return }
         customPrompt = ""
-        let contextSnippet = activeContext?.contextSnippet ?? ""
+        isGenerating = true
+        streamingText = ""
+
+        session.appendCopilotMessage(role: "user", content: clean)
+
+        let transcript = activeContext?.fullTranscript ?? ""
+        let memberCount = activeContext?.groupMemberCount ?? effectiveMembers.count
+        let channelType = isGroup ? "Group Chat (\(memberCount) members)" : "Direct 1-on-1 Chat with \(contactTitle)"
+
+        let membersList = effectiveMembers.map { m in
+            let phone = (m.phoneNumber?.isEmpty == false) ? " (\(m.phoneNumber!))" : ""
+            let roleStr = m.role.lowercased().contains("admin") ? "👑 \(m.role)" : m.role
+            return "\(m.name)\(phone) - \(roleStr) (\(m.messageCount) messages)"
+        }.joined(separator: "\n")
+
+        let tone = defaultTone
 
         Task {
-            session.appendCopilotMessage(role: "user", content: query)
             let result = await AIService.shared.streamCoPilotResponse(
-                prompt: query,
-                context: contextSnippet,
-                tone: activeTone,
+                prompt: clean,
+                context: transcript,
+                tone: tone,
                 history: session.copilotHistory,
+                channelType: channelType,
+                membersInfo: membersList,
                 preferences: store.preferences,
                 onChunk: { chunk in
-                    generatedDraft += chunk
+                    streamingText += chunk
                 }
             )
             session.appendCopilotMessage(role: "assistant", content: result)
             isGenerating = false
+            streamingText = ""
         }
     }
 }
+
