@@ -42,7 +42,7 @@ final class AIService: ObservableObject {
         let cookies = await store.httpCookieStore.allCookies()
         let hasOpenAIAuth = cookies.contains { cookie in
             let name = cookie.name.lowercased()
-            return name.contains("session-token") || name.contains("oai-did") || name.contains("__cf_bm") || name.contains("auth")
+            return name == "session-token" || name == "__secure-next-auth.session-token" || (name.contains("session-token") && !name.contains("cf"))
         }
         return hasOpenAIAuth
     }
@@ -53,13 +53,15 @@ final class AIService: ObservableObject {
             await geminiDataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast)
             store.preferences.isGeminiLoggedIn = false
             store.preferences.geminiAccountEmail = ""
-            store.showToast("Signed out of Google Gemini")
+            store.preferences.geminiApiKey = ""
+            store.showToast("Disconnected Google Gemini")
         } else if provider == "chatgpt" {
             let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
             await chatGptDataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast)
             store.preferences.isChatGptLoggedIn = false
             store.preferences.chatGptAccountEmail = ""
-            store.showToast("Signed out of ChatGPT")
+            store.preferences.openAiApiKey = ""
+            store.showToast("Disconnected OpenAI")
         }
     }
 
@@ -187,19 +189,8 @@ final class AIService: ObservableObject {
             preferences: preferences
         )
 
-        // 8. Provider Attribution
-        let providerName: String
-        if preferences.aiProvider == "gemini" && !preferences.geminiApiKey.isEmpty {
-            providerName = "Google Gemini (Direct API: \(preferences.aiModelTier))"
-        } else if preferences.aiProvider == "chatgpt" && !preferences.openAiApiKey.isEmpty {
-            providerName = "OpenAI ChatGPT (Direct API: \(preferences.aiModelTier))"
-        } else if preferences.aiProvider == "gemini" && preferences.isGeminiLoggedIn {
-            providerName = "Google Gemini (Connected Account)"
-        } else if preferences.aiProvider == "chatgpt" && preferences.isChatGptLoggedIn {
-            providerName = "OpenAI ChatGPT (Connected Account)"
-        } else {
-            providerName = "PINGGO Smart Engine (Apple ML)"
-        }
+        // 8. Honest Local Attribution
+        let providerName = "Pinggo Smart Engine (Local Heuristic)"
 
         return AIAnalysisResult(
             sender: sender,
@@ -281,7 +272,56 @@ final class AIService: ObservableObject {
     }
 
     func openInAppleCalendar(event: AICalendarEvent, store: AppStore) {
-        // Generate minimal valid .ics file to launch native Calendar.app import
+        let now = Date()
+        let calendar = Calendar.current
+        var targetDate = now
+
+        let lowerDate = event.dateSuggestion.lowercased()
+        if lowerDate.contains("tomorrow") {
+            targetDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        } else if lowerDate.contains("monday") {
+            targetDate = nextDate(dayOfWeek: 2, from: now)
+        } else if lowerDate.contains("tuesday") {
+            targetDate = nextDate(dayOfWeek: 3, from: now)
+        } else if lowerDate.contains("wednesday") {
+            targetDate = nextDate(dayOfWeek: 4, from: now)
+        } else if lowerDate.contains("thursday") {
+            targetDate = nextDate(dayOfWeek: 5, from: now)
+        } else if lowerDate.contains("friday") {
+            targetDate = nextDate(dayOfWeek: 6, from: now)
+        } else if lowerDate.contains("saturday") {
+            targetDate = nextDate(dayOfWeek: 7, from: now)
+        } else if lowerDate.contains("sunday") {
+            targetDate = nextDate(dayOfWeek: 1, from: now)
+        }
+
+        var hour = 14
+        var minute = 0
+        if let timeStr = event.startTime {
+            let timeClean = timeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let isPM = timeClean.contains("pm")
+            let digits = timeClean.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            if let h = digits.first.flatMap(Int.init) {
+                hour = isPM && h < 12 ? h + 12 : (!isPM && timeClean.contains("am") && h == 12 ? 0 : h)
+                if digits.count > 1, let m = Int(digits[1]) {
+                    minute = m
+                }
+            }
+        }
+
+        var comps = calendar.dateComponents([.year, .month, .day], from: targetDate)
+        comps.hour = hour
+        comps.minute = minute
+        comps.second = 0
+        let startDateTime = calendar.date(from: comps) ?? targetDate
+        let endDateTime = calendar.date(byAdding: .hour, value: 1, to: startDateTime) ?? startDateTime
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let dtStart = formatter.string(from: startDateTime)
+        let dtEnd = formatter.string(from: endDateTime)
+
         let icsString = """
         BEGIN:VCALENDAR
         VERSION:2.0
@@ -290,7 +330,8 @@ final class AIService: ObservableObject {
         SUMMARY:\(event.title)
         DESCRIPTION:\(event.notes)
         LOCATION:\(event.locationOrLink ?? "Online")
-        DTSTART;VALUE=DATE:\(Date().formatted(.iso8601))
+        DTSTART:\(dtStart)
+        DTEND:\(dtEnd)
         STATUS:CONFIRMED
         END:VEVENT
         END:VCALENDAR
@@ -306,8 +347,15 @@ final class AIService: ObservableObject {
         }
     }
 
-    // MARK: - Language Detection & Translation (Apple NaturalLanguage ML)
-    func detectLanguageAndTranslate(text: String) -> (language: String, translation: String)? {
+    private func nextDate(dayOfWeek: Int, from date: Date) -> Date {
+        let calendar = Calendar.current
+        var comps = DateComponents()
+        comps.weekday = dayOfWeek
+        return calendar.nextDate(after: date, matching: comps, matchingPolicy: .nextTime) ?? date
+    }
+
+    // MARK: - Language Detection & Real Translation
+    func detectLanguage(text: String) -> (code: String, name: String)? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 3 else { return nil }
 
@@ -315,35 +363,32 @@ final class AIService: ObservableObject {
         recognizer.processString(trimmed)
         guard let dominant = recognizer.dominantLanguage else { return nil }
         let code = dominant.rawValue
-
-        // English or undetermined does not need a translation banner
         if code == "en" || code == "und" { return nil }
 
         let langName = Locale.current.localizedString(forIdentifier: code) ?? code.uppercased()
+        return (code, langName)
+    }
 
-        let lower = trimmed.lowercased()
-        let sampleTranslation: String
-        if lower.contains("hola") || lower.contains("gracias") || lower.contains("mañana") || code == "es" {
-            sampleTranslation = "Translation (Spanish): \"Hello, thank you for reaching out. Let me know what you think.\""
-        } else if lower.contains("bonjour") || lower.contains("merci") || code == "fr" {
-            sampleTranslation = "Translation (French): \"Hello, thank you. Let's arrange a meeting when convenient.\""
-        } else if lower.contains("hallo") || lower.contains("danke") || code == "de" {
-            sampleTranslation = "Translation (German): \"Hello, thank you! Looking forward to connecting soon.\""
-        } else if lower.contains("ciao") || lower.contains("grazie") || code == "it" {
-            sampleTranslation = "Translation (Italian): \"Hi, thanks so much. Talk to you soon!\""
-        } else if lower.contains("olá") || lower.contains("obrigado") || code == "pt" {
-            sampleTranslation = "Translation (Portuguese): \"Hello, thank you! Hope everything is going well.\""
-        } else if code == "hi" {
-            sampleTranslation = "Translation (Hindi): \"Hello, hope you are well. Let's connect soon.\""
-        } else if code == "ja" {
-            sampleTranslation = "Translation (Japanese): \"Hello, thank you for contacting. Looking forward to speaking.\""
-        } else if code == "zh" || code == "zh-Hans" || code == "zh-Hant" {
-            sampleTranslation = "Translation (Chinese): \"Hello, thank you for your note. Looking forward to following up.\""
-        } else {
-            sampleTranslation = "Translation (\(langName)): \"[Incoming message in \(langName)]\""
+    func translateMessage(text: String, targetLanguage: String = "English", preferences: AppPreferences) async throws -> String {
+        let resolution = AIProviderResolver.resolve(preferences: preferences)
+        guard resolution.canPerformGenerativeAI else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Translation unavailable without configured AI provider."])
         }
 
-        return (langName, sampleTranslation)
+        let prompt = "Translate the following text into \(targetLanguage). Output only the translated text with no introductory or conversational remarks:\n\n\(text)"
+        if resolution.provider == .gemini {
+            return try await callGeminiAPI(apiKey: preferences.geminiApiKey, model: resolution.model, prompt: prompt)
+        } else if resolution.provider == .chatgpt {
+            return try await callOpenAIAPI(apiKey: preferences.openAiApiKey, model: resolution.model, prompt: prompt)
+        } else if resolution.provider == .ollama {
+            return try await callOllamaAPI(endpoint: preferences.ollamaEndpoint, model: resolution.model, prompt: prompt)
+        }
+        throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "No active translation engine available."])
+    }
+
+    func detectLanguageAndTranslate(text: String) -> (language: String, translation: String)? {
+        guard let (_, name) = detectLanguage(text: text) else { return nil }
+        return (name, "Incoming message in \(name). Translate via AI Assistant.")
     }
 
     // MARK: - Apple ML Sentiment Analysis
@@ -701,13 +746,9 @@ final class AIService: ObservableObject {
 
         let providerName: String
         if preferences.aiProvider == "gemini" && !preferences.geminiApiKey.isEmpty {
-            providerName = "Google Gemini (Direct API: \(preferences.aiModelTier))"
+            providerName = "Google Gemini (Direct API: \(preferences.geminiModelTier))"
         } else if preferences.aiProvider == "chatgpt" && !preferences.openAiApiKey.isEmpty {
-            providerName = "OpenAI ChatGPT (Direct API: \(preferences.aiModelTier))"
-        } else if preferences.aiProvider == "gemini" && preferences.isGeminiLoggedIn {
-            providerName = "Google Gemini (Connected Account)"
-        } else if preferences.aiProvider == "chatgpt" && preferences.isChatGptLoggedIn {
-            providerName = "OpenAI ChatGPT (Connected Account)"
+            providerName = "OpenAI (Direct API: \(preferences.openAiModelTier))"
         } else {
             providerName = "PINGGO Smart Engine (Apple ML)"
         }
@@ -743,15 +784,24 @@ final class AIService: ObservableObject {
         let firstName = sender.components(separatedBy: " ").first ?? sender
         let clean = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
+        // A connected provider should handle every co-pilot request. Local
+        // templates below are only the explicit offline fallback.
+        let resolution = AIProviderResolver.resolve(preferences: preferences)
+        if resolution.canPerformGenerativeAI {
+            return await draftCustomReply(
+                prompt: prompt,
+                messageContext: messageContext,
+                sender: sender,
+                tone: tone,
+                preferences: preferences
+            )
+        }
+
         let engineName: String
         if preferences.aiProvider == "gemini" && !preferences.geminiApiKey.isEmpty {
-            engineName = "Google Gemini (\(preferences.aiModelTier))"
+            engineName = "Google Gemini (\(preferences.geminiModelTier))"
         } else if preferences.aiProvider == "chatgpt" && !preferences.openAiApiKey.isEmpty {
-            engineName = "OpenAI ChatGPT (\(preferences.aiModelTier))"
-        } else if preferences.aiProvider == "gemini" && preferences.isGeminiLoggedIn {
-            engineName = "Google Gemini (Web Partition)"
-        } else if preferences.aiProvider == "chatgpt" && preferences.isChatGptLoggedIn {
-            engineName = "OpenAI ChatGPT (Web Partition)"
+            engineName = "OpenAI (\(preferences.openAiModelTier))"
         } else {
             engineName = "PINGGO Smart Engine"
         }
@@ -837,17 +887,20 @@ final class AIService: ObservableObject {
         }
 
         // Direct Generative AI Call if API Key is configured
-        if preferences.aiProvider == "gemini", !preferences.geminiApiKey.isEmpty {
+        let resolution = AIProviderResolver.resolve(preferences: preferences)
+        if resolution.canPerformGenerativeAI {
             let sysInstruction = "You are an AI assistant drafting a chat reply in a \(tone.rawValue) tone. \(preferences.customAiPrompt.isEmpty ? "" : "User instructions: " + preferences.customAiPrompt)"
             let userPrompt = "Sender: \(sender)\nMessage context: \"\(messageContext)\"\nInstructions: \(cleanPrompt)\nDraft the reply message only, with no introductory or concluding commentary."
-            if let result = try? await callGeminiAPI(apiKey: preferences.geminiApiKey, model: preferences.aiModelTier, prompt: userPrompt, systemInstruction: sysInstruction), !result.isEmpty {
-                return result
-            }
-        } else if preferences.aiProvider == "chatgpt", !preferences.openAiApiKey.isEmpty {
-            let sysInstruction = "You are an AI assistant drafting a chat reply in a \(tone.rawValue) tone. \(preferences.customAiPrompt.isEmpty ? "" : "User instructions: " + preferences.customAiPrompt)"
-            let userPrompt = "Sender: \(sender)\nMessage context: \"\(messageContext)\"\nInstructions: \(cleanPrompt)\nDraft the reply message only, with no introductory or concluding commentary."
-            if let result = try? await callOpenAIAPI(apiKey: preferences.openAiApiKey, model: preferences.aiModelTier, prompt: userPrompt, systemInstruction: sysInstruction), !result.isEmpty {
-                return result
+            do {
+                if resolution.provider == .gemini {
+                    return try await callGeminiAPI(apiKey: preferences.geminiApiKey, model: resolution.model, prompt: userPrompt, systemInstruction: sysInstruction)
+                } else if resolution.provider == .chatgpt {
+                    return try await callOpenAIAPI(apiKey: preferences.openAiApiKey, model: resolution.model, prompt: userPrompt, systemInstruction: sysInstruction)
+                } else if resolution.provider == .ollama {
+                    return try await callOllamaAPI(endpoint: preferences.ollamaEndpoint, model: resolution.model, prompt: userPrompt, systemInstruction: sysInstruction)
+                }
+            } catch {
+                return "⚠️ \(resolution.provider.title) could not complete the request: \(error.localizedDescription)"
             }
         }
 
@@ -900,7 +953,7 @@ final class AIService: ObservableObject {
     // MARK: - Direct Generative API Integrations
     func callGeminiAPI(
         apiKey: String,
-        model: String = "gemini-1.5-flash",
+        model: String = "gemini-3.5-flash",
         prompt: String,
         systemInstruction: String? = nil
     ) async throws -> String {
@@ -909,8 +962,8 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Gemini API key is empty."])
         }
 
-        let targetModel = model.isEmpty ? "gemini-1.5-flash" : model
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):generateContent?key=\(cleanKey)") else {
+        let targetModel = model.isEmpty ? "gemini-3.5-flash" : model
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):generateContent") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini endpoint URL."])
         }
 
@@ -936,6 +989,7 @@ final class AIService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(cleanKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = bodyData
         request.timeoutInterval = 20
 
@@ -977,22 +1031,19 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "OpenAI API key is empty."])
         }
 
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+        guard let url = URL(string: "https://api.openai.com/v1/responses") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OpenAI endpoint URL."])
         }
 
-        var messages: [[String: String]] = []
-        if let system = systemInstruction, !system.isEmpty {
-            messages.append(["role": "system", "content": system])
-        }
-        messages.append(["role": "user", "content": prompt])
-
         let targetModel = model.isEmpty ? "gpt-4o-mini" : model
-        let bodyDict: [String: Any] = [
+        var bodyDict: [String: Any] = [
             "model": targetModel,
-            "messages": messages,
-            "temperature": 0.7
+            "input": prompt,
+            "store": false
         ]
+        if let system = systemInstruction?.trimmingCharacters(in: .whitespacesAndNewlines), !system.isEmpty {
+            bodyDict["instructions"] = system
+        }
         let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
 
         var request = URLRequest(url: url)
@@ -1017,12 +1068,78 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API Error (\(httpResponse.statusCode)): \(str)"])
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to parse response from OpenAI."])
+        }
+
+        if let outputText = json["output_text"] as? String,
+           !outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let output = json["output"] as? [[String: Any]] ?? []
+        let textParts = output.flatMap { item -> [String] in
+            guard item["type"] as? String == "message",
+                  let content = item["content"] as? [[String: Any]] else { return [] }
+            return content.compactMap { part in
+                guard part["type"] as? String == "output_text" else { return nil }
+                return part["text"] as? String
+            }
+        }
+        let content = textParts.joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "OpenAI returned no text output."])
+        }
+        return content
+    }
+
+    func callOllamaAPI(
+        endpoint: String = "http://localhost:11434",
+        model: String = "llama3.2",
+        prompt: String,
+        systemInstruction: String? = nil
+    ) async throws -> String {
+        let base = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let cleanBase = base.isEmpty ? "http://localhost:11434" : base
+        guard let url = URL(string: "\(cleanBase)/api/chat") else {
+            throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Ollama endpoint URL."])
+        }
+
+        var messages: [[String: String]] = []
+        if let system = systemInstruction, !system.isEmpty {
+            messages.append(["role": "system", "content": system])
+        }
+        messages.append(["role": "user", "content": prompt])
+
+        let targetModel = model.isEmpty ? "llama3.2" : model
+        let bodyDict: [String: Any] = [
+            "model": targetModel,
+            "messages": messages,
+            "stream": false
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyDict)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        request.timeoutInterval = 60
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response from Ollama."])
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errText = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
+            throw NSError(domain: "AIService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Ollama Error (\(httpResponse.statusCode)): \(errText)"])
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let msg = json["message"] as? [String: Any],
+              let content = msg["content"] as? String else {
+            throw NSError(domain: "AIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to parse response from Ollama."])
         }
 
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1031,7 +1148,7 @@ final class AIService: ObservableObject {
     // MARK: - Streaming Generative API Integrations (Server-Sent Events)
     func streamGeminiAPI(
         apiKey: String,
-        model: String = "gemini-1.5-flash",
+        model: String = "gemini-3.5-flash",
         prompt: String,
         systemInstruction: String? = nil,
         onChunk: @escaping @Sendable (String) -> Void
@@ -1041,8 +1158,8 @@ final class AIService: ObservableObject {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Gemini API key is empty."])
         }
 
-        let targetModel = model.isEmpty ? "gemini-1.5-flash" : model
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):streamGenerateContent?alt=sse&key=\(cleanKey)") else {
+        let targetModel = model.isEmpty ? "gemini-3.5-flash" : model
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(targetModel):streamGenerateContent?alt=sse") else {
             throw NSError(domain: "AIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini endpoint URL."])
         }
 
@@ -1068,6 +1185,7 @@ final class AIService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(cleanKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = bodyData
         request.timeoutInterval = 30
 
@@ -1245,46 +1363,50 @@ final class AIService: ObservableObject {
         let sysInstruction = "You are PINGGO Co-Pilot, an intelligent personal communication assistant. \(personaInstruction) Draft clear, concise, and context-aware responses in a \(tone.rawValue) tone. \(preferences.customAiPrompt.isEmpty ? "" : "User guidelines: " + preferences.customAiPrompt)"
         let userPrompt = cleanContext.isEmpty ? cleanPrompt : "Context:\n\(cleanContext)\n\nInstruction/Question:\n\(cleanPrompt)"
 
-        if preferences.aiProvider == "gemini" && !preferences.geminiApiKey.isEmpty {
-            if let result = try? await streamGeminiAPI(
-                apiKey: preferences.geminiApiKey,
-                model: preferences.aiModelTier,
-                prompt: userPrompt,
-                systemInstruction: sysInstruction,
-                onChunk: { chunk in
-                    Task { @MainActor in onChunk(chunk) }
+        let resolution = AIProviderResolver.resolve(preferences: preferences)
+
+        if resolution.canPerformGenerativeAI {
+            if resolution.provider == .gemini {
+                if let result = try? await streamGeminiAPI(
+                    apiKey: preferences.geminiApiKey,
+                    model: resolution.model,
+                    prompt: userPrompt,
+                    systemInstruction: sysInstruction,
+                    onChunk: { chunk in
+                        Task { @MainActor in onChunk(chunk) }
+                    }
+                ), !result.isEmpty {
+                    return result
                 }
-            ), !result.isEmpty {
-                return result
-            }
-        } else if preferences.aiProvider == "chatgpt" && !preferences.openAiApiKey.isEmpty {
-            if let result = try? await streamOpenAIAPI(
-                apiKey: preferences.openAiApiKey,
-                model: preferences.aiModelTier,
-                prompt: userPrompt,
-                systemInstruction: sysInstruction,
-                onChunk: { chunk in
-                    Task { @MainActor in onChunk(chunk) }
+            } else if resolution.provider == .chatgpt {
+                if let result = try? await streamOpenAIAPI(
+                    apiKey: preferences.openAiApiKey,
+                    model: resolution.model,
+                    prompt: userPrompt,
+                    systemInstruction: sysInstruction,
+                    onChunk: { chunk in
+                        Task { @MainActor in onChunk(chunk) }
+                    }
+                ), !result.isEmpty {
+                    return result
                 }
-            ), !result.isEmpty {
-                return result
-            }
-        } else if preferences.aiProvider == "ollama" {
-            if let result = try? await streamOllamaAPI(
-                endpoint: preferences.ollamaEndpoint,
-                model: preferences.ollamaModel,
-                prompt: userPrompt,
-                systemInstruction: sysInstruction,
-                history: history,
-                onChunk: { chunk in
-                    Task { @MainActor in onChunk(chunk) }
+            } else if resolution.provider == .ollama {
+                if let result = try? await streamOllamaAPI(
+                    endpoint: preferences.ollamaEndpoint,
+                    model: resolution.model,
+                    prompt: userPrompt,
+                    systemInstruction: sysInstruction,
+                    history: history,
+                    onChunk: { chunk in
+                        Task { @MainActor in onChunk(chunk) }
+                    }
+                ), !result.isEmpty {
+                    return result
                 }
-            ), !result.isEmpty {
-                return result
             }
         }
 
-        // Local Smart Engine fallback with typewriter streaming effect
+        // Local Smart Engine fallback - render instantly without fake typewriter delay
         let fallbackReply = await draftCustomReply(
             prompt: cleanPrompt,
             messageContext: cleanContext,
@@ -1292,16 +1414,8 @@ final class AIService: ObservableObject {
             tone: tone,
             preferences: preferences
         )
-
-        let words = fallbackReply.components(separatedBy: " ")
-        var accumulated = ""
-        for (i, word) in words.enumerated() {
-            let piece = (i == 0 ? "" : " ") + word
-            accumulated += piece
-            onChunk(piece)
-            try? await Task.sleep(nanoseconds: 25_000_000)
-        }
-        return accumulated
+        onChunk(fallbackReply)
+        return fallbackReply
     }
 
     func testAPIConnection(provider: String, apiKey: String, model: String) async -> (success: Bool, message: String) {
@@ -1348,13 +1462,7 @@ final class AIService: ObservableObject {
         let catLower = category.lowercased()
 
         let providerName: String
-        if preferences.aiProvider == "gemini" && preferences.isGeminiLoggedIn {
-            providerName = "Google Gemini (Connected Account)"
-        } else if preferences.aiProvider == "chatgpt" && preferences.isChatGptLoggedIn {
-            providerName = "OpenAI ChatGPT (Connected Account)"
-        } else {
-            providerName = "PINGGO Smart Engine"
-        }
+        providerName = "PINGGO Smart Engine (Local Heuristic)"
 
         var requiresReply = false
         var contextSummary = ""

@@ -42,8 +42,8 @@
                 <Border Grid.Column="2" Background="{StaticResource AppPanelBrush}" CornerRadius="12" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="18" Margin="12,0,0,0">
                     <StackPanel Spacing="6">
                         <TextBlock Text="AI ASSISTANT STATUS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
-                        <TextBlock Text="Copilot Ready" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
-                        <TextBlock Text="Gemini &amp; ChatGPT smart replies enabled" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="AI Providers" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                        <TextBlock Text="Connect a provider in Settings or use the local Smart Engine" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
                     </StackPanel>
                 </Border>
             </Grid>

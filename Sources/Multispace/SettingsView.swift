@@ -586,7 +586,7 @@ struct SettingsView: View {
                                 .background(Color.green.opacity(0.18), in: Capsule())
                                 .foregroundStyle(.green)
                         }
-                        Text("Log into your Google Gemini or ChatGPT account directly—no developer API keys or billing setup required.")
+                        Text("Connect Gemini or OpenAI with a validated API credential. Credentials are stored in macOS Keychain and never in app preferences.")
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.muted)
                     }
@@ -664,15 +664,15 @@ struct SettingsView: View {
                 }
             }
 
-            // Connected Accounts Card
-            settingsCard("Connected AI Accounts", symbol: "person.badge.shield.checkmark.fill", color: .indigo) {
+            // Connected Providers Card
+            settingsCard("Connected AI Providers", symbol: "person.badge.shield.checkmark.fill", color: .indigo) {
                 // Google Gemini Card
                 aiAccountRow(
                     title: "Google Gemini",
-                    subtitle: "gemini.google.com · Google Account",
+                    subtitle: "Gemini API · Secured by macOS Keychain",
                     icon: "sparkles",
                     color: Color(red: 0.26, green: 0.52, blue: 0.96),
-                    isLoggedIn: store.preferences.isGeminiLoggedIn,
+                    isLoggedIn: !store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn,
                     provider: "gemini"
                 )
 
@@ -681,10 +681,10 @@ struct SettingsView: View {
                 // OpenAI ChatGPT Card
                 aiAccountRow(
                     title: "OpenAI ChatGPT",
-                    subtitle: "chatgpt.com · OpenAI Account",
+                    subtitle: "OpenAI API · Secured by macOS Keychain",
                     icon: "bubble.left.and.bubble.right.fill",
                     color: Color(red: 0.06, green: 0.65, blue: 0.53),
-                    isLoggedIn: store.preferences.isChatGptLoggedIn,
+                    isLoggedIn: !store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn,
                     provider: "chatgpt"
                 )
             }
@@ -692,9 +692,9 @@ struct SettingsView: View {
             // Direct API Keys & Models
             settingsCard("API Keys & Direct Integration", symbol: "key.horizontal.fill", color: .blue) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Optional Direct API Access")
+                    Text("Provider Configuration")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Provide your personal API keys for direct REST API communication. If left empty, PINGGO uses the local Apple ML Smart Engine or your logged-in web partition.")
+                    Text("Choose the model used after connecting a provider. Without a connected provider, PINGGO clearly labels results from its local Smart Engine.")
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.muted)
                 }
@@ -709,9 +709,9 @@ struct SettingsView: View {
                         Text("Google Gemini API Key")
                             .font(.system(size: 12.5, weight: .semibold))
                         Spacer()
-                        Picker("Model", selection: $store.preferences.aiModelTier) {
-                            Text("gemini-1.5-flash").tag("gemini-1.5-flash")
-                            Text("gemini-1.5-pro").tag("gemini-1.5-pro")
+                        Picker("Model", selection: $store.preferences.geminiModelTier) {
+                            Text("gemini-3.5-flash").tag("gemini-3.5-flash")
+                            Text("gemini-3.1-flash-lite").tag("gemini-3.1-flash-lite")
                         }
                         .labelsHidden()
                         .frame(width: 150)
@@ -720,9 +720,9 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         Group {
                             if showGeminiApiKey {
-                                TextField("AIzaSy...", text: $store.preferences.geminiApiKey)
+                                TextField("AIzaSy...", text: aiCredentialBinding(provider: "gemini"))
                             } else {
-                                SecureField("AIzaSy...", text: $store.preferences.geminiApiKey)
+                                SecureField("AIzaSy...", text: aiCredentialBinding(provider: "gemini"))
                             }
                         }
                         .textFieldStyle(.roundedBorder)
@@ -744,10 +744,11 @@ struct SettingsView: View {
                                 let res = await AIService.shared.testAPIConnection(
                                     provider: "gemini",
                                     apiKey: store.preferences.geminiApiKey,
-                                    model: store.preferences.aiModelTier
+                                    model: store.preferences.geminiModelTier
                                 )
                                 testingAiConnection = false
                                 aiTestResult = res
+                                store.preferences.isGeminiLoggedIn = res.success
                             }
                         }
                         .buttonStyle(.bordered)
@@ -766,7 +767,7 @@ struct SettingsView: View {
                         Text("OpenAI ChatGPT API Key")
                             .font(.system(size: 12.5, weight: .semibold))
                         Spacer()
-                        Picker("Model", selection: $store.preferences.aiModelTier) {
+                        Picker("Model", selection: $store.preferences.openAiModelTier) {
                             Text("gpt-4o-mini").tag("gpt-4o-mini")
                             Text("gpt-4o").tag("gpt-4o")
                         }
@@ -777,9 +778,9 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         Group {
                             if showOpenAiApiKey {
-                                TextField("sk-proj-...", text: $store.preferences.openAiApiKey)
+                                TextField("sk-proj-...", text: aiCredentialBinding(provider: "chatgpt"))
                             } else {
-                                SecureField("sk-proj-...", text: $store.preferences.openAiApiKey)
+                                SecureField("sk-proj-...", text: aiCredentialBinding(provider: "chatgpt"))
                             }
                         }
                         .textFieldStyle(.roundedBorder)
@@ -801,10 +802,11 @@ struct SettingsView: View {
                                 let res = await AIService.shared.testAPIConnection(
                                     provider: "chatgpt",
                                     apiKey: store.preferences.openAiApiKey,
-                                    model: store.preferences.aiModelTier
+                                    model: store.preferences.openAiModelTier
                                 )
                                 testingAiConnection = false
                                 aiTestResult = res
+                                store.preferences.isChatGptLoggedIn = res.success
                             }
                         }
                         .buttonStyle(.bordered)
@@ -823,7 +825,7 @@ struct SettingsView: View {
                         Text("Ollama Local LLM (Offline / Privacy-First)")
                             .font(.system(size: 12.5, weight: .semibold))
                         Spacer()
-                        TextField("llama3.2", text: $store.preferences.ollamaModel)
+                        TextField("llama3.2", text: $store.preferences.ollamaModelTier)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 11, design: .monospaced))
                             .frame(width: 140)
@@ -902,7 +904,7 @@ struct SettingsView: View {
                         .padding(.vertical, 2)
                         .background(Color.green.opacity(0.12), in: Capsule())
                     } else {
-                        Text("Not Logged In")
+                        Text("Not Connected")
                             .font(.system(size: 10.5))
                             .foregroundStyle(Palette.muted)
                             .padding(.horizontal, 7)
@@ -918,7 +920,7 @@ struct SettingsView: View {
             Spacer()
 
             if isLoggedIn {
-                Button("Re-login") {
+                Button("Manage") {
                     activeAILoginProvider = provider
                 }
                 .buttonStyle(.bordered)
@@ -937,7 +939,7 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.right.circle.fill")
-                        Text("Log In")
+                        Text("Connect")
                     }
                     .font(.system(size: 11, weight: .semibold))
                 }
@@ -946,6 +948,23 @@ struct SettingsView: View {
                 .controlSize(.small)
             }
         }
+    }
+
+    private func aiCredentialBinding(provider: String) -> Binding<String> {
+        Binding(
+            get: {
+                provider == "gemini" ? store.preferences.geminiApiKey : store.preferences.openAiApiKey
+            },
+            set: { newValue in
+                if provider == "gemini" {
+                    store.preferences.isGeminiLoggedIn = false
+                    store.preferences.geminiApiKey = newValue
+                } else {
+                    store.preferences.isChatGptLoggedIn = false
+                    store.preferences.openAiApiKey = newValue
+                }
+            }
+        )
     }
 
     private var generalPage: some View {
@@ -1917,4 +1936,3 @@ struct EditProfileSheet: View {
         }
     }
 }
-

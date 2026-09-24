@@ -420,11 +420,8 @@ namespace PINGGO.Views
         private List<PlatformMessagePreview> GetChatIntelligenceMessages()
         {
             if (_selectedMessage == null) return new List<PlatformMessagePreview>();
-            if (MainViewModel.Shared.AccountThreadContexts.TryGetValue(_selectedMessage.AccountId, out var context) &&
-                context.Messages.Count > 0 &&
-                (string.IsNullOrWhiteSpace(context.ContactName) ||
-                 context.ContactName.Contains(_selectedMessage.DisplaySender, StringComparison.OrdinalIgnoreCase) ||
-                 _selectedMessage.DisplaySender.Contains(context.ContactName, StringComparison.OrdinalIgnoreCase)))
+            var context = MainViewModel.Shared.GetActiveThreadContext(_selectedMessage.AccountId, _selectedMessage.DisplaySender);
+            if (context != null && context.Messages.Count > 0)
             {
                 return context.Messages.TakeLast(ChatIntelligenceService.MaximumMessages).Select(message => new PlatformMessagePreview
                 {
@@ -448,9 +445,7 @@ namespace PINGGO.Views
         private List<AIChatMemberItem>? GetChatIntelligenceMetadataMembers()
         {
             if (_selectedMessage == null) return null;
-            return MainViewModel.Shared.AccountThreadContexts.TryGetValue(_selectedMessage.AccountId, out var context)
-                ? context.GroupMembers
-                : null;
+            return MainViewModel.Shared.GetActiveThreadContext(_selectedMessage.AccountId, _selectedMessage.DisplaySender)?.GroupMembers;
         }
 
         private void SetChatIntelligenceVisibility(bool visible)
@@ -475,6 +470,9 @@ namespace PINGGO.Views
             var previousCount = _analyzedMessageCounts.TryGetValue(_selectedMessage.Id, out var count) ? count : _chatIntelligenceMessages.Count;
             var newCount = Math.Max(0, _chatIntelligenceMessages.Count - previousCount);
             if (forceRefresh || !_analyzedMessageCounts.ContainsKey(_selectedMessage.Id)) _analyzedMessageCounts[_selectedMessage.Id] = _chatIntelligenceMessages.Count;
+
+            var resolution = AIProviderResolver.Resolve(AppPreferences.Shared);
+            ChatIntelligenceBadgeText.Text = resolution.DisplayBadge;
 
             SetChatIntelligenceVisibility(_isChatIntelligenceVisible);
             ChatIntelligenceNewMessagesButton.Visibility = newCount > 0 && !forceRefresh ? Visibility.Visible : Visibility.Collapsed;
@@ -579,17 +577,22 @@ namespace PINGGO.Views
             foreach (var message in history) IntelligenceChatLogContainer.Children.Add(CreateAiChatBubbleControl(message));
         }
 
-        private void SendIntelligenceQuestion(string question)
+        private async void SendIntelligenceQuestion(string question)
         {
             if (_selectedMessage == null || _chatIntelligenceAnalysis == null || string.IsNullOrWhiteSpace(question)) return;
+            var clean = question.Trim();
             if (!_intelligenceChatHistory.TryGetValue(_selectedMessage.Id, out var history))
             {
                 history = new List<AIChatMessage>();
                 _intelligenceChatHistory[_selectedMessage.Id] = history;
             }
-            history.Add(new AIChatMessage { IsUser = true, Text = question.Trim() });
-            history.Add(ChatIntelligenceService.Shared.Answer(question.Trim(), _chatIntelligenceAnalysis, _chatIntelligenceMessages, GetChatIntelligenceMetadataMembers()));
+            history.Add(new AIChatMessage { IsUser = true, Text = clean, Timestamp = DateTime.UtcNow });
             IntelligenceChatInputBox.Text = string.Empty;
+            PopulateIntelligenceChat();
+
+            var prefs = AppPreferences.Shared;
+            var aiMsg = await ChatIntelligenceService.Shared.AnswerAsync(clean, _chatIntelligenceAnalysis, _chatIntelligenceMessages, GetChatIntelligenceMetadataMembers(), prefs);
+            history.Add(aiMsg);
             PopulateIntelligenceChat();
         }
 
@@ -754,7 +757,8 @@ namespace PINGGO.Views
                 // Header with AI Icon
                 var headerSp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 headerSp.Children.Add(new FontIcon { Glyph = "\uE76E", FontSize = 11, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
-                headerSp.Children.Add(new TextBlock { Text = "PINGGO AI · Grounded in this chat", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
+                var badgeText = msg.Source?.BadgeText ?? "PINGGO AI · Grounded in this chat";
+                headerSp.Children.Add(new TextBlock { Text = badgeText, FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = (Microsoft.UI.Xaml.Media.Brush)Resources["AppAccentBrush"] });
                 sp.Children.Add(headerSp);
 
                 // Body text

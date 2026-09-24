@@ -16,7 +16,10 @@ final class AppStore: ObservableObject {
         }
     }
     @Published var preferences: AppPreferences = .init() {
-        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences") }
+        didSet {
+            persistAICredentials()
+            UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences")
+        }
     }
     @Published var userProfile: UserProfile = .init() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(userProfile), forKey: "userProfile") }
@@ -94,7 +97,14 @@ final class AppStore: ObservableObject {
         if let saved = UserDefaults.standard.data(forKey: "appPreferences"),
            let decoded = try? JSONDecoder().decode(AppPreferences.self, from: saved) {
             preferences = decoded
+            // Capture credentials written by older builds before immediately
+            // migrating them out of UserDefaults and into Keychain.
+            if let legacy = try? JSONSerialization.jsonObject(with: saved) as? [String: Any] {
+                preferences.geminiApiKey = legacy["geminiApiKey"] as? String ?? ""
+                preferences.openAiApiKey = legacy["openAiApiKey"] as? String ?? ""
+            }
         }
+        migrateAndLoadAICredentials()
         if let saved = UserDefaults.standard.data(forKey: "userProfile"),
            let decoded = try? JSONDecoder().decode(UserProfile.self, from: saved) {
             userProfile = decoded
@@ -141,6 +151,40 @@ final class AppStore: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    private func persistAICredentials() {
+        let geminiKey = preferences.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if geminiKey.isEmpty {
+            KeychainHelper.deletePassword(account: KeychainHelper.geminiAPIAccount)
+        } else {
+            KeychainHelper.savePassword(geminiKey, account: KeychainHelper.geminiAPIAccount)
+        }
+
+        let openAIKey = preferences.openAiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if openAIKey.isEmpty {
+            KeychainHelper.deletePassword(account: KeychainHelper.openAIAPIAccount)
+        } else {
+            KeychainHelper.savePassword(openAIKey, account: KeychainHelper.openAIAPIAccount)
+        }
+    }
+
+    private func migrateAndLoadAICredentials() {
+        if let key = KeychainHelper.getPassword(account: KeychainHelper.geminiAPIAccount) {
+            preferences.geminiApiKey = key
+        } else if !preferences.geminiApiKey.isEmpty {
+            KeychainHelper.savePassword(preferences.geminiApiKey, account: KeychainHelper.geminiAPIAccount)
+        }
+
+        if let key = KeychainHelper.getPassword(account: KeychainHelper.openAIAPIAccount) {
+            preferences.openAiApiKey = key
+        } else if !preferences.openAiApiKey.isEmpty {
+            KeychainHelper.savePassword(preferences.openAiApiKey, account: KeychainHelper.openAIAPIAccount)
+        }
+
+        // Re-encode immediately so credentials from older versions are removed
+        // from the UserDefaults payload after a successful Keychain migration.
+        UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences")
     }
 
     var me: Member { data.me }
@@ -1137,34 +1181,34 @@ final class AppStore: ObservableObject {
 
     private static func sampleData() -> AppData {
         // The sample graph gives a first launch useful content while all mutations remain local.
-        let me = Member(name: "You", handle: "you", color: "purple", status: "Exploring spaces")
-        let maya = Member(name: "Maya Chen", handle: "mayachen", color: "pink")
-        let noah = Member(name: "Noah Williams", handle: "noahw", color: "blue")
-        let ari = Member(name: "Ari Patel", handle: "arip", color: "orange")
-        let design = Space(name: "Design Circle", detail: "A home for curious creators", symbol: "paintpalette.fill", color: "purple")
-        let makers = Space(name: "Makers Club", detail: "Build, share, learn", symbol: "hammer.fill", color: "orange")
-        let general = Channel(spaceID: design.id, name: "general", topic: "Good conversations start here")
-        let inspiration = Channel(spaceID: design.id, name: "inspiration", topic: "Things worth sharing")
-        let feedback = Channel(spaceID: design.id, name: "feedback", topic: "Thoughtful work in progress")
-        let makerGeneral = Channel(spaceID: makers.id, name: "general", topic: "The makers' lounge")
-        let projects = Channel(spaceID: makers.id, name: "projects", topic: "What are you building?")
-        let mayaChat = Conversation(memberID: maya.id)
-        let noahChat = Conversation(memberID: noah.id)
+        let me = Member(name: "You", handle: "you", color: "purple", status: "Active in workspace")
+        let projectLead = Member(name: "Project Lead", handle: "projectlead", color: "blue")
+        let designTeam = Member(name: "Design Team", handle: "designteam", color: "pink")
+        let operationsTeam = Member(name: "Operations Team", handle: "operationsteam", color: "orange")
+        let projectSpace = Space(name: "Project Alpha", detail: "Workspace for active projects and deliverables", symbol: "folder.fill", color: "purple")
+        let operationsSpace = Space(name: "Operations Team", detail: "Cross-functional operations and execution", symbol: "person.3.fill", color: "blue")
+        let general = Channel(spaceID: projectSpace.id, name: "deployment-plan", topic: "Deployment plan and milestone reviews")
+        let inspiration = Channel(spaceID: projectSpace.id, name: "design-review", topic: "Design specifications and updates")
+        let feedback = Channel(spaceID: projectSpace.id, name: "feedback", topic: "Cross-team reviews and approvals")
+        let makerGeneral = Channel(spaceID: operationsSpace.id, name: "general", topic: "Operations and sync")
+        let projects = Channel(spaceID: operationsSpace.id, name: "tasks", topic: "Active sprints and action items")
+        let leadChat = Conversation(memberID: projectLead.id)
+        let opsChat = Conversation(memberID: operationsTeam.id)
         return AppData(
-            me: me, members: [maya, noah, ari], spaces: [design, makers],
+            me: me, members: [projectLead, designTeam, operationsTeam], spaces: [projectSpace, operationsSpace],
             channels: [general, inspiration, feedback, makerGeneral, projects],
-            conversations: [mayaChat, noahChat],
+            conversations: [leadChat, opsChat],
             messages: [
-                Message(channelID: general.id, authorID: maya.id, text: "Welcome to Design Circle! Share what you're working on this week.", sentAt: .now.addingTimeInterval(-7200)),
-                Message(channelID: general.id, authorID: noah.id, text: "I’m exploring a new way to bring community and conversations together.", sentAt: .now.addingTimeInterval(-5400)),
-                Message(channelID: inspiration.id, authorID: ari.id, text: "Found a beautiful type specimen today. The little details make it sing.", sentAt: .now.addingTimeInterval(-3600)),
-                Message(conversationID: mayaChat.id, authorID: maya.id, text: "Hey! Great to see you here 👋", sentAt: .now.addingTimeInterval(-1800)),
-                Message(conversationID: noahChat.id, authorID: noah.id, text: "Let me know when you have a moment to catch up.", sentAt: .now.addingTimeInterval(-900))
+                Message(channelID: general.id, authorID: projectLead.id, text: "Deployment plan updated for Project Alpha. Review meeting scheduled for tomorrow.", sentAt: .now.addingTimeInterval(-7200)),
+                Message(channelID: general.id, authorID: designTeam.id, text: "New file shared: UI_Updates.fig. Ready for team review.", sentAt: .now.addingTimeInterval(-5400)),
+                Message(channelID: inspiration.id, authorID: operationsTeam.id, text: "Timeline needs confirmation before staging deployment.", sentAt: .now.addingTimeInterval(-3600)),
+                Message(conversationID: leadChat.id, authorID: projectLead.id, text: "Deployment plan updated for Project Alpha. Review requested.", sentAt: .now.addingTimeInterval(-1800)),
+                Message(conversationID: opsChat.id, authorID: operationsTeam.id, text: "Operations timeline needs confirmation. Action items added.", sentAt: .now.addingTimeInterval(-900))
             ],
             posts: [
-                Post(spaceID: design.id, authorID: maya.id, text: "A little reminder to share the messy middle. The best ideas often start as rough sketches.", createdAt: .now.addingTimeInterval(-10800), likedBy: [noah.id, ari.id]),
-                Post(spaceID: design.id, authorID: noah.id, text: "What’s one small detail in an app that made you smile recently?", createdAt: .now.addingTimeInterval(-86400), likedBy: [maya.id]),
-                Post(spaceID: makers.id, authorID: ari.id, text: "This week’s goal: ship a tiny project and share what I learned.", createdAt: .now.addingTimeInterval(-18000), likedBy: [maya.id])
+                Post(spaceID: projectSpace.id, authorID: projectLead.id, text: "Project Alpha deployment window confirmed for Thursday 10:00 AM.", createdAt: .now.addingTimeInterval(-10800), likedBy: [designTeam.id, operationsTeam.id]),
+                Post(spaceID: projectSpace.id, authorID: designTeam.id, text: "Design specifications for the new overview layout have been finalized.", createdAt: .now.addingTimeInterval(-86400), likedBy: [projectLead.id]),
+                Post(spaceID: operationsSpace.id, authorID: operationsTeam.id, text: "Staging environments are now fully verified and operational.", createdAt: .now.addingTimeInterval(-18000), likedBy: [projectLead.id])
             ]
         )
     }

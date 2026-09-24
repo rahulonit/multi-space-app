@@ -132,7 +132,7 @@
 
                         <FontIcon Grid.Column="0" Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" Margin="2,0,8,0" VerticalAlignment="Center" />
 
-                        <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search chats or ask (e.g. 'what is to do for me today')…"
+                        <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search conversations or ask AI..."
                                  TextChanged="OnSearchTextChanged" Background="Transparent" BorderThickness="0" FontSize="12" Foreground="White"
                                  VerticalAlignment="Center" />
 
@@ -455,22 +455,22 @@
                                                 <TextBlock Text="What's my to-do today?" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
                                             </StackPanel>
                                         </Button>
-                                        <Button Click="OnAiPromptChipClicked" Tag="how many states are using cpwd in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                        <Button Click="OnAiPromptChipClicked" Tag="what decisions were made" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
                                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                                <FontIcon Glyph="&#xEC06;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
-                                                <TextBlock Text="States using CPWD" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                                <FontIcon Glyph="&#xE73E;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                <TextBlock Text="What decisions were made?" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
                                             </StackPanel>
                                         </Button>
-                                        <Button Click="OnAiPromptChipClicked" Tag="list all member in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                        <Button Click="OnAiPromptChipClicked" Tag="what changed since yesterday" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
                                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                                <FontIcon Glyph="&#xE716;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
-                                                <TextBlock Text="List group members" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                                <FontIcon Glyph="&#xE76E;" FontSize="9.5" Foreground="{StaticResource AppAccentBrush}" />
+                                                <TextBlock Text="What changed since yesterday?" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
                                             </StackPanel>
                                         </Button>
-                                        <Button Click="OnAiPromptChipClicked" Tag="find the number for all user in this group" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
+                                        <Button Click="OnAiPromptChipClicked" Tag="show upcoming deadlines" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="8,4">
                                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                                <FontIcon Glyph="&#xE717;" FontSize="9.5" Foreground="{StaticResource AppSuccessBrush}" />
-                                                <TextBlock Text="Find phone numbers" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
+                                                <FontIcon Glyph="&#xE787;" FontSize="9.5" Foreground="{StaticResource AppSuccessBrush}" />
+                                                <TextBlock Text="Show upcoming deadlines" FontSize="10.5" FontWeight="SemiBold" Foreground="White" />
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -722,8 +722,8 @@
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE76E;" FontSize="14" Foreground="{StaticResource AppAccentBrush}" />
                             <StackPanel Spacing="1">
-                                <TextBlock Text="AI Assistant" FontSize="14" FontWeight="Bold" Foreground="White" />
-                                <TextBlock Text="Private Chat Analysis" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" />
+                                <TextBlock Text="Pinggo AI" FontSize="14" FontWeight="Bold" Foreground="White" />
+                                <TextBlock x:Name="ChatIntelligenceBadgeText" Text="Current Conversation · Read + Write" FontSize="10.5" Foreground="{StaticResource AppTextMutedBrush}" />
                             </StackPanel>
                         </StackPanel>
                         <Button Click="OnToggleChatIntelligenceClicked" HorizontalAlignment="Right" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" Background="Transparent" BorderThickness="0">

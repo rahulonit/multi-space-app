@@ -147,6 +147,7 @@ struct InboxView: View {
     @State private var showDailySummarySheet: Bool = false
 
     // Smart Summary AI Chat Assistant State (Right Pane)
+    @State private var conversationAIStates: [String: ConversationAIState] = [:]
     @State private var aiChatHistory: [String: [AIChatMessage]] = [:]
     @State private var aiChatInputText: String = ""
     @State private var isAiChatResponding: Bool = false
@@ -1357,13 +1358,15 @@ struct InboxView: View {
     private var aiIntelligenceHeaderBar: some View {
         let isGemini = store.preferences.aiProvider == "gemini"
         let isChatGpt = store.preferences.aiProvider == "chatgpt"
-        let activeLoggedIn = isGemini ? store.preferences.isGeminiLoggedIn : store.preferences.isChatGptLoggedIn
+        let activeLoggedIn = isGemini
+            ? (!store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn)
+            : (!store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn)
 
         return HStack(spacing: 6) {
             // Gemini Toggle
             Button {
                 store.preferences.aiProvider = "gemini"
-                if !store.preferences.isGeminiLoggedIn {
+                if store.preferences.geminiApiKey.isEmpty || !store.preferences.isGeminiLoggedIn {
                     loginProviderItem = AILoginProviderItem(id: "gemini")
                 } else {
                     store.showToast("Active AI: Google Gemini")
@@ -1374,7 +1377,7 @@ struct InboxView: View {
                         .font(.system(size: 10, weight: .bold))
                     Text("Gemini")
                         .font(.system(size: 11, weight: isGemini ? .bold : .medium))
-                    if store.preferences.isGeminiLoggedIn {
+                    if !store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn {
                         Circle().fill(Color.green).frame(width: 5, height: 5)
                     }
                 }
@@ -1397,7 +1400,7 @@ struct InboxView: View {
             // ChatGPT Toggle
             Button {
                 store.preferences.aiProvider = "chatgpt"
-                if !store.preferences.isChatGptLoggedIn {
+                if store.preferences.openAiApiKey.isEmpty || !store.preferences.isChatGptLoggedIn {
                     loginProviderItem = AILoginProviderItem(id: "chatgpt")
                 } else {
                     store.showToast("Active AI: OpenAI ChatGPT")
@@ -1408,7 +1411,7 @@ struct InboxView: View {
                         .font(.system(size: 10, weight: .bold))
                     Text("ChatGPT")
                         .font(.system(size: 11, weight: isChatGpt ? .bold : .medium))
-                    if store.preferences.isChatGptLoggedIn {
+                    if !store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn {
                         Circle().fill(Color.green).frame(width: 5, height: 5)
                     }
                 }
@@ -1460,7 +1463,7 @@ struct InboxView: View {
                 HStack(spacing: 4) {
                     Image(systemName: activeLoggedIn ? "person.crop.circle.badge.checkmark" : "arrow.right.square")
                         .font(.system(size: 9.5))
-                    Text(activeLoggedIn ? "Connected" : "Log In")
+                    Text(activeLoggedIn ? "Connected" : "Connect")
                         .font(.system(size: 10, weight: .semibold))
                 }
                 .padding(.horizontal, 7)
@@ -2779,7 +2782,9 @@ struct InboxView: View {
         let analysis = ChatIntelligenceService.shared.analyze(conversationID: item.id, messages: messages)
         let analyzedCount = analyzedMessageCounts[item.id] ?? messages.count
         let newCount = max(0, messages.count - analyzedCount)
-        let history = aiChatHistory[item.id] ?? []
+        let aiState = conversationAIStates[item.id] ?? ConversationAIState()
+        let history = !aiState.history.isEmpty ? aiState.history : (aiChatHistory[item.id] ?? [])
+        let resolution = AIProviderResolver.resolve(preferences: store.preferences)
 
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -2789,8 +2794,8 @@ struct InboxView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("AI Assistant")
                         .font(.system(size: 14, weight: .bold))
-                    Text("Private Chat Analysis")
-                        .font(.system(size: 10.5, weight: .medium))
+                    Text(resolution.displayBadge)
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.muted)
                 }
                 Spacer()
@@ -2809,9 +2814,34 @@ struct InboxView: View {
 
             Divider().background(Palette.border)
 
+            if !resolution.canPerformGenerativeAI {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.orange)
+                        .font(.system(size: 11))
+                    Text(resolution.availability.message.contains("Authentication") ? "Authentication required for generative AI" : "Local engine active · Connect API key in Settings for freeform AI")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.muted)
+                    Spacer()
+                    Button("Settings") {
+                        store.destination = .settings
+                    }
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.08))
+                Divider().background(Palette.border)
+            }
+
             if newCount > 0 {
                 Button {
                     analyzedMessageCounts[item.id] = messages.count
+                    var s = conversationAIStates[item.id] ?? ConversationAIState()
+                    s.history.removeAll()
+                    conversationAIStates[item.id] = s
                     aiChatHistory[item.id] = nil
                 } label: {
                     HStack {
@@ -2845,6 +2875,9 @@ struct InboxView: View {
                             Spacer()
                             Button("Refresh") {
                                 analyzedMessageCounts[item.id] = messages.count
+                                var s = conversationAIStates[item.id] ?? ConversationAIState()
+                                s.history.removeAll()
+                                conversationAIStates[item.id] = s
                                 aiChatHistory[item.id] = nil
                             }
                             Button("Copy") { copyIntelligenceSummary(analysis) }
@@ -2874,7 +2907,63 @@ struct InboxView: View {
                         if isChatSummaryExpanded {
                             intelligenceDetailSection("Main topics", values: analysis.topics)
                             intelligenceDetailSection("Important decisions", values: analysis.decisions)
-                            intelligenceDetailSection("Pending tasks", values: analysis.tasks)
+
+                            if !analysis.structuredTasks.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text("ACTION ITEMS & TO-DOS (\(analysis.structuredTasks.count))")
+                                            .font(.system(size: 9.5, weight: .bold))
+                                            .foregroundStyle(Palette.muted)
+                                        Spacer()
+                                        Button("Copy Tasks") {
+                                            let taskText = analysis.structuredTasks.map { t in
+                                                let status = completedActionItems.contains(t.id) ? "[x]" : "[ ]"
+                                                let assignee = t.assignee != nil ? " (@\(t.assignee!))" : ""
+                                                return "\(status) \(t.title)\(assignee)"
+                                            }.joined(separator: "\n")
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(taskText, forType: .string)
+                                            store.showToast("Tasks copied to clipboard")
+                                        }
+                                        .font(.system(size: 9.5, weight: .medium))
+                                        .buttonStyle(.plain)
+                                        .foregroundStyle(Palette.accent)
+                                    }
+                                    ForEach(analysis.structuredTasks) { task in
+                                        HStack(alignment: .top, spacing: 6) {
+                                            Button {
+                                                if completedActionItems.contains(task.id) {
+                                                    completedActionItems.remove(task.id)
+                                                } else {
+                                                    completedActionItems.insert(task.id)
+                                                }
+                                            } label: {
+                                                Image(systemName: completedActionItems.contains(task.id) ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundStyle(completedActionItems.contains(task.id) ? Color.green : Palette.muted)
+                                                    .font(.system(size: 12))
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(task.title)
+                                                    .font(.system(size: 10.5))
+                                                    .strikethrough(completedActionItems.contains(task.id))
+                                                    .foregroundStyle(completedActionItems.contains(task.id) ? Palette.muted : Color.primary)
+                                                    .textSelection(.enabled)
+                                                if let assignee = task.assignee {
+                                                    Text("Assignee: \(assignee)")
+                                                        .font(.system(size: 9))
+                                                        .foregroundStyle(Palette.muted)
+                                                }
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                }
+                            } else {
+                                intelligenceDetailSection("Pending tasks", values: analysis.tasks)
+                            }
+
                             intelligenceDetailSection("Dates & deadlines", values: analysis.dates)
                             intelligenceDetailSection("Unresolved questions", values: analysis.unresolvedQuestions)
                             intelligenceDetailSection("Links", values: analysis.links)
@@ -2930,12 +3019,36 @@ struct InboxView: View {
                             Text("Ask AI")
                                 .font(.system(size: 12, weight: .bold))
                             ForEach(history) { message in
-                                Text(message.text)
-                                    .font(.system(size: 11))
-                                    .textSelection(.enabled)
-                                    .padding(9)
-                                    .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
-                                    .background(message.isUser ? Palette.accent.opacity(0.18) : Palette.card, in: RoundedRectangle(cornerRadius: 8))
+                                VStack(alignment: message.isUser ? .trailing : .leading, spacing: 3) {
+                                    Text(message.text)
+                                        .font(.system(size: 11))
+                                        .textSelection(.enabled)
+                                        .padding(9)
+                                        .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
+                                        .background(message.isUser ? Palette.accent.opacity(0.18) : Palette.card, in: RoundedRectangle(cornerRadius: 8))
+
+                                    if !message.isUser, let source = message.source {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "cpu")
+                                                .font(.system(size: 8))
+                                            Text(source.badgeText)
+                                                .font(.system(size: 8.5, weight: .medium))
+                                        }
+                                        .foregroundStyle(Palette.muted)
+                                        .padding(.horizontal, 4)
+                                    }
+                                }
+                            }
+                            if aiState.isResponding {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                    Text("AI is analyzing this conversation…")
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(Palette.muted)
+                                }
+                                .padding(8)
+                                .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
                             }
                         }
                     }
@@ -2956,19 +3069,37 @@ struct InboxView: View {
             Divider().background(Palette.border)
 
             HStack(spacing: 7) {
-                TextField("Ask anything about this conversation…", text: $aiChatInputText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11.5))
-                    .onSubmit {
-                        sendGroundedAIQuestion(aiChatInputText, item: item, messages: messages, analysis: analysis)
+                let currentDraft = conversationAIStates[item.id]?.questionDraft ?? aiChatInputText
+                TextField("Ask anything about this conversation…", text: Binding(
+                    get: { conversationAIStates[item.id]?.questionDraft ?? aiChatInputText },
+                    set: { val in
+                        var s = conversationAIStates[item.id] ?? ConversationAIState()
+                        s.questionDraft = val
+                        conversationAIStates[item.id] = s
+                        aiChatInputText = val
                     }
-                Button {
-                    sendGroundedAIQuestion(aiChatInputText, item: item, messages: messages, analysis: analysis)
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 19))
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11.5))
+                .onSubmit {
+                    let textToSend = conversationAIStates[item.id]?.questionDraft ?? aiChatInputText
+                    sendGroundedAIQuestion(textToSend, item: item, messages: messages, analysis: analysis)
                 }
-                .buttonStyle(.plain)
-                .disabled(aiChatInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if aiState.isResponding {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.horizontal, 4)
+                } else {
+                    Button {
+                        let textToSend = conversationAIStates[item.id]?.questionDraft ?? aiChatInputText
+                        sendGroundedAIQuestion(textToSend, item: item, messages: messages, analysis: analysis)
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 19))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(currentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
             .padding(12)
             .background(Palette.panel)
@@ -3003,12 +3134,36 @@ struct InboxView: View {
     ) {
         let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        var history = aiChatHistory[item.id] ?? []
-        history.append(AIChatMessage(id: UUID().uuidString, isUser: true, text: clean, timestamp: .now))
-        let members = store.activeThreadContext(for: item.accountID, contactName: item.message.sender)?.groupMembers
-        history.append(ChatIntelligenceService.shared.answer(question: clean, analysis: analysis, messages: messages, members: members))
-        aiChatHistory[item.id] = history
+
+        var state = conversationAIStates[item.id] ?? ConversationAIState()
+        let userMsg = AIChatMessage(id: UUID().uuidString, isUser: true, text: clean, timestamp: .now)
+        state.history.append(userMsg)
+        state.questionDraft = ""
+        state.isResponding = true
+        state.errorMessage = nil
+        conversationAIStates[item.id] = state
+        aiChatHistory[item.id] = state.history
         aiChatInputText = ""
+
+        let members = store.activeThreadContext(for: item.accountID, contactName: item.message.sender)?.groupMembers
+        let prefs = store.preferences
+
+        Task {
+            let aiMsg = await ChatIntelligenceService.shared.answer(
+                question: clean,
+                analysis: analysis,
+                messages: messages,
+                members: members,
+                preferences: prefs
+            )
+            await MainActor.run {
+                var cur = conversationAIStates[item.id] ?? ConversationAIState()
+                cur.history.append(aiMsg)
+                cur.isResponding = false
+                conversationAIStates[item.id] = cur
+                aiChatHistory[item.id] = cur.history
+            }
+        }
     }
 
     private func copyIntelligenceSummary(_ analysis: ChatIntelligenceAnalysis) {
@@ -4488,14 +4643,16 @@ struct InboxView: View {
                             .foregroundStyle(Color.primary)
 
                         let isGemini = store.preferences.aiProvider == "gemini"
-                        let isLoggedIn = isGemini ? store.preferences.isGeminiLoggedIn : store.preferences.isChatGptLoggedIn
+                        let isLoggedIn = isGemini
+                            ? (!store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn)
+                            : (!store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn)
                         let providerName = isGemini ? "Google Gemini" : "OpenAI ChatGPT"
 
                         HStack(spacing: 4) {
                             Circle()
                                 .fill(isLoggedIn ? Color.green : Color.orange)
                                 .frame(width: 6, height: 6)
-                            Text(isLoggedIn ? "\(providerName) Connected" : "\(providerName) Session")
+                            Text(isLoggedIn ? "\(providerName) Connected" : "Local Smart Engine")
                                 .font(.system(size: 10, weight: .medium))
                         }
                         .padding(.horizontal, 6)

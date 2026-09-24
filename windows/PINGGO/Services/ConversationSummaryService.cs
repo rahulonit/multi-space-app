@@ -322,51 +322,25 @@ namespace PINGGO.Services
             }
             else if (isCpwdQuery)
             {
-                var stateNames = new[] { "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi" };
-                var evidence = string.Join(" ", matchingMessages.Select(item => item.Message.Text));
-                var foundStates = stateNames.Where(state => evidence.Contains(state, StringComparison.OrdinalIgnoreCase)).ToList();
-                headline = foundStates.Count == 0 ? "No CPWD state count found" : $"{foundStates.Count} state{(foundStates.Count == 1 ? "" : "s")} mentioned with CPWD";
-                executiveOverview = foundStates.Count == 0
-                    ? "I couldn’t find a state count for CPWD in the accessible messages."
-                    : $"States explicitly mentioned in the matching CPWD evidence: {string.Join(", ", foundStates)}.";
+                headline = matchCount == 0 ? "No CPWD references found" : $"{matchCount} CPWD reference{(matchCount == 1 ? "" : "s")}";
+                executiveOverview = matchCount == 0
+                    ? "I couldn’t find references to CPWD in the accessible messages."
+                    : $"Found {matchCount} message{(matchCount == 1 ? "" : "s")} mentioning CPWD across {string.Join(", ", platformNames)}.";
             }
             else if (isQuestionQuery && rawTokens.Count > 0)
             {
                 headline = $"Smart Answer for \"{raw}\"";
                 if (matchCount == 0)
                 {
-                    executiveOverview = $"No crawled chats currently mention \"{string.Join(" / ", rawTokens)}\". Ensure relevant chat tabs are open and synchronized.";
+                    executiveOverview = $"No workspace chats currently mention \"{string.Join(" / ", rawTokens)}\". Ensure relevant chat tabs are open and synchronized.";
+                }
+                else if (detectedQuestions.Count > 0)
+                {
+                    executiveOverview = $"Found {matchCount} relevant chat{(matchCount == 1 ? "" : "s")} on {string.Join(", ", platformNames)}. {string.Join(" and ", senderNames.Take(2))} asked: \"{detectedQuestions[0]}\".";
                 }
                 else
                 {
-                    // Check domain entities (e.g. Indian states for CPWD queries)
-                    var indianStates = new[] { "Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "Rajasthan", "Madhya Pradesh", "West Bengal", "Punjab", "Haryana", "Telangana", "Kerala", "Bihar", "Odisha", "Assam" };
-                    var foundStates = new List<string>();
-
-                    foreach (var item in matchingItems)
-                    {
-                        var t = item.Message.Text ?? "";
-                        foreach (var state in indianStates)
-                        {
-                            if (t.IndexOf(state, StringComparison.OrdinalIgnoreCase) >= 0 && !foundStates.Contains(state))
-                            {
-                                foundStates.Add(state);
-                            }
-                        }
-                    }
-
-                    if (foundStates.Count > 0)
-                    {
-                        executiveOverview = $"Found {matchCount} conversation{(matchCount == 1 ? "" : "s")} discussing \"{string.Join(" / ", rawTokens)}\" across {string.Join(", ", platformNames)}. Identified {foundStates.Count} state{(foundStates.Count == 1 ? "" : "s")} mentioned: {string.Join(", ", foundStates)}.";
-                    }
-                    else if (detectedQuestions.Count > 0)
-                    {
-                        executiveOverview = $"Found {matchCount} relevant chat{(matchCount == 1 ? "" : "s")} on {string.Join(", ", platformNames)}. {string.Join(" and ", senderNames.Take(2))} asked: \"{detectedQuestions[0]}\".";
-                    }
-                    else
-                    {
-                        executiveOverview = $"Found {matchCount} chat mention{(matchCount == 1 ? "" : "s")} of \"{string.Join(" / ", rawTokens)}\" across {string.Join(", ", platformNames)} involving {string.Join(", ", senderNames.Take(3))}. Review the thread context below.";
-                    }
+                    executiveOverview = $"Found {matchCount} chat mention{(matchCount == 1 ? "" : "s")} of \"{string.Join(" / ", rawTokens)}\" across {string.Join(", ", platformNames)} involving {string.Join(", ", senderNames.Take(3))}. Review the thread context below.";
                 }
             }
             else
@@ -402,7 +376,7 @@ namespace PINGGO.Services
             }
             else if (rawTokens.Contains("cpwd") || lower.Contains("cpwd"))
             {
-                related = new List<string> { "CPWD Guidelines", "State Projects", "Public Works", "Tenders", "Maharashtra", "Delhi", "Compliance" };
+                related = new List<string> { "Guidelines", "Projects", "Public Works", "Tenders", "Compliance" };
             }
             else
             {
@@ -640,39 +614,37 @@ namespace PINGGO.Services
             List<PlatformMessagePreview> threadMessages,
             List<UnifiedMessageItem> allMessages)
         {
-            var text = """
-                🏢 **CPWD Adoption Analysis in This Group**:
+            var allMsgs = (threadMessages != null && threadMessages.Count > 0 ? threadMessages : new List<PlatformMessagePreview> { currentConversation.Message });
+            var matches = allMsgs.Where(m => m.Text.Contains("cpwd", StringComparison.OrdinalIgnoreCase)).ToList();
 
-                Based on chat messages and shared circulars in this group, **3 states** are confirmed to be using CPWD guidelines and schedule of rates:
+            if (matches.Count == 0)
+            {
+                return new AIChatMessage
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    IsUser = false,
+                    Text = $"🏢 I searched active conversation history for **{currentConversation.DisplaySender}**, but **could not find any CPWD-related information or guidelines** in the available chat history.",
+                    Timestamp = DateTime.UtcNow,
+                    RelatedPrompts = new List<string>
+                    {
+                        "👥 List all members in this group",
+                        "⚡ What is to-do for me today?",
+                        "📞 Find phone numbers for all users"
+                    }
+                };
+            }
 
-                1. **Maharashtra** (2 mentions): PWD circular officially adopted CPWD specifications for state commercial and infrastructure projects (noted by Rahul Sharma).
-                2. **Delhi** (2 mentions): CPWD Delhi zone coordination updates and standard tender notices actively referenced.
-                3. **Gujarat** (1 mention): Road & Building division aligned quality benchmarks with CPWD norms (cited by Vikram Malhotra).
-
-                ℹ️ *Note: Karnataka and Tamil Nadu state agencies were also discussed as reviewing draft tenders aligned with CPWD standards.*
-                """;
-
+            var body = $"🏢 **CPWD References in This Chat ({matches.Count})**:\n\n" + string.Join("\n", matches.Take(5).Select(m => $"• **{m.Sender}**: \"{m.Text}\""));
             return new AIChatMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 IsUser = false,
-                Text = text,
+                Text = body,
                 Timestamp = DateTime.UtcNow,
-                ActionItems = new List<string>
-                {
-                    "Follow up with Rahul regarding Maharashtra PWD circular",
-                    "Review Gujarat CPWD alignment guidelines"
-                },
-                PhoneNumbers = new List<AIChatPhoneNumberItem>
-                {
-                    new AIChatPhoneNumberItem { Name = "Rahul Sharma (Maharashtra PWD Lead)", Number = "+91 98201 44552", Context = "CPWD Circular Coordinator" },
-                    new AIChatPhoneNumberItem { Name = "Vikram Malhotra (Gujarat Division)", Number = "+91 98450 33211", Context = "CPWD Norms Reference" }
-                },
                 RelatedPrompts = new List<string>
                 {
-                    "⚡ What is to-do for me today?",
                     "👥 List all members in this group",
-                    "📞 Find phone numbers for all users"
+                    "⚡ What is to-do for me today?"
                 }
             };
         }
@@ -689,21 +661,13 @@ namespace PINGGO.Services
             var rawSender = (currentConversation.DisplaySender ?? "").Trim();
             var accountName = (currentConversation.AccountName ?? "").Trim();
 
-            // Strict Gepnic check: ONLY if this chat or query is explicitly Gepnic
-            var isGepnic = rawSender.IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                           activeName.IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                           query.IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0;
+            var groupName = !string.IsNullOrEmpty(rawSender) && !rawSender.Equals("Contact", StringComparison.OrdinalIgnoreCase)
+                ? rawSender
+                : (!string.IsNullOrEmpty(activeName) && !activeName.Equals("Contact", StringComparison.OrdinalIgnoreCase) && !activeName.Equals("Current Chat", StringComparison.OrdinalIgnoreCase)
+                    ? activeName
+                    : "This Group");
 
-            var groupName = isGepnic
-                ? "Gepnic Team Group"
-                : (!string.IsNullOrEmpty(rawSender) && !rawSender.Equals("Contact", StringComparison.OrdinalIgnoreCase)
-                    ? rawSender
-                    : (!string.IsNullOrEmpty(activeName) && !activeName.Equals("Contact", StringComparison.OrdinalIgnoreCase) && !activeName.Equals("Current Chat", StringComparison.OrdinalIgnoreCase)
-                        ? activeName
-                        : "This Group"));
-
-            var isGroupChat = isGepnic ||
-                              groupName.IndexOf("group", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            var isGroupChat = groupName.IndexOf("group", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               groupName.IndexOf("team", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               groupName.IndexOf("family", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               groupName.IndexOf("friends", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -721,11 +685,7 @@ namespace PINGGO.Services
 
             // 1. Determine total member count from all crawled sources
             int detectedCount = 0;
-            if (isGepnic)
-            {
-                detectedCount = 65;
-            }
-            else if (activeContext?.GroupMemberCount != null && activeContext.GroupMemberCount.Value > 0)
+            if (activeContext?.GroupMemberCount != null && activeContext.GroupMemberCount.Value > 0)
             {
                 detectedCount = activeContext.GroupMemberCount.Value;
             }
@@ -739,12 +699,6 @@ namespace PINGGO.Services
                 {
                     detectedCount = parsed;
                 }
-            }
-
-            // Check messages in thread for member count mentions (e.g. "65 members in this team")
-            if (detectedCount == 0 && isGepnic)
-            {
-                detectedCount = 65;
             }
 
             // 2. Count messages and activity per sender from deep crawled thread
@@ -802,84 +756,41 @@ namespace PINGGO.Services
                 };
             }
 
-            // 5. Add team contributors ONLY for Gepnic
-            if (isGepnic)
-            {
-                var defaultTeam = new (string Name, string Role, string Activity, int Count, string Phone)[]
-                {
-                    ("Rahul Sharma", "Engineering Lead", "Active 15m ago", 14, "+91 98201 44552"),
-                    ("Priya Patel", "Product Manager", "Active 1h ago", 11, "+91 97112 88990"),
-                    ("Vikram Malhotra", "Operations Lead", "Active 2h ago", 9, "+91 98450 33211"),
-                    ("Anita Desai", "Finance Lead", "Active yesterday", 7, "+91 99300 77441"),
-                    ("Rajesh Kumar", "Senior Site Engineer", "Active 3h ago", 6, "+91 98722 11980"),
-                    ("Suresh Nair", "Quality & Compliance", "Active today", 5, "+91 98334 66712"),
-                    ("Amit Verma", "Technical Coordinator", "Active 4h ago", 4, "+91 98110 55423"),
-                    ("Neha Gupta", "Tenders & Circulars Lead", "Active 5h ago", 3, "+91 98670 99124"),
-                    ("Sanjay Joshi", "CPWD Liaison", "Active yesterday", 3, "+91 98229 44105"),
-                    ("Deepa Iyer", "Field Operations", "Active yesterday", 2, "+91 98401 77332"),
-                    ("Rohit Saxena", "Site Inspector", "Active 2d ago", 2, "+91 98511 88290"),
-                    ("Manoj Tiwari", "Infrastructure Team", "Active 2d ago", 1, "+91 98920 33118")
-                };
-
-                foreach (var t in defaultTeam)
-                {
-                    if (!memberDict.ContainsKey(t.Name) && memberDict.Count < 12)
-                    {
-                        memberDict[t.Name] = new AIChatMemberItem
-                        {
-                            Name = t.Name,
-                            Role = t.Role,
-                            Activity = t.Activity,
-                            MessageCount = t.Count,
-                            PhoneNumber = t.Phone
-                        };
-                    }
-                    else if (memberDict.TryGetValue(t.Name, out var existing) && string.IsNullOrEmpty(existing.PhoneNumber))
-                    {
-                        existing.PhoneNumber = t.Phone;
-                    }
-                }
-            }
-
             var members = memberDict.Values.OrderByDescending(m => m.MessageCount).ToList();
-            var totalCount = isGepnic ? Math.Max(detectedCount, 65) : (detectedCount > 0 ? detectedCount : Math.Max(members.Count + 1, 2));
+            var totalCount = detectedCount > 0 ? detectedCount : Math.Max(members.Count, 1);
             var queryLower = (query ?? "").ToLowerInvariant();
             var isCountQuestion = queryLower.Contains("how many") || queryLower.Contains("count") || queryLower.Contains("number of");
             var wantsPhoneNumbers = queryLower.Contains("phone") || queryLower.Contains("number") || queryLower.Contains("contact") || queryLower.Contains("mobile") || queryLower.Contains("call");
 
             var text = isCountQuestion
-                ? $"👥 There are **{totalCount} members** in **{effectiveGroupName}** (including you):\n\n"
+                ? $"👥 There are **{totalCount} participants** in **{effectiveGroupName}**:\n\n"
                 : (wantsPhoneNumbers
-                    ? $"👥 **{effectiveGroupName} — Member & Phone Directory ({totalCount} Total Members)**:\n\n"
-                    : $"👥 **{effectiveGroupName} — Member Directory ({totalCount} Total Members)**:\n\n");
+                    ? $"👥 **{effectiveGroupName} — Contact Information**:\n\n"
+                    : $"👥 **{effectiveGroupName} — Participants Directory**:\n\n");
 
-            var displayLimit = Math.Min(members.Count, 12);
-            foreach (var m in members.Take(displayLimit))
+            if (members.Count == 0)
             {
-                var msgSuffix = m.MessageCount == 1 ? "message" : "messages";
-                var phoneStr = (wantsPhoneNumbers && !string.IsNullOrEmpty(m.PhoneNumber)) ? $" · `{m.PhoneNumber}`" : "";
-                text += $"• **{m.Name}** — *{m.Role}*{phoneStr} · {m.Activity} ({m.MessageCount} {msgSuffix})\n";
-            }
-            text += $"• **You** — *Administrator / Active User*{(wantsPhoneNumbers ? " · `+91 98000 11223`" : "")}\n";
-
-            if (totalCount > (displayLimit + 1))
-            {
-                var remaining = totalCount - (displayLimit + 1);
-                text += $"\n*(+ {remaining} other group members crawled from {effectiveGroupName} team roster — {totalCount} total members)*\n";
-            }
-
-            if (wantsPhoneNumbers)
-            {
-                text += "\n📋 *You can click the Copy button next to any contact below to copy their direct phone number.*";
+                text += "• **Current Workspace Participant** — *Active in chat*\n";
             }
             else
             {
-                var tipName = members.FirstOrDefault()?.Name ?? effectiveGroupName;
-                text += $"\n💡 *You can ask me: \"find phone numbers for all users\", \"what is {tipName} saying regarding...\", or \"what is to-do for me today?\".*";
+                var displayLimit = Math.Min(members.Count, 12);
+                foreach (var m in members.Take(displayLimit))
+                {
+                    var msgSuffix = m.MessageCount == 1 ? "message" : "messages";
+                    var phoneStr = (wantsPhoneNumbers && !string.IsNullOrEmpty(m.PhoneNumber)) ? $" · `{m.PhoneNumber}`" : "";
+                    text += $"• **{m.Name}** — *{m.Role}*{phoneStr} · {m.Activity} ({m.MessageCount} {msgSuffix})\n";
+                }
+
+                if (totalCount > displayLimit)
+                {
+                    var remaining = totalCount - displayLimit;
+                    text += $"\n*(+ {remaining} other participants in {effectiveGroupName})*\n";
+                }
             }
 
             var phoneItems = wantsPhoneNumbers
-                ? members.Take(displayLimit).Where(m => !string.IsNullOrEmpty(m.PhoneNumber)).Select(m => new AIChatPhoneNumberItem
+                ? members.Where(m => !string.IsNullOrEmpty(m.PhoneNumber)).Select(m => new AIChatPhoneNumberItem
                 {
                     Name = m.Name,
                     Number = m.PhoneNumber!,
@@ -897,9 +808,9 @@ namespace PINGGO.Services
                 Members = members,
                 RelatedPrompts = new List<string>
                 {
-                    "📞 Find phone numbers for all users",
-                    "⚡ What is to-do for me today?",
-                    "🏢 How many states are using CPWD?"
+                    "What is to-do for me today?",
+                    "What decisions were made?",
+                    "Show upcoming deadlines"
                 }
             };
         }
@@ -930,7 +841,7 @@ namespace PINGGO.Services
                         {
                             seen.Add(candidate);
                             var senderName = string.IsNullOrEmpty(msg.Sender) || msg.Sender.Equals("You", StringComparison.OrdinalIgnoreCase)
-                                ? "Group Contact"
+                                ? "Workspace Participant"
                                 : msg.Sender;
                             var snippet = msg.Text.Length > 50 ? msg.Text.Substring(0, 50) + "..." : msg.Text;
                             phoneList.Add(new AIChatPhoneNumberItem
@@ -964,71 +875,19 @@ namespace PINGGO.Services
                 }
             }
 
-            // 3. Known directory contacts - All 12 Active Contributors ONLY for Gepnic
-            var isGepnic = (currentConversation.DisplaySender ?? "").IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                           (activeContext?.ContactName ?? "").IndexOf("gepnic", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (isGepnic)
+            var text = "";
+            if (phoneList.Count == 0)
             {
-                var contactDirectory = new (string Name, string Number, string Context)[]
-                {
-                    ("Rahul Sharma", "+91 98201 44552", "Engineering Lead · Call for urgent CPWD sync"),
-                    ("Priya Patel", "+91 97112 88990", "Product Manager · Available on WhatsApp & Call"),
-                    ("Vikram Malhotra", "+91 98450 33211", "Operations Lead · Field & Sites Coordinator"),
-                    ("Anita Desai", "+91 99300 77441", "Finance & Accounts Lead · Budget Authorizations"),
-                    ("Rajesh Kumar", "+91 98722 11980", "Senior Site Engineer · Civil & On-Site Inspection"),
-                    ("Suresh Nair", "+91 98334 66712", "Quality & Compliance · Quality Assurance & CPWD Standards"),
-                    ("Amit Verma", "+91 98110 55423", "Technical Coordinator · Technical Documentation & CAD"),
-                    ("Neha Gupta", "+91 98670 99124", "Tenders & Circulars Lead · State Tenders & Circular Review"),
-                    ("Sanjay Joshi", "+91 98229 44105", "CPWD Liaison · Govt. Liaison & Standards Verification"),
-                    ("Deepa Iyer", "+91 98401 77332", "Field Operations · Regional Field Logistics"),
-                    ("Rohit Saxena", "+91 98511 88290", "Site Inspector · Safety & Quality Auditing"),
-                    ("Manoj Tiwari", "+91 98920 33118", "Infrastructure Team · Heavy Equipment & Site Coordination"),
-                    (currentConversation.DisplaySender, "+91 98190 22345", "Direct Mobile (Synchronized from Account)")
-                };
-
-                foreach (var contact in contactDirectory)
-                {
-                    if (!seen.Contains(contact.Number) && phoneList.Count < 20)
-                    {
-                        seen.Add(contact.Number);
-                        phoneList.Add(new AIChatPhoneNumberItem
-                        {
-                            Name = contact.Name,
-                            Number = contact.Number,
-                            Context = contact.Context
-                        });
-                    }
-                }
+                text = $"📞 **No Phone Numbers Detected**\n\nI scanned the accessible messages in **{currentConversation.DisplaySender}**, but no phone numbers were shared in this conversation.";
             }
             else
             {
-                // For other groups or personal chats, provide the contact if available
-                if (phoneList.Count == 0 && !string.IsNullOrEmpty(currentConversation.DisplaySender) && !currentConversation.DisplaySender.Equals("You", StringComparison.OrdinalIgnoreCase))
+                text = $"📞 **Detected Phone Numbers in {currentConversation.DisplaySender}**:\n\n";
+                foreach (var p in phoneList)
                 {
-                    phoneList.Add(new AIChatPhoneNumberItem
-                    {
-                        Name = currentConversation.DisplaySender,
-                        Number = "+91 98190 22345",
-                        Context = "Direct Contact (Synchronized from Account)"
-                    });
+                    text += $"• **{p.Name}**: `{p.Number}` — *{p.Context}*\n";
                 }
             }
-
-            var text = "📞 **Identified Contact Numbers For Users in This Group**:\n\n";
-            foreach (var p in phoneList)
-            {
-                text += $"• **{p.Name}**: `{p.Number}`\n  ↳ *{p.Context}*\n";
-            }
-            text += "\n📋 *You can click the Copy button next to any number to copy it to your clipboard.*";
-
-            var memberItems = phoneList.Select(p => new AIChatMemberItem
-            {
-                Name = p.Name,
-                Role = p.Context.Split('·').FirstOrDefault()?.Trim() ?? "Participant",
-                Activity = p.Context.Split('·').Skip(1).FirstOrDefault()?.Trim() ?? "Active in group",
-                MessageCount = 5,
-                PhoneNumber = p.Number
-            }).ToList();
 
             return new AIChatMessage
             {
@@ -1036,13 +895,12 @@ namespace PINGGO.Services
                 IsUser = false,
                 Text = text,
                 Timestamp = DateTime.UtcNow,
-                PhoneNumbers = phoneList,
-                Members = memberItems,
+                PhoneNumbers = phoneList.Count > 0 ? phoneList : null,
                 RelatedPrompts = new List<string>
                 {
-                    "👥 List all members in this group",
-                    "⚡ What is to-do for me today?",
-                    "🏢 How many states are using CPWD?"
+                    "What is to-do for me today?",
+                    "What decisions were made?",
+                    "Show upcoming deadlines"
                 }
             };
         }
@@ -1057,15 +915,13 @@ namespace PINGGO.Services
             var speakerTrigger = lower.Contains("saying") || lower.Contains("said") || lower.Contains("think") || lower.Contains("told") || lower.Contains("mention");
             if (!speakerTrigger) return null;
 
-            var candidateSenders = new[]
-            {
-                currentConversation.DisplaySender,
-                "Rahul", "Rahul Sharma",
-                "Priya", "Priya Patel",
-                "Vikram", "Vikram Malhotra",
-                "Anita", "Anita Desai",
-                "Alex", "David", "Sarah"
-            };
+            var candidateSenders = (threadMessages ?? new List<PlatformMessagePreview>())
+                .Select(m => m.Sender)
+                .Concat(new[] { currentConversation.DisplaySender })
+                .Concat(allMessages.Select(m => m.DisplaySender))
+                .Where(s => !string.IsNullOrWhiteSpace(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             string? targetSpeaker = null;
             foreach (var s in candidateSenders)

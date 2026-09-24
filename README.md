@@ -27,4 +27,12 @@ This is a local prototype. The added app and account names are stored in local a
 
 Settings (gear button or ⌘,) has General, Launch, Interaction, Subscription, and About pages. Appearance, accent color, compact layout, startup destination, website checks, check delay, and dashboard alert visibility are saved in local preferences. English is the current interface language. Native app launching and purchases are not configured in this build; their settings show that status without offering an inactive purchase button.
 
+## AI providers
+
+PINGGO can use Google Gemini, OpenAI, Ollama, or its built-in local Smart Engine. Connect Gemini or OpenAI from **Settings → AI Assistant** with an API credential and validate it before use. On macOS credentials are stored in Keychain; on Windows they are stored in Credential Locker. Older plaintext credentials are migrated and removed from serialized preferences on the next launch. Website logins and ChatGPT/Gemini consumer subscriptions are deliberately kept separate from API authentication.
+
+To connect Gemini, open [Google AI Studio](https://aistudio.google.com/app/apikey), sign in, create or copy an API key, paste it into PINGGO, and select **Validate & Connect**. To connect OpenAI, open the [OpenAI Platform API keys page](https://platform.openai.com/api-keys), create a project API key, copy it, paste it into PINGGO, and validate it. OpenAI API usage may require separate API billing even when the user has a ChatGPT subscription.
+
+Provider status in the AI Assistant distinguishes validated hosted access from the local Smart Engine. Conversation content is sent to a hosted provider only when that provider is connected, validated, selected, and enabled.
+
 Platform logos in `Sources/Multispace/Resources` were obtained from the platforms' own website favicons. They identify the linked services; Multispace is not affiliated with them.

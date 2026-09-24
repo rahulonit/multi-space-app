@@ -43,6 +43,10 @@
                     <!-- Google Gemini API Key -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="Google Gemini API Key:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <TextBlock Text="1. Open Google AI Studio and sign in.  2. Create or copy an API key.  3. Paste it below and select Test Key."
+                                   FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" />
+                        <HyperlinkButton Content="Open Google AI Studio ↗" NavigateUri="https://aistudio.google.com/app/apikey"
+                                         Padding="0" FontSize="11" HorizontalAlignment="Left" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -58,6 +62,10 @@
                     <!-- OpenAI ChatGPT API Key -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="OpenAI ChatGPT API Key:" FontSize="13" FontWeight="SemiBold" Foreground="White" />
+                        <TextBlock Text="1. Open the OpenAI Platform API keys page.  2. Create and copy a project key.  3. Paste it below and select Test Key. ChatGPT subscriptions are separate from API usage."
+                                   FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" />
+                        <HyperlinkButton Content="Open OpenAI API Keys ↗" NavigateUri="https://platform.openai.com/api-keys"
+                                         Padding="0" FontSize="11" HorizontalAlignment="Left" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

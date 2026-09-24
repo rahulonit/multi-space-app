@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using PINGGO.Models;
 
 namespace PINGGO.Services
@@ -37,6 +38,9 @@ namespace PINGGO.Services
                 }).ToList()
             };
 
+            var otherSenders = scoped.Select(m => m.Sender).Where(s => !string.IsNullOrWhiteSpace(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var primaryRecipient = otherSenders.FirstOrDefault() ?? "team member";
+
             var wordCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var message in scoped)
             {
@@ -44,8 +48,28 @@ namespace PINGGO.Services
                 var lower = text.ToLowerInvariant();
                 var referenced = $"{Compact(text)} — {SourceLabel(message, scoped)}";
 
-                if (ContainsAny(lower, "decided", "agreed", "approved", "confirmed", "we'll proceed", "will proceed", "final decision")) AddUnique(result.Decisions, referenced);
-                if (ContainsAny(lower, "need to", "needs to", "please ", "todo", "to-do", "action item", "must ", "should ", "will send", "will update", "follow up", "deadline")) AddUnique(result.Tasks, referenced);
+                if (ContainsAny(lower, "decided", "agreed", "approved", "confirmed", "we'll proceed", "will proceed", "final decision"))
+                    AddUnique(result.Decisions, referenced);
+
+                if (ContainsAny(lower, "need to", "needs to", "please ", "todo", "to-do", "action item", "must ", "should ", "will send", "will update", "follow up", "deadline"))
+                {
+                    string resolvedTaskText;
+                    if (message.Sender.Equals("you", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (lower.Contains("will send") || lower.Contains("will update"))
+                            resolvedTaskText = $"Send update to {primaryRecipient} — {SourceLabel(message, scoped)}";
+                        else if (lower.Contains("let me know") || lower.Contains("when can you"))
+                            resolvedTaskText = $"Wait for {primaryRecipient} to confirm — {SourceLabel(message, scoped)}";
+                        else
+                            resolvedTaskText = $"Follow up with {primaryRecipient} — {SourceLabel(message, scoped)}";
+                    }
+                    else
+                    {
+                        resolvedTaskText = $"{message.Sender}: {Compact(text)} — {SourceLabel(message, scoped)}";
+                    }
+                    AddUnique(result.Tasks, resolvedTaskText);
+                }
+
                 if (text.Contains('?')) AddUnique(result.UnresolvedQuestions, referenced);
 
                 AddMatches(result.Dates, text, @"\b(?:today|tomorrow|tonight|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|this week|eod|\d{1,2}[:.]\d{2}\s?(?:am|pm)?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b", RegexOptions.IgnoreCase);
@@ -82,79 +106,240 @@ namespace PINGGO.Services
             return result;
         }
 
-        public AIChatMessage Answer(string question, ChatIntelligenceAnalysis analysis, IEnumerable<PlatformMessagePreview> messages, IEnumerable<AIChatMemberItem>? metadataMembers)
+        public async Task<AIChatMessage> AnswerAsync(
+            string question,
+            ChatIntelligenceAnalysis analysis,
+            IEnumerable<PlatformMessagePreview> messages,
+            IEnumerable<AIChatMemberItem>? metadataMembers,
+            AppPreferences? preferences = null)
         {
             var scoped = messages.TakeLast(MaximumMessages).ToList();
-            var lower = question.ToLowerInvariant();
-            var response = new AIChatMessage { IsUser = false, RelatedPrompts = analysis.SuggestedQuestions };
+            var clean = question.Trim();
+            var lower = clean.ToLowerInvariant();
+            var response = new AIChatMessage
+            {
+                IsUser = false,
+                RelatedPrompts = analysis.SuggestedQuestions,
+                Source = new AIResponseSource { SourceType = AIResponseSourceType.StructuredExtraction }
+            };
 
+            // 1. Tasks
             if (ContainsAny(lower, "task", "to-do", "todo", "need to do", "pending for me", "action item"))
             {
-                response.Text = FormatList("Pending tasks", analysis.Tasks);
+                response.Text = FormatList("📋 Pending Tasks & Action Items", analysis.Tasks);
                 response.ActionItems = analysis.Tasks.Select(StripReference).ToList();
+                return response;
             }
-            else if (lower.Contains("decision")) response.Text = FormatList("Decisions found", analysis.Decisions);
-            else if (ContainsAny(lower, "deadline", "date", "when")) response.Text = FormatList("Dates and deadlines mentioned", analysis.Dates);
-            else if (ContainsAny(lower, "unresolved", "open question", "questions pending")) response.Text = FormatList("Unresolved questions", analysis.UnresolvedQuestions);
-            else if (ContainsAny(lower, "link", "url")) response.Text = FormatList("Links shared", analysis.Links);
-            else if (ContainsAny(lower, "file", "document", "attachment")) response.Text = FormatList("Files mentioned", analysis.Files);
-            else if (ContainsAny(lower, "phone", "mobile", "contact number"))
+
+            // 2. Decisions
+            if (lower.Contains("decision"))
             {
-                response.Text = FormatList("Phone numbers shared in this conversation", analysis.PhoneNumbers);
-                response.PhoneNumbers = analysis.PhoneNumbers.Select(number => new AIChatPhoneNumberItem
+                response.Text = FormatList("⚖️ Decisions Confirmed in This Chat", analysis.Decisions);
+                return response;
+            }
+
+            // 3. Dates & Deadlines
+            if (ContainsAny(lower, "deadline", "date", "when", "schedule"))
+            {
+                response.Text = FormatList("📅 Dates & Deadlines Mentioned", analysis.Dates);
+                return response;
+            }
+
+            // 4. Questions
+            if (ContainsAny(lower, "unresolved", "open question", "questions pending"))
+            {
+                response.Text = FormatList("❓ Unresolved Questions", analysis.UnresolvedQuestions);
+                return response;
+            }
+
+            // 5. Links
+            if (ContainsAny(lower, "link", "url", "website"))
+            {
+                response.Text = FormatList("🔗 Links Shared in This Conversation", analysis.Links);
+                return response;
+            }
+
+            // 6. Files
+            if (ContainsAny(lower, "file", "document", "attachment"))
+            {
+                response.Text = FormatList("📁 Files & Attachments Referenced", analysis.Files);
+                return response;
+            }
+
+            // 7. Phone Numbers
+            if (ContainsAny(lower, "phone", "mobile", "contact number", "call number"))
+            {
+                response.Text = FormatList("📞 Phone Numbers Shared", analysis.PhoneNumbers);
+                response.PhoneNumbers = analysis.PhoneNumbers.Select(number =>
                 {
-                    Name = scoped.FirstOrDefault(m => m.Text.Contains(number, StringComparison.Ordinal))?.Sender ?? "Shared contact",
-                    Number = number,
-                    Context = "Found in selected conversation"
+                    var owner = scoped.FirstOrDefault(m => m.Text.Contains(number))?.Sender ?? "Shared contact";
+                    return new AIChatPhoneNumberItem { Name = owner, Number = number, Context = "Found in selected conversation" };
                 }).ToList();
+                return response;
             }
-            else if (ContainsAny(lower, "member", "participant", "who is in", "people in this group"))
+
+            // 8. Members
+            if (ContainsAny(lower, "member", "participant", "who is in", "people in this group", "list all member"))
             {
-                response.Members = GroundedMembers(scoped, metadataMembers);
-                response.Text = response.Members.Count == 0
-                    ? Unavailable
-                    : "Group Members\n\n" + string.Join("\n", response.Members.Select(m => $"• {m.Name} — {(string.IsNullOrWhiteSpace(m.PhoneNumber) ? "Phone number unavailable" : m.PhoneNumber)}"));
+                var available = GroundedMembers(scoped, metadataMembers);
+                if (available.Count == 0)
+                {
+                    response.Text = "I couldn't find member details for this conversation.";
+                    return response;
+                }
+                response.Members = available;
+                response.Text = $"👥 **Group Members ({available.Count})**\n\n" + string.Join("\n", available.Select(m =>
+                    $"• **{m.Name}** — {(string.IsNullOrEmpty(m.PhoneNumber) ? "Phone unavailable" : m.PhoneNumber)} ({m.Role})"));
+                return response;
             }
-            else if (analysis.People.FirstOrDefault(person => lower.Contains(person.ToLowerInvariant())) is string speaker)
+
+            // 9. Zero-Hallucination CPWD
+            if (lower.Contains("cpwd"))
             {
-                response.Text = FormatMessages($"What {speaker} said", scoped.Where(m => m.Sender.Equals(speaker, StringComparison.OrdinalIgnoreCase)).ToList());
+                var cpwdMatches = scoped.Where(m => m.Text.Contains("cpwd", StringComparison.OrdinalIgnoreCase)).ToList();
+                if (cpwdMatches.Count == 0)
+                {
+                    response.Text = "🏢 I searched this conversation, but **could not find any CPWD-related information or guidelines** in the available chat history.";
+                }
+                else
+                {
+                    response.Text = FormatMessages("🏢 CPWD References in This Chat", cpwdMatches);
+                }
+                return response;
             }
-            else
+
+            // 10. Dynamic Speaker Query
+            var allCandidateNames = scoped.Select(m => m.Sender).Concat(metadataMembers?.Select(m => m.Name) ?? Enumerable.Empty<string>())
+                .Concat(analysis.People).Where(s => !string.IsNullOrWhiteSpace(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            var targetSpeaker = allCandidateNames.FirstOrDefault(name => lower.Contains(name.ToLowerInvariant()));
+            if (!string.IsNullOrEmpty(targetSpeaker))
             {
-                var tokens = Regex.Split(lower, @"[^a-z0-9]+").Where(t => t.Length >= 3 && !StopWords.Contains(t)).ToList();
-                var matches = scoped.Where(m => tokens.Any(token => m.Text.Contains(token, StringComparison.OrdinalIgnoreCase) || m.Sender.Contains(token, StringComparison.OrdinalIgnoreCase))).ToList();
-                response.Text = FormatMessages("Relevant conversation evidence", matches);
+                var matches = scoped.Where(m => m.Sender.Equals(targetSpeaker, StringComparison.OrdinalIgnoreCase)).ToList();
+                response.Text = matches.Count == 0
+                    ? $"I couldn't find messages from **{targetSpeaker}** in this conversation."
+                    : FormatMessages($"💬 What {targetSpeaker} said in this conversation", matches);
+                return response;
             }
+
+            // STEP 2: Freeform / Semantic AI Reasoning
+            if (preferences != null)
+            {
+                var resolution = AIProviderResolver.Resolve(preferences);
+                if (resolution.CanPerformGenerativeAI)
+                {
+                    var recentMessages = string.Join("\n", scoped.TakeLast(25).Select((m, i) => $"({i + 1}) {m.Sender} [{(m.Time ?? "")}]: {m.Text}"));
+                    var userPrompt = $"Conversation Summary:\n{string.Join("\n", analysis.Summary.Select(s => "• " + s))}\n\nParticipants: {string.Join(", ", analysis.People)}\n\nRecent Transcript:\n{recentMessages}\n\nQuestion: {clean}";
+
+                    try
+                    {
+                        var answer = await AIService.Shared.GenerateResponseAsync(userPrompt);
+                        response.Text = answer;
+                        response.Source = new AIResponseSource
+                        {
+                            SourceType = AIResponseSourceType.ProviderGenerated,
+                            Provider = resolution.Provider.ToString(),
+                            Model = resolution.Model
+                        };
+                        return response;
+                    }
+                    catch (Exception ex)
+                    {
+                        response.Text = $"⚠️ **{resolution.DisplayBadge} could not complete the request**:\n{ex.Message}";
+                        response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
+                        return response;
+                    }
+                }
+                else
+                {
+                    response.Text = $"💡 **AI provider is not configured for generative reasoning.**\n\nTo ask freeform questions like *“{clean}”*, please configure **Google Gemini**, **OpenAI ChatGPT**, or **Ollama** in **Settings > AI**.";
+                    response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
+                    return response;
+                }
+            }
+
+            // Fallback: keyword search
+            var tokens = SearchTokens(question);
+            var evidence = scoped.Where(m => tokens.Count > 0 && tokens.Any(t => m.Text.Contains(t, StringComparison.OrdinalIgnoreCase) || m.Sender.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
+            response.Text = evidence.Count == 0 ? "I couldn’t find that information in this conversation." : FormatMessages("Relevant conversation evidence", evidence);
+            response.Source = new AIResponseSource { SourceType = AIResponseSourceType.LocalHeuristic };
             return response;
+        }
+
+        public AIChatMessage Answer(string question, ChatIntelligenceAnalysis analysis, IEnumerable<PlatformMessagePreview> messages, IEnumerable<AIChatMemberItem>? metadataMembers)
+        {
+            return AnswerAsync(question, analysis, messages, metadataMembers).GetAwaiter().GetResult();
         }
 
         public List<AIChatMemberItem> GroundedMembers(IEnumerable<PlatformMessagePreview> messages, IEnumerable<AIChatMemberItem>? metadataMembers)
         {
-            var members = new Dictionary<string, AIChatMemberItem>(StringComparer.OrdinalIgnoreCase);
-            foreach (var member in metadataMembers ?? Enumerable.Empty<AIChatMemberItem>()) if (!string.IsNullOrWhiteSpace(member.Name)) members[member.Name] = member;
-            foreach (var group in messages.Where(m => !string.IsNullOrWhiteSpace(m.Sender) && !m.Sender.Equals("you", StringComparison.OrdinalIgnoreCase)).GroupBy(m => m.Sender, StringComparer.OrdinalIgnoreCase))
+            var result = new Dictionary<string, AIChatMemberItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (var member in metadataMembers ?? Enumerable.Empty<AIChatMemberItem>())
             {
-                if (!members.ContainsKey(group.Key)) members[group.Key] = new AIChatMemberItem { Name = group.Key, Role = "Conversation participant", Activity = "Visible in selected chat", MessageCount = group.Count() };
+                if (!string.IsNullOrWhiteSpace(member.Name)) result[member.Name] = member;
             }
-            return members.Values.OrderBy(m => m.Name).ToList();
+            foreach (var sender in messages.Select(m => m.Sender).Where(s => !string.IsNullOrWhiteSpace(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!result.ContainsKey(sender))
+                {
+                    var count = messages.Count(m => m.Sender.Equals(sender, StringComparison.OrdinalIgnoreCase));
+                    result[sender] = new AIChatMemberItem { Name = sender, Role = "Conversation participant", Activity = "Visible in selected chat", MessageCount = count };
+                }
+            }
+            return result.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        private const string Unavailable = "I couldn’t find that information in this conversation.";
-        private static bool ContainsAny(string text, params string[] terms) => terms.Any(text.Contains);
-        private static string Compact(string text, int limit = 150) { var clean = Regex.Replace(text, @"\s+", " ").Trim(); return clean.Length > limit ? clean[..limit] + "…" : clean; }
-        private static string StripReference(string value) => value.Split(" — ")[0];
-        private static void AddUnique(List<string> values, string value) { if (!string.IsNullOrWhiteSpace(value) && !values.Contains(value, StringComparer.OrdinalIgnoreCase)) values.Add(value); }
-        private static string SourceLabel(PlatformMessagePreview message, List<PlatformMessagePreview> messages) => !string.IsNullOrWhiteSpace(message.Time) ? $"{message.Sender} · {message.Time}" : $"{message.Sender} · Message {Math.Max(1, messages.FindIndex(m => m.Id == message.Id) + 1)}";
-        private static string FormatList(string title, List<string> values) => values.Count == 0 ? Unavailable : title + "\n\n" + string.Join("\n", values.Take(20).Select(v => "• " + v));
-        private static string FormatMessages(string title, List<PlatformMessagePreview> messages) => messages.Count == 0 ? Unavailable : title + "\n\n" + string.Join("\n", messages.TakeLast(8).Select((m, i) => $"• {Compact(m.Text)}\n  Source: {(!string.IsNullOrWhiteSpace(m.Time) ? $"{m.Sender} · {m.Time}" : $"{m.Sender} · Message {i + 1}")}"));
+        private static string FormatList(string title, IEnumerable<string> values)
+        {
+            var list = values.Take(20).ToList();
+            return list.Count == 0 ? "I couldn’t find that information in this conversation." : $"{title}\n\n" + string.Join("\n", list.Select(v => $"• {v}"));
+        }
 
-        private static void AddMatches(List<string> target, string text, string pattern, RegexOptions options, Func<string, bool>? predicate = null, Func<string, string>? transform = null)
+        private static string FormatMessages(string title, IEnumerable<PlatformMessagePreview> messages)
+        {
+            var list = messages.TakeLast(8).ToList();
+            if (list.Count == 0) return "I couldn’t find that information in this conversation.";
+            return $"{title}\n\n" + string.Join("\n", list.Select(m => $"• {Compact(m.Text)}\n  Source: {SourceLabel(m, list)}"));
+        }
+
+        private static string SourceLabel(PlatformMessagePreview message, IList<PlatformMessagePreview> messages)
+        {
+            if (!string.IsNullOrWhiteSpace(message.Time)) return $"{message.Sender} · {message.Time}";
+            var idx = messages.IndexOf(message);
+            return $"{message.Sender} · Message {(idx >= 0 ? idx + 1 : 1)}";
+        }
+
+        private static string Compact(string text, int limit = 150)
+        {
+            var clean = Regex.Replace(text.Trim(), @"\s+", " ");
+            return clean.Length > limit ? clean[..limit] + "…" : clean;
+        }
+
+        private static string StripReference(string value) => value.Split(" — ")[0];
+
+        private static bool ContainsAny(string text, params string[] terms) => terms.Any(text.Contains);
+
+        private static void AddUnique(List<string> values, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && !values.Any(v => v.Equals(value, StringComparison.OrdinalIgnoreCase)))
+            {
+                values.Add(value);
+            }
+        }
+
+        private static void AddMatches(List<string> values, string text, string pattern, RegexOptions options, Func<string, bool>? predicate = null, Func<string, string>? transform = null)
         {
             foreach (Match match in Regex.Matches(text, pattern, options))
             {
-                var value = transform?.Invoke(match.Value) ?? match.Value;
-                if (predicate == null || predicate(value)) AddUnique(target, value);
+                var val = match.Value;
+                if (predicate != null && !predicate(val)) continue;
+                if (transform != null) val = transform(val);
+                AddUnique(values, val);
             }
         }
+
+        private static List<string> SearchTokens(string query) =>
+            Regex.Split(query.ToLowerInvariant(), @"[^a-z0-9]+")
+                .Where(t => t.Length >= 3 && !StopWords.Contains(t)).ToList();
     }
 }

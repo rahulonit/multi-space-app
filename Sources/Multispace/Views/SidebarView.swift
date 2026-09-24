@@ -34,7 +34,7 @@ struct SidebarView: View {
                 .padding(.bottom, 12)
             } else {
                 HStack {
-                    Text("SOCIAL APPS")
+                    Text("PLATFORMS")
                         .font(.system(size: 10, weight: .bold))
                         .tracking(1.5)
                         .foregroundStyle(Palette.muted)
@@ -45,7 +45,7 @@ struct SidebarView: View {
                             .foregroundStyle(Palette.accent)
                     }
                     .buttonStyle(.plain)
-                    .help("Add social app")
+                    .help("Add platform")
 
                     Button { sidebarCollapsed = true } label: {
                         Image(systemName: "sidebar.left")
@@ -62,9 +62,47 @@ struct SidebarView: View {
             }
 
             ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(store.socialPlatforms) { platform in
-                        platformButton(platform)
+                VStack(alignment: .leading, spacing: 4) {
+                    VStack(spacing: 4) {
+                        ForEach(store.socialPlatforms) { platform in
+                            platformButton(platform)
+                        }
+                    }
+
+                    if !compact {
+                        Divider()
+                            .background(Palette.border)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 10)
+
+                        Text("WORKSPACES")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 4)
+
+                        workspaceRow("Personal Workspace", symbol: "person.fill", count: 14)
+                        workspaceRow("Work Workspace", symbol: "briefcase.fill", count: 58)
+                        workspaceRow("Projects", symbol: "folder.fill", count: 12)
+                        workspaceRow("Clients", symbol: "person.2.fill", count: 8)
+                        workspaceRow("Team Workspace", symbol: "person.3.fill", count: 6)
+
+                        Button {
+                            store.showToast("Workspace creation is coming next")
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 12))
+                                Text("Create Workspace")
+                                    .font(.system(size: 11.5, weight: .medium))
+                                Spacer()
+                            }
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 10)
+                            .frame(height: 32)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, compact ? 8 : 10)
@@ -156,6 +194,26 @@ struct SidebarView: View {
                 Text("This removes \(account.name) from PINGGO and clears its separate website session. Your account on the social platform is not deleted.")
             }
         }
+    }
+
+    private func workspaceRow(_ title: String, symbol: String, count: Int, selected: Bool = false) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(selected ? Palette.accent : Palette.muted)
+                .frame(width: 17)
+            Text(title)
+                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? Color.primary : Palette.muted)
+            Spacer()
+            Text("\(count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Palette.muted)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(selected ? Palette.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Palette.accent.opacity(0.22) : Color.clear))
     }
 
     private func navButton(_ title: String, symbol: String, destination: AppDestination) -> some View {

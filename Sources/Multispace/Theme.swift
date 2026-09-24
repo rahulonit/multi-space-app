@@ -24,7 +24,7 @@ enum Palette {
         case "orange": return Color(red: 1, green: 0.59, blue: 0.24)
         case "green": return Color(red: 0.20, green: 0.77, blue: 0.40)
         case "pink": return Color(red: 0.82, green: 0.26, blue: 0.94)
-        default: return Color(red: 0.42, green: 0.48, blue: 0.98)
+        default: return Color(red: 0.66, green: 0.33, blue: 0.97) // #A855F7 — Pinggo violet
         }
     }
     // Global Header Navigation Tokens

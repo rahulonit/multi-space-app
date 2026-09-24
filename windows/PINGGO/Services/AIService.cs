@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -16,123 +17,72 @@ namespace PINGGO.Services
 
         private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-        public async Task<(bool Success, string Message)> TestConnectionAsync(string provider, string apiKey)
-        {
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                return (false, "API Key is required.");
-            }
-
-            try
-            {
-                if (provider.Equals("gemini", StringComparison.OrdinalIgnoreCase))
-                {
-                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
-                    var payload = new
-                    {
-                        contents = new[]
-                        {
-                            new { parts = new[] { new { text = "Ping" } } }
-                        }
-                    };
-                    var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-                    var res = await _httpClient.PostAsync(url, content);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        return (true, "Google Gemini API connection verified!");
-                    }
-                    var err = await res.Content.ReadAsStringAsync();
-                    return (false, $"Gemini Error: {res.StatusCode}");
-                }
-                else
-                {
-                    var url = "https://api.openai.com/v1/chat/completions";
-                    var payload = new
-                    {
-                        model = "gpt-4o-mini",
-                        messages = new[]
-                        {
-                            new { role = "user", content = "Ping" }
-                        },
-                        max_tokens = 5
-                    };
-                    using var req = new HttpRequestMessage(HttpMethod.Post, url);
-                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                    req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                    var res = await _httpClient.SendAsync(req);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        return (true, "OpenAI ChatGPT API connection verified!");
-                    }
-                    return (false, $"OpenAI Error: {res.StatusCode}");
-                }
-            }
-            catch (Exception ex)
-            {
-                return (false, $"Network error: {ex.Message}");
-            }
-        }
-
         public async Task<string> AskCoPilotAsync(string prompt, string context = "")
         {
             var prefs = DataStoreService.Shared.CurrentData.Preferences;
             var systemPrompt = "You are PINGGO Copilot, a privacy-focused executive assistant. Provide concise, helpful answers.";
             var fullPrompt = string.IsNullOrWhiteSpace(context) ? prompt : $"Context:\n{context}\n\nUser Question:\n{prompt}";
 
-            if (prefs.AiProvider == "gemini" && !string.IsNullOrWhiteSpace(prefs.GeminiApiKey))
+            var resolution = AIProviderResolver.Resolve(prefs);
+
+            if (resolution.CanPerformGenerativeAI)
             {
-                try
+                if (resolution.Provider == AIProviderType.Gemini)
                 {
-                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{prefs.AiModelTier}:generateContent?key={prefs.GeminiApiKey}";
-                    var payload = new
+                    try
                     {
-                        system_instruction = new { parts = new[] { new { text = systemPrompt } } },
-                        contents = new[] { new { parts = new[] { new { text = fullPrompt } } } }
-                    };
-                    var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-                    var res = await _httpClient.PostAsync(url, content);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        var json = await res.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(json);
-                        var text = doc.RootElement.GetProperty("candidates")[0]
-                            .GetProperty("content").GetProperty("parts")[0]
-                            .GetProperty("text").GetString();
-                        if (!string.IsNullOrEmpty(text)) return text;
-                    }
-                }
-                catch { }
-            }
-            else if (prefs.AiProvider == "chatgpt" && !string.IsNullOrWhiteSpace(prefs.OpenAiApiKey))
-            {
-                try
-                {
-                    var url = "https://api.openai.com/v1/chat/completions";
-                    var payload = new
-                    {
-                        model = "gpt-4o-mini",
-                        messages = new[]
+                        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{resolution.Model}:generateContent";
+                        var payload = new
                         {
-                            new { role = "system", content = systemPrompt },
-                            new { role = "user", content = fullPrompt }
-                        },
-                        max_tokens = 500
-                    };
-                    using var req = new HttpRequestMessage(HttpMethod.Post, url);
-                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", prefs.OpenAiApiKey);
-                    req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-                    var res = await _httpClient.SendAsync(req);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        var json = await res.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(json);
-                        var text = doc.RootElement.GetProperty("choices")[0]
-                            .GetProperty("message").GetProperty("content").GetString();
-                        if (!string.IsNullOrEmpty(text)) return text;
+                            system_instruction = new { parts = new[] { new { text = systemPrompt } } },
+                            contents = new[] { new { parts = new[] { new { text = fullPrompt } } } }
+                        };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                        req.Headers.Add("x-goog-api-key", prefs.GeminiApiKey);
+                        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                        var res = await _httpClient.SendAsync(req);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            var json = await res.Content.ReadAsStringAsync();
+                            using var doc = JsonDocument.Parse(json);
+                            var text = doc.RootElement.GetProperty("candidates")[0]
+                                .GetProperty("content").GetProperty("parts")[0]
+                                .GetProperty("text").GetString();
+                            if (!string.IsNullOrEmpty(text)) return text;
+                        }
                     }
+                    catch { }
                 }
-                catch { }
+                else if (resolution.Provider == AIProviderType.ChatGpt)
+                {
+                    try
+                    {
+                        var url = "https://api.openai.com/v1/chat/completions";
+                        var payload = new
+                        {
+                            model = resolution.Model,
+                            messages = new[]
+                            {
+                                new { role = "system", content = systemPrompt },
+                                new { role = "user", content = fullPrompt }
+                            },
+                            max_tokens = 500
+                        };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", prefs.OpenAiApiKey);
+                        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                        var res = await _httpClient.SendAsync(req);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            var json = await res.Content.ReadAsStringAsync();
+                            using var doc = JsonDocument.Parse(json);
+                            var text = doc.RootElement.GetProperty("choices")[0]
+                                .GetProperty("message").GetProperty("content").GetString();
+                            if (!string.IsNullOrEmpty(text)) return text;
+                        }
+                    }
+                    catch { }
+                }
             }
 
             // Local fallback smart reply
@@ -154,109 +104,50 @@ namespace PINGGO.Services
             var fullPrompt = string.IsNullOrWhiteSpace(context) ? prompt : $"Context:\n{context}\n\nInstruction/Question:\n{prompt}";
 
             var accumulated = new StringBuilder();
+            var resolution = AIProviderResolver.Resolve(prefs);
 
-            if (prefs.AiProvider == "gemini" && !string.IsNullOrWhiteSpace(prefs.GeminiApiKey))
+            if (resolution.CanPerformGenerativeAI)
             {
-                try
+                if (resolution.Provider == AIProviderType.Gemini)
                 {
-                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{prefs.AiModelTier}:streamGenerateContent?alt=sse&key={prefs.GeminiApiKey}";
-                    var contentsList = new List<object>();
-                    if (history != null)
+                    try
                     {
-                        foreach (var h in history)
+                        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{resolution.Model}:streamGenerateContent?alt=sse";
+                        var contentsList = new List<object>();
+                        if (history != null)
                         {
-                            contentsList.Add(new { role = h.Role == "assistant" ? "model" : "user", parts = new[] { new { text = h.Content } } });
-                        }
-                    }
-                    contentsList.Add(new { role = "user", parts = new[] { new { text = fullPrompt } } });
-
-                    var payload = new
-                    {
-                        system_instruction = new { parts = new[] { new { text = systemPrompt } } },
-                        contents = contentsList
-                    };
-                    using var req = new HttpRequestMessage(HttpMethod.Post, url);
-                    req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                    using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        using var stream = await res.Content.ReadAsStreamAsync();
-                        using var reader = new StreamReader(stream);
-                        while (!reader.EndOfStream)
-                        {
-                            var line = await reader.ReadLineAsync();
-                            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
-                            var json = line["data: ".Length..];
-                            try
+                            foreach (var h in history)
                             {
-                                using var doc = JsonDocument.Parse(json);
-                                if (doc.RootElement.TryGetProperty("candidates", out var cArr) && cArr.GetArrayLength() > 0)
-                                {
-                                    var text = cArr[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
-                                    if (!string.IsNullOrEmpty(text))
-                                    {
-                                        accumulated.Append(text);
-                                        onChunk(text);
-                                    }
-                                }
+                                contentsList.Add(new { role = h.Role == "assistant" ? "model" : "user", parts = new[] { new { text = h.Content } } });
                             }
-                            catch { }
                         }
-                        if (accumulated.Length > 0) return accumulated.ToString();
-                    }
-                }
-                catch { }
-            }
-            else if (prefs.AiProvider == "chatgpt" && !string.IsNullOrWhiteSpace(prefs.OpenAiApiKey))
-            {
-                try
-                {
-                    var url = "https://api.openai.com/v1/chat/completions";
-                    var messages = new List<object>
-                    {
-                        new { role = "system", content = systemPrompt }
-                    };
-                    if (history != null)
-                    {
-                        foreach (var h in history)
-                        {
-                            messages.Add(new { role = h.Role, content = h.Content });
-                        }
-                    }
-                    messages.Add(new { role = "user", content = fullPrompt });
+                        contentsList.Add(new { role = "user", parts = new[] { new { text = fullPrompt } } });
 
-                    var payload = new
-                    {
-                        model = "gpt-4o-mini",
-                        messages = messages,
-                        temperature = 0.7,
-                        stream = true
-                    };
-                    using var req = new HttpRequestMessage(HttpMethod.Post, url);
-                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", prefs.OpenAiApiKey);
-                    req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                    using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        using var stream = await res.Content.ReadAsStreamAsync();
-                        using var reader = new StreamReader(stream);
-                        while (!reader.EndOfStream)
+                        var payload = new
                         {
-                            var line = await reader.ReadLineAsync();
-                            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
-                            var json = line["data: ".Length..];
-                            if (json.Trim() == "[DONE]") break;
-                            try
+                            system_instruction = new { parts = new[] { new { text = systemPrompt } } },
+                            contents = contentsList
+                        };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                        req.Headers.Add("x-goog-api-key", prefs.GeminiApiKey);
+                        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                        using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            using var stream = await res.Content.ReadAsStreamAsync();
+                            using var reader = new StreamReader(stream);
+                            while (!reader.EndOfStream)
                             {
-                                using var doc = JsonDocument.Parse(json);
-                                if (doc.RootElement.TryGetProperty("choices", out var cArr) && cArr.GetArrayLength() > 0)
+                                var line = await reader.ReadLineAsync();
+                                if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
+                                var json = line["data: ".Length..];
+                                try
                                 {
-                                    var delta = cArr[0].GetProperty("delta");
-                                    if (delta.TryGetProperty("content", out var contentProp))
+                                    using var doc = JsonDocument.Parse(json);
+                                    if (doc.RootElement.TryGetProperty("candidates", out var cArr) && cArr.GetArrayLength() > 0)
                                     {
-                                        var text = contentProp.GetString();
+                                        var text = cArr[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
                                         if (!string.IsNullOrEmpty(text))
                                         {
                                             accumulated.Append(text);
@@ -264,88 +155,162 @@ namespace PINGGO.Services
                                         }
                                     }
                                 }
+                                catch { }
                             }
-                            catch { }
+                            if (accumulated.Length > 0) return accumulated.ToString();
                         }
-                        if (accumulated.Length > 0) return accumulated.ToString();
                     }
+                    catch { }
                 }
-                catch { }
-            }
-            else if (prefs.AiProvider == "ollama")
-            {
-                try
+                else if (resolution.Provider == AIProviderType.ChatGpt)
                 {
-                    var baseEndpoint = string.IsNullOrWhiteSpace(prefs.OllamaEndpoint) ? "http://localhost:11434" : prefs.OllamaEndpoint.TrimEnd('/');
-                    var url = $"{baseEndpoint}/api/chat";
-                    var messages = new List<object>
+                    try
                     {
-                        new { role = "system", content = systemPrompt + (string.IsNullOrWhiteSpace(context) ? "" : $"\nContext:\n{context}") }
-                    };
-                    if (history != null)
-                    {
-                        foreach (var h in history)
+                        var url = "https://api.openai.com/v1/chat/completions";
+                        var messages = new List<object>
                         {
-                            messages.Add(new { role = h.Role, content = h.Content });
-                        }
-                    }
-                    messages.Add(new { role = "user", content = prompt });
-
-                    var payload = new
-                    {
-                        model = string.IsNullOrWhiteSpace(prefs.OllamaModel) ? "llama3.2" : prefs.OllamaModel,
-                        messages = messages,
-                        stream = true
-                    };
-
-                    using var req = new HttpRequestMessage(HttpMethod.Post, url);
-                    req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                    using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        using var stream = await res.Content.ReadAsStreamAsync();
-                        using var reader = new StreamReader(stream);
-                        while (!reader.EndOfStream)
+                            new { role = "system", content = systemPrompt }
+                        };
+                        if (history != null)
                         {
-                            var line = await reader.ReadLineAsync();
-                            if (string.IsNullOrWhiteSpace(line)) continue;
-                            try
+                            foreach (var h in history)
                             {
-                                using var doc = JsonDocument.Parse(line);
-                                if (doc.RootElement.TryGetProperty("message", out var msgProp) &&
-                                    msgProp.TryGetProperty("content", out var textProp))
+                                messages.Add(new { role = h.Role, content = h.Content });
+                            }
+                        }
+                        messages.Add(new { role = "user", content = fullPrompt });
+
+                        var payload = new
+                        {
+                            model = resolution.Model,
+                            messages = messages,
+                            temperature = 0.7,
+                            stream = true
+                        };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", prefs.OpenAiApiKey);
+                        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                        using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            using var stream = await res.Content.ReadAsStreamAsync();
+                            using var reader = new StreamReader(stream);
+                            while (!reader.EndOfStream)
+                            {
+                                var line = await reader.ReadLineAsync();
+                                if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
+                                var json = line["data: ".Length..];
+                                if (json.Trim() == "[DONE]") break;
+                                try
                                 {
-                                    var text = textProp.GetString();
-                                    if (!string.IsNullOrEmpty(text))
+                                    using var doc = JsonDocument.Parse(json);
+                                    if (doc.RootElement.TryGetProperty("choices", out var cArr) && cArr.GetArrayLength() > 0)
                                     {
-                                        accumulated.Append(text);
-                                        onChunk(text);
+                                        var delta = cArr[0].GetProperty("delta");
+                                        if (delta.TryGetProperty("content", out var contentProp))
+                                        {
+                                            var text = contentProp.GetString();
+                                            if (!string.IsNullOrEmpty(text))
+                                            {
+                                                accumulated.Append(text);
+                                                onChunk(text);
+                                            }
+                                        }
                                     }
                                 }
+                                catch { }
                             }
-                            catch { }
+                            if (accumulated.Length > 0) return accumulated.ToString();
                         }
-                        if (accumulated.Length > 0) return accumulated.ToString();
                     }
+                    catch { }
                 }
-                catch { }
+                else if (resolution.Provider == AIProviderType.Ollama)
+                {
+                    try
+                    {
+                        var baseEndpoint = string.IsNullOrWhiteSpace(prefs.OllamaEndpoint) ? "http://localhost:11434" : prefs.OllamaEndpoint.TrimEnd('/');
+                        var url = $"{baseEndpoint}/api/chat";
+                        var messages = new List<object>
+                        {
+                            new { role = "system", content = systemPrompt + (string.IsNullOrWhiteSpace(context) ? "" : $"\nContext:\n{context}") }
+                        };
+                        if (history != null)
+                        {
+                            foreach (var h in history)
+                            {
+                                messages.Add(new { role = h.Role, content = h.Content });
+                            }
+                        }
+                        messages.Add(new { role = "user", content = prompt });
+
+                        var payload = new
+                        {
+                            model = resolution.Model,
+                            messages = messages,
+                            stream = true
+                        };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                        using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            using var stream = await res.Content.ReadAsStreamAsync();
+                            using var reader = new StreamReader(stream);
+                            while (!reader.EndOfStream)
+                            {
+                                var line = await reader.ReadLineAsync();
+                                if (string.IsNullOrWhiteSpace(line)) continue;
+                                try
+                                {
+                                    using var doc = JsonDocument.Parse(line);
+                                    if (doc.RootElement.TryGetProperty("message", out var msgProp) &&
+                                        msgProp.TryGetProperty("content", out var textProp))
+                                    {
+                                        var text = textProp.GetString();
+                                        if (!string.IsNullOrEmpty(text))
+                                        {
+                                            accumulated.Append(text);
+                                            onChunk(text);
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (accumulated.Length > 0) return accumulated.ToString();
+                        }
+                    }
+                    catch { }
+                }
             }
 
-            // Fallback: local typewriter simulation
+            // Fallback: local instant reply without artificial typewriter delay
             var reply = GenerateLocalSmartSummary(prompt);
-            var words = reply.Split(' ');
-            for (var i = 0; i < words.Length; i++)
-            {
-                var piece = (i == 0 ? "" : " ") + words[i];
-                accumulated.Append(piece);
-                onChunk(piece);
-                await Task.Delay(25);
-            }
-            return accumulated.ToString();
+            onChunk(reply);
+            return reply;
         }
 
-        public async Task<(bool Success, string Message)> TestConnectionAsync(string provider, string keyOrEndpoint, string model = "gemini-1.5-flash")
+        public async Task<string> TranslateMessageAsync(string text, string targetLanguage = "English")
+        {
+            var prefs = DataStoreService.Shared.CurrentData.Preferences;
+            var resolution = AIProviderResolver.Resolve(prefs);
+            if (!resolution.CanPerformGenerativeAI)
+            {
+                throw new InvalidOperationException("Translation requires a configured and enabled AI provider.");
+            }
+
+            var prompt = $"Translate the following text into {targetLanguage}. Output only the translated text with no conversational remarks:\n\n{text}";
+            return await GenerateResponseAsync(prompt);
+        }
+
+        public Task<string> GenerateResponseAsync(string prompt)
+        {
+            return AskCoPilotAsync(prompt);
+        }
+
+        public async Task<(bool Success, string Message)> TestConnectionAsync(string provider, string keyOrEndpoint, string model = "gemini-3.5-flash")
         {
             try
             {
@@ -362,9 +327,10 @@ namespace PINGGO.Services
                 else if (provider == "gemini")
                 {
                     if (string.IsNullOrWhiteSpace(keyOrEndpoint)) return (false, "Gemini API key is required.");
-                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={keyOrEndpoint}";
+                    var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
                     var payload = new { contents = new[] { new { parts = new[] { new { text = "Respond with CONNECTED" } } } } };
                     using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                    req.Headers.Add("x-goog-api-key", keyOrEndpoint);
                     req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                     var res = await _httpClient.SendAsync(req);
                     return res.IsSuccessStatusCode ? (true, "Google Gemini Connected!") : (false, $"Gemini error: HTTP {(int)res.StatusCode}");

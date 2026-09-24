@@ -95,6 +95,7 @@ namespace PINGGO.Views
 
             if (ok)
             {
+                AICredentialStore.Save("gemini", key);
                 DataStoreService.Shared.CurrentData.Preferences.GeminiApiKey = key;
                 DataStoreService.Shared.Save();
             }
@@ -111,6 +112,7 @@ namespace PINGGO.Views
 
             if (ok)
             {
+                AICredentialStore.Save("openai", key);
                 DataStoreService.Shared.CurrentData.Preferences.OpenAiApiKey = key;
                 DataStoreService.Shared.Save();
             }

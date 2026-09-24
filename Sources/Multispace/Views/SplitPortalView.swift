@@ -220,7 +220,7 @@ struct SplitPortalView: View {
     private func paneView(for destination: AppDestination?, isSplitPane: Bool) -> some View {
         switch destination {
         case .home: HomeView()
-        case .inbox: InboxView()
+        case .inbox: IntelligenceInboxView()
         case .browser: BrowserView()
         case .platform(let id):
             if isSplitPane {

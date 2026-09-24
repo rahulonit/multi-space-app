@@ -202,6 +202,247 @@ struct AIChatMemberItem: Identifiable, Equatable, Hashable, Codable {
     var phoneNumber: String? = nil
 }
 
+enum AIResponseSource: Equatable, Codable {
+    case providerGenerated(provider: String, model: String)
+    case localHeuristic(engineName: String)
+    case structuredExtraction
+    case cachedAIResponse
+
+    var badgeText: String {
+        switch self {
+        case .providerGenerated(let provider, let model):
+            return "Powered by \(provider) · \(model)"
+        case .localHeuristic(let engine):
+            return "Generated locally · \(engine)"
+        case .structuredExtraction:
+            return "Extracted locally · Pinggo Smart Engine"
+        case .cachedAIResponse:
+            return "Cached AI Response"
+        }
+    }
+}
+
+struct AITaskItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var title: String
+    var assignee: String? = nil
+    var createdBy: String? = nil
+    var dueDate: String? = nil
+    var sourceMessageId: String? = nil
+    var isCompleted: Bool = false
+}
+
+struct ConversationAIState: Equatable {
+    var questionDraft: String = ""
+    var history: [AIChatMessage] = []
+    var analysis: ChatIntelligenceAnalysis? = nil
+    var customPromptInput: String = ""
+    var draftedReplyText: String? = nil
+    var isDrafting: Bool = false
+    var isResponding: Bool = false
+    var errorMessage: String? = nil
+    var activeTab: AIPanelTab = .ask
+    var pendingConfirmationAction: String? = nil
+}
+
+enum ConversationNavTab: String, CaseIterable, Identifiable, Codable {
+    case summary = "Summary"
+    case messages = "Messages"
+    case files = "Files"
+    case tasks = "Tasks"
+    case links = "Links"
+    case activity = "Activity"
+    case insights = "Insights"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .summary: return "text.quote"
+        case .messages: return "message.fill"
+        case .files: return "folder.fill"
+        case .tasks: return "checkmark.circle.fill"
+        case .links: return "link"
+        case .activity: return "chart.xyaxis.line"
+        case .insights: return "sparkles"
+        }
+    }
+}
+
+enum AIPanelTab: String, CaseIterable, Identifiable, Codable {
+    case ask = "Ask"
+    case tasks = "Tasks"
+    case files = "Files"
+    case activity = "Activity"
+    case actions = "Actions"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .ask: return "bubble.left.and.bubble.right.fill"
+        case .tasks: return "checklist"
+        case .files: return "doc.text.fill"
+        case .activity: return "waveform.path.ecg"
+        case .actions: return "bolt.fill"
+        }
+    }
+}
+
+enum CertaintyLevel: String, CaseIterable, Identifiable, Codable {
+    case confirmed = "Confirmed"
+    case tentative = "Tentative"
+    case aiInferred = "AI Inferred"
+
+    var id: String { rawValue }
+}
+
+struct ProjectDecisionItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var text: String
+    var status: String = "Approved" // Approved, Pending Confirmation, In Review
+    var certainty: CertaintyLevel = .confirmed
+    var source: String = "Message #4"
+    var sourceMessageId: String? = nil
+    var timeString: String = "Today"
+}
+
+struct ProjectTaskItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var title: String
+    var owner: String = "You" // You, Team, Unassigned, or explicit role
+    var dueDate: String = "Tomorrow"
+    var certainty: CertaintyLevel = .confirmed
+    var status: String = "In Progress" // In Progress, Pending, Completed
+    var source: String = "Message #2"
+    var sourceMessageId: String? = nil
+    var isDone: Bool = false
+}
+
+struct ProjectStatusInfo: Equatable, Codable {
+    var status: String = "On Track"
+    var upcomingDeadline: String = "Tomorrow morning"
+    var latestActivity: String = "Design review completed"
+    var source: String = "Sprint Deliverables Matrix"
+    var sourceMessageId: String? = nil
+}
+
+struct NeedsAttentionItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var title: String
+    var urgency: String = "High"
+    var category: String = "Confirmation"
+    var source: String = "Message #4"
+    var sourceMessageId: String? = nil
+}
+
+struct ConversationTimelineItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var timeString: String
+    var role: String = "Team"
+    var event: String
+    var source: String
+    var dayGroup: String = "Today"
+}
+
+struct ConversationChangeItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var text: String
+    var source: String = "AI Delta"
+    var timestamp: String = "Today"
+}
+
+struct SharedFileItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var filename: String
+    var sizeString: String
+    var fileType: String
+    var sharedTime: String
+    var sourceMessageId: String? = nil
+}
+
+struct SharedLinkItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var title: String
+    var url: String
+    var domain: String
+    var sharedTime: String
+    var sourceMessageId: String? = nil
+}
+
+struct KeyContributorItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var roleName: String
+    var contributionCount: Int
+    var decisionsCount: Int
+    var openActionsCount: Int
+    var isConfirmedRole: Bool = false
+}
+
+struct UpcomingDeadlineItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var title: String
+    var timeString: String
+    var certainty: CertaintyLevel = .confirmed
+    var source: String = "Message #1"
+    var sourceMessageId: String? = nil
+}
+
+struct WorkstreamStatusItem: Identifiable, Equatable, Hashable, Codable {
+    var id: String = UUID().uuidString
+    var name: String
+    var progressPercent: Int
+    var statusString: String
+}
+
+struct ConversationContext: Identifiable, Equatable, Codable {
+    var id: String { conversationId }
+    var workspaceId: String = "work-workspace"
+    var accountId: UUID? = nil
+    var conversationId: String
+    var conversationTitle: String
+    var platformId: String = "platform"
+    var platformName: String = "Messaging Platform"
+    var isPreview: Bool = false
+
+    // Single source of truth message set
+    var messages: [PlatformMessagePreview] = []
+    var indexedMessageCount: Int { messages.count }
+    var latestMessageId: String? = nil
+    var lastIndexedMessageId: String? = nil
+    var lastAnalyzedAt: Date = Date()
+    var isStale: Bool = false
+
+    // Structured intelligence items strictly bound to this conversation
+    var summaryText: String = ""
+    var topics: [String] = []
+    var decisions: [ProjectDecisionItem] = []
+    var tasks: [ProjectTaskItem] = []
+    var deadlines: [UpcomingDeadlineItem] = []
+    var files: [SharedFileItem] = []
+    var links: [SharedLinkItem] = []
+    var contributors: [KeyContributorItem] = []
+    var timeline: [ConversationTimelineItem] = []
+    var recentChanges: [ConversationChangeItem] = []
+    var needsAttention: [NeedsAttentionItem] = []
+    var openQuestions: [String] = []
+    var statusInfo: ProjectStatusInfo = ProjectStatusInfo()
+
+    // Derived counts - NEVER maintained independently in UI
+    var taskCount: Int { tasks.count }
+    var completedTaskCount: Int { tasks.filter(\.isDone).count }
+    var deadlineCount: Int { deadlines.count }
+    var fileCount: Int { files.count }
+    var decisionCount: Int { decisions.count }
+    var topicCount: Int { topics.count }
+
+    // Calculated Task Progress (0..100)
+    var progressPercent: Int {
+        guard !tasks.isEmpty else { return 0 }
+        return (completedTaskCount * 100) / tasks.count
+    }
+}
+
 struct AIChatMessage: Identifiable, Equatable, Codable {
     var id: String
     var isUser: Bool
@@ -211,6 +452,9 @@ struct AIChatMessage: Identifiable, Equatable, Codable {
     var phoneNumbers: [AIChatPhoneNumberItem]? = nil
     var members: [AIChatMemberItem]? = nil
     var relatedPrompts: [String]? = nil
+    var source: AIResponseSource? = nil
+    var tasks: [AITaskItem]? = nil
+    var sourceMessageId: String? = nil
 }
 
 struct ActiveThreadContext: Hashable, Codable {
@@ -315,7 +559,10 @@ struct AppPreferences: Codable, Equatable {
     var chatGptAccountEmail: String = ""
     var geminiApiKey: String = ""
     var openAiApiKey: String = ""
-    var aiModelTier: String = "gemini-1.5-flash"
+    var aiModelTier: String = "gemini-3.5-flash"
+    var geminiModelTier: String = "gemini-3.5-flash"
+    var openAiModelTier: String = "gpt-4o-mini"
+    var ollamaModelTier: String = "llama3.2"
     var ollamaEndpoint: String = "http://localhost:11434"
     var ollamaModel: String = "llama3.2"
     var personaStyle: String = "direct"
@@ -333,7 +580,9 @@ struct AppPreferences: Codable, Equatable {
         case showWebsiteAlerts, appLockEnabled, autoLockMinutes, tabFreezingEnabled, tabFreezeMinutes
         case lockMethod, customPinHash, customPinSalt, customPinHint
         case aiEnabled, aiProvider, isGeminiLoggedIn, geminiAccountEmail, isChatGptLoggedIn, chatGptAccountEmail
-        case geminiApiKey, openAiApiKey, aiModelTier, ollamaEndpoint, ollamaModel, personaStyle
+        // API credentials deliberately stay out of Codable/UserDefaults. AppStore
+        // loads and persists them through KeychainHelper instead.
+        case aiModelTier, geminiModelTier, openAiModelTier, ollamaModelTier, ollamaEndpoint, ollamaModel, personaStyle
         case stealthModeDefault, defaultReplyTone, customAiPrompt
         case adBlockBlockAds, adBlockBlockTrackers, adBlockBlockCookieBanners
     }
@@ -364,11 +613,17 @@ struct AppPreferences: Codable, Equatable {
         geminiAccountEmail = try c.decodeIfPresent(String.self, forKey: .geminiAccountEmail) ?? ""
         isChatGptLoggedIn = try c.decodeIfPresent(Bool.self, forKey: .isChatGptLoggedIn) ?? false
         chatGptAccountEmail = try c.decodeIfPresent(String.self, forKey: .chatGptAccountEmail) ?? ""
-        geminiApiKey = try c.decodeIfPresent(String.self, forKey: .geminiApiKey) ?? ""
-        openAiApiKey = try c.decodeIfPresent(String.self, forKey: .openAiApiKey) ?? ""
-        aiModelTier = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-1.5-flash"
+        geminiApiKey = ""
+        openAiApiKey = ""
+        aiModelTier = try c.decodeIfPresent(String.self, forKey: .aiModelTier) ?? "gemini-3.5-flash"
+        let savedGeminiModel = try c.decodeIfPresent(String.self, forKey: .geminiModelTier)
+        geminiModelTier = savedGeminiModel == nil || savedGeminiModel?.hasPrefix("gemini-1.5") == true
+            ? "gemini-3.5-flash"
+            : savedGeminiModel!
+        openAiModelTier = try c.decodeIfPresent(String.self, forKey: .openAiModelTier) ?? (aiModelTier.contains("gpt") ? aiModelTier : "gpt-4o-mini")
+        ollamaModelTier = try c.decodeIfPresent(String.self, forKey: .ollamaModelTier) ?? (try c.decodeIfPresent(String.self, forKey: .ollamaModel) ?? "llama3.2")
         ollamaEndpoint = try c.decodeIfPresent(String.self, forKey: .ollamaEndpoint) ?? "http://localhost:11434"
-        ollamaModel = try c.decodeIfPresent(String.self, forKey: .ollamaModel) ?? "llama3.2"
+        ollamaModel = try c.decodeIfPresent(String.self, forKey: .ollamaModel) ?? ollamaModelTier
         personaStyle = try c.decodeIfPresent(String.self, forKey: .personaStyle) ?? "direct"
         stealthModeDefault = try c.decodeIfPresent(Bool.self, forKey: .stealthModeDefault) ?? true
         defaultReplyTone = try c.decodeIfPresent(String.self, forKey: .defaultReplyTone) ?? "Professional"
@@ -377,6 +632,7 @@ struct AppPreferences: Codable, Equatable {
         adBlockBlockTrackers = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockTrackers) ?? true
         adBlockBlockCookieBanners = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockCookieBanners) ?? true
     }
+
 }
 
 struct CopilotMessage: Identifiable, Hashable, Codable {
@@ -568,6 +824,8 @@ struct UserProfile: Codable, Equatable {
 enum KeychainHelper {
     static let serviceName = "app.pinggo.desktop"
     static let defaultAccount = "PINGGO App Lock"
+    static let geminiAPIAccount = "PINGGO Gemini API"
+    static let openAIAPIAccount = "PINGGO OpenAI API"
 
     @discardableResult
     static func savePassword(_ password: String, service: String = serviceName, account: String = defaultAccount) -> Bool {
@@ -578,7 +836,7 @@ enum KeychainHelper {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrLabel as String: "PINGGO App Lock Password",
+            kSecAttrLabel as String: account,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]

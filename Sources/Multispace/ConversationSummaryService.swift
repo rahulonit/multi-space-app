@@ -173,14 +173,15 @@ final class ConversationSummaryService {
             return nil
         }()
 
-        // 2. Classify Intent & Synthesize Meaningful Context
+        let isOutgoing = message.sender.lowercased() == "you"
+
         if lower.contains("meet") || lower.contains("meeting") || lower.contains("call") ||
            lower.contains("sync") || lower.contains("zoom") || lower.contains("calendar") ||
            lower.contains("schedule") || lower.contains("chat this week") {
             intent = "📅 Meeting Request"
             urgency = .medium
-            contextSummary = "\(message.sender) proposed an intro/sync call to connect."
-            actionItem = "Reply to \(message.sender) with your available times"
+            contextSummary = isOutgoing ? "You proposed an intro/sync call." : "\(message.sender) proposed an intro/sync call to connect."
+            actionItem = isOutgoing ? "Wait for recipient's available times" : "Reply to \(message.sender) with your available times"
             replies = [
                 "Sounds great! How does tomorrow at 2 PM work for you?",
                 "Could you send an agenda first?",
@@ -191,8 +192,8 @@ final class ConversationSummaryService {
                   lower.contains("deck") || lower.contains("slides") || lower.contains("document") {
             intent = "📝 Review & Feedback"
             urgency = .medium
-            contextSummary = "\(message.sender) shared materials requesting your review and feedback."
-            actionItem = "Review materials from \(message.sender) and send feedback"
+            contextSummary = isOutgoing ? "You shared materials for review." : "\(message.sender) shared materials requesting your review and feedback."
+            actionItem = isOutgoing ? "Follow up on feedback for shared materials" : "Review materials from \(message.sender) and send feedback"
             replies = [
                 "Taking a look now, will send my notes shortly.",
                 "Looks great to me, proceed with this draft!",
@@ -203,8 +204,8 @@ final class ConversationSummaryService {
                   lower.contains("today eod") {
             intent = "🚨 Urgent Request"
             urgency = .high
-            contextSummary = "\(message.sender) flagged an urgent inquiry requiring quick turnaround."
-            actionItem = "Respond urgently to \(message.sender)"
+            contextSummary = isOutgoing ? "You flagged an urgent item." : "\(message.sender) flagged an urgent inquiry requiring quick turnaround."
+            actionItem = isOutgoing ? "Track status of urgent item" : "Respond urgently to \(message.sender)"
             replies = [
                 "On it right now! Will update you in 15 minutes.",
                 "Looking into this immediately.",
@@ -657,38 +658,15 @@ final class ConversationSummaryService {
             headline = senderNames.isEmpty ? "No member information available" : "\(senderNames.count) visible conversation participant\(senderNames.count == 1 ? "" : "s")"
             executiveOverview = senderNames.isEmpty
                 ? "I couldn’t find member metadata in the available conversations."
-                : "Visible participants from accessible chat data: \(senderNames.joined(separator: ", ")). Contact details are shown only when explicitly available."
-        } else if isCpwdQuery {
-            let stateNames = ["Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "Rajasthan", "Madhya Pradesh", "West Bengal", "Punjab", "Haryana", "Telangana", "Kerala", "Bihar", "Odisha", "Assam"]
-            let foundStates = stateNames.filter { state in matchingItems.contains { $0.message.text.localizedCaseInsensitiveContains(state) } }
-            headline = foundStates.isEmpty ? "No CPWD state count found" : "\(foundStates.count) state\(foundStates.count == 1 ? "" : "s") mentioned with CPWD"
-            executiveOverview = foundStates.isEmpty
-                ? "I couldn’t find a state count for CPWD in the accessible messages."
-                : "States explicitly mentioned alongside CPWD: \(foundStates.joined(separator: ", "))."
+                : "Visible participants from accessible workspace data: \(senderNames.joined(separator: ", ")). Contact details are shown only when explicitly available."
         } else if isQuestionQuery && !tokens.isEmpty {
             headline = "Smart Answer for \"\(raw)\""
             if matchCount == 0 {
-                executiveOverview = "No crawled chats currently mention \"\(tokens.joined(separator: " / "))\". Ensure relevant chat tabs are open and synchronized."
+                executiveOverview = "No workspace chats currently mention \"\(tokens.joined(separator: " / "))\". Ensure relevant chat tabs are synchronized."
+            } else if !detectedQuestions.isEmpty {
+                executiveOverview = "Found \(matchCount) relevant chat\(matchCount == 1 ? "" : "s") on \(platformNames.joined(separator: ", ")). \(senderNames.prefix(2).joined(separator: " and ")) asked: \"\(detectedQuestions[0])\"."
             } else {
-                // Check if asking about states/regions or numbers
-                let indianStates = ["Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "Rajasthan", "Madhya Pradesh", "West Bengal", "Punjab", "Haryana", "Telangana", "Kerala", "Bihar", "Odisha", "Assam"]
-                var foundStates: [String] = []
-                for item in matchingItems {
-                    let t = item.message.text
-                    for state in indianStates {
-                        if t.localizedCaseInsensitiveContains(state) && !foundStates.contains(state) {
-                            foundStates.append(state)
-                        }
-                    }
-                }
-
-                if !foundStates.isEmpty {
-                    executiveOverview = "Found \(matchCount) conversation\(matchCount == 1 ? "" : "s") discussing \"\(tokens.joined(separator: " / "))\" across \(platformNames.joined(separator: ", ")). Identified \(foundStates.count) state\(foundStates.count == 1 ? "" : "s") mentioned: \(foundStates.joined(separator: ", "))."
-                } else if !detectedQuestions.isEmpty {
-                    executiveOverview = "Found \(matchCount) relevant chat\(matchCount == 1 ? "" : "s") on \(platformNames.joined(separator: ", ")). \(senderNames.prefix(2).joined(separator: " and ")) asked: \"\(detectedQuestions[0])\"."
-                } else {
-                    executiveOverview = "Found \(matchCount) chat mention\(matchCount == 1 ? "" : "s") of \"\(tokens.joined(separator: " / "))\" across \(platformNames.joined(separator: ", ")) involving \(senderNames.prefix(3).joined(separator: ", ")). Review the thread context below."
-                }
+                executiveOverview = "Found \(matchCount) chat mention\(matchCount == 1 ? "" : "s") of \"\(tokens.joined(separator: " / "))\" across \(platformNames.joined(separator: ", ")) involving \(senderNames.prefix(3).joined(separator: ", ")). Review the thread context below."
             }
         } else {
             // General keyword
@@ -916,38 +894,43 @@ final class ConversationSummaryService {
         threadMessages: [PlatformMessagePreview],
         allMessages: [UnifiedMessageItem]
     ) -> AIChatMessage {
-        let text = """
-        🏢 **CPWD Adoption Analysis in This Group**:
+        let allMsgs = (threadMessages.isEmpty ? [currentConversation.message] : threadMessages)
+        let matches = allMsgs.filter { $0.text.localizedCaseInsensitiveContains("cpwd") }
 
-        Based on chat messages and shared circulars in this group, **3 states** are confirmed to be using CPWD guidelines and schedule of rates:
-
-        1. **Maharashtra** (2 mentions): PWD circular officially adopted CPWD specifications for state commercial and infrastructure projects (noted by Rahul Sharma).
-        2. **Delhi** (2 mentions): CPWD Delhi zone coordination updates and standard tender notices actively referenced.
-        3. **Gujarat** (1 mention): Road & Building division aligned quality benchmarks with CPWD norms (cited by Vikram Malhotra).
-
-        ℹ️ *Note: Karnataka and Tamil Nadu state agencies were also discussed as reviewing draft tenders aligned with CPWD standards.*
-        """
-
-        return AIChatMessage(
-            id: UUID().uuidString,
-            isUser: false,
-            text: text,
-            timestamp: Date(),
-            actionItems: [
-                "Follow up with Rahul regarding Maharashtra PWD circular",
-                "Review Gujarat CPWD alignment guidelines"
-            ],
-            phoneNumbers: [
-                AIChatPhoneNumberItem(name: "Rahul Sharma (Maharashtra PWD Lead)", number: "+91 98201 44552", context: "CPWD Circular Coordinator"),
-                AIChatPhoneNumberItem(name: "Vikram Malhotra (Gujarat Division)", number: "+91 98450 33211", context: "CPWD Norms Reference")
-            ],
-            members: nil,
-            relatedPrompts: [
-                "⚡ What is to-do for me today?",
-                "👥 List all members in this group",
-                "📞 Find phone numbers for all users"
-            ]
-        )
+        if matches.isEmpty {
+            return AIChatMessage(
+                id: UUID().uuidString,
+                isUser: false,
+                text: "🏢 I searched active conversation history for **\(currentConversation.message.sender)**, but **could not find any CPWD-related information or guidelines** in the available chat history.",
+                timestamp: Date(),
+                actionItems: nil,
+                phoneNumbers: nil,
+                members: nil,
+                relatedPrompts: [
+                    "👥 List all members in this group",
+                    "⚡ What is to-do for me today?",
+                    "📞 Find phone numbers for all users"
+                ]
+            )
+        } else {
+            var body = "🏢 **CPWD References in This Chat (\(matches.count))**:\n\n"
+            for m in matches.prefix(5) {
+                body += "• **\(m.sender)**: \"\(m.text)\"\n"
+            }
+            return AIChatMessage(
+                id: UUID().uuidString,
+                isUser: false,
+                text: body,
+                timestamp: Date(),
+                actionItems: nil,
+                phoneNumbers: nil,
+                members: nil,
+                relatedPrompts: [
+                    "👥 List all members in this group",
+                    "⚡ What is to-do for me today?"
+                ]
+            )
+        }
     }
 
     private func answerListMembersQuery(
@@ -966,6 +949,7 @@ final class ConversationSummaryService {
         // Strict Gepnic check: ONLY if this chat or query is explicitly Gepnic
         let isGepnic = rawSender.localizedCaseInsensitiveContains("gepnic") ||
                        activeName.localizedCaseInsensitiveContains("gepnic") ||
+                       accountName.localizedCaseInsensitiveContains("gepnic") ||
                        query.localizedCaseInsensitiveContains("gepnic")
 
         let groupName: String = {
@@ -1055,74 +1039,39 @@ final class ConversationSummaryService {
             )
         }
 
-        // 5. Add team contributors ONLY for Gepnic
-        if isGepnic {
-            let defaultTeam: [(name: String, role: String, activity: String, count: Int, phone: String)] = [
-                ("Rahul Sharma", "Engineering Lead", "Active 15m ago", 14, "+91 98201 44552"),
-                ("Priya Patel", "Product Manager", "Active 1h ago", 11, "+91 97112 88990"),
-                ("Vikram Malhotra", "Operations Lead", "Active 2h ago", 9, "+91 98450 33211"),
-                ("Anita Desai", "Finance Lead", "Active yesterday", 7, "+91 99300 77441"),
-                ("Rajesh Kumar", "Senior Site Engineer", "Active 3h ago", 6, "+91 98722 11980"),
-                ("Suresh Nair", "Quality & Compliance", "Active today", 5, "+91 98334 66712"),
-                ("Amit Verma", "Technical Coordinator", "Active 4h ago", 4, "+91 98110 55423"),
-                ("Neha Gupta", "Tenders & Circulars Lead", "Active 5h ago", 3, "+91 98670 99124"),
-                ("Sanjay Joshi", "CPWD Liaison", "Active yesterday", 3, "+91 98229 44105"),
-                ("Deepa Iyer", "Field Operations", "Active yesterday", 2, "+91 98401 77332"),
-                ("Rohit Saxena", "Site Inspector", "Active 2d ago", 2, "+91 98511 88290"),
-                ("Manoj Tiwari", "Infrastructure Team", "Active 2d ago", 1, "+91 98920 33118")
-            ]
-
-            for team in defaultTeam {
-                if memberDict[team.name] == nil && memberDict.count < 12 {
-                    memberDict[team.name] = AIChatMemberItem(
-                        name: team.name,
-                        role: team.role,
-                        activity: team.activity,
-                        messageCount: team.count,
-                        phoneNumber: team.phone
-                    )
-                } else if var existing = memberDict[team.name], existing.phoneNumber == nil {
-                    existing.phoneNumber = team.phone
-                    memberDict[team.name] = existing
-                }
-            }
-        }
-
         let members = Array(memberDict.values).sorted { $0.messageCount > $1.messageCount }
-        let totalCount = isGepnic ? max(detectedCount, 65) : (detectedCount > 0 ? detectedCount : max(members.count + 1, 2))
+        let totalCount = detectedCount > 0 ? detectedCount : max(members.count, 1)
         let queryLower = query.lowercased()
         let isCountQuestion = queryLower.contains("how many") || queryLower.contains("count") || queryLower.contains("number of")
         let wantsPhoneNumbers = queryLower.contains("phone") || queryLower.contains("number") || queryLower.contains("contact") || queryLower.contains("mobile") || queryLower.contains("call")
 
         var text = ""
         if isCountQuestion {
-            text = "👥 There are **\(totalCount) members** in **\(effectiveGroupName)** (including you):\n\n"
+            text = "👥 There are **\(totalCount) participants** in **\(effectiveGroupName)**:\n\n"
         } else if wantsPhoneNumbers {
-            text = "👥 **\(effectiveGroupName) — Member & Phone Directory (\(totalCount) Total Members)**:\n\n"
+            text = "👥 **\(effectiveGroupName) — Contact Information**:\n\n"
         } else {
-            text = "👥 **\(effectiveGroupName) — Member Directory (\(totalCount) Total Members)**:\n\n"
+            text = "👥 **\(effectiveGroupName) — Participants Directory**:\n\n"
         }
 
-        let displayLimit = min(members.count, 12)
-        for m in members.prefix(displayLimit) {
-            let phoneStr = (wantsPhoneNumbers && (m.phoneNumber != nil)) ? " · `\(m.phoneNumber!)`" : ""
-            text += "• **\(m.name)** — *\(m.role)*\(phoneStr) · \(m.activity) (\(m.messageCount) message\(m.messageCount == 1 ? "" : "s"))\n"
-        }
-        text += "• **You** — *Administrator / Active User*\(wantsPhoneNumbers ? " · `+91 98000 11223`" : "")\n"
-
-        if totalCount > (displayLimit + 1) {
-            let remaining = totalCount - (displayLimit + 1)
-            text += "\n*(+ \(remaining) other group members crawled from \(effectiveGroupName) team roster — \(totalCount) total members)*\n"
+        if members.isEmpty {
+            text += "• **Current Workspace Participant** — *Active in chat*\n"
+        } else {
+            let displayLimit = min(members.count, 12)
+            for m in members.prefix(displayLimit) {
+                let phoneStr = (wantsPhoneNumbers && (m.phoneNumber != nil)) ? " · `\(m.phoneNumber!)`" : ""
+                text += "• **\(m.name)** — *\(m.role)*\(phoneStr) · \(m.activity) (\(m.messageCount) message\(m.messageCount == 1 ? "" : "s"))\n"
+            }
         }
 
         if wantsPhoneNumbers {
-            text += "\n📋 *You can click the Copy button next to any contact below to copy their direct phone number.*"
-        } else {
-            let tipName = members.first?.name ?? effectiveGroupName
-            text += "\n💡 *You can ask me: \"find phone numbers for all users\", \"what is \(tipName) saying regarding...\", or \"what is to-do for me today?\".*"
+            let hasPhones = members.contains { $0.phoneNumber != nil }
+            if !hasPhones {
+                text += "\nℹ️ *No direct phone numbers were shared in this workspace conversation history.*"
+            }
         }
 
-        let phoneItems: [AIChatPhoneNumberItem]? = wantsPhoneNumbers ? members.prefix(displayLimit).compactMap { m in
+        let phoneItems: [AIChatPhoneNumberItem]? = wantsPhoneNumbers ? members.compactMap { m in
             guard let phone = m.phoneNumber, !phone.isEmpty else { return nil }
             return AIChatPhoneNumberItem(
                 name: m.name,
@@ -1140,9 +1089,9 @@ final class ConversationSummaryService {
             phoneNumbers: phoneItems,
             members: members,
             relatedPrompts: [
-                "📞 Find phone numbers for all users",
-                "⚡ What is to-do for me today?",
-                "🏢 How many states are using CPWD?"
+                "What is to-do for me today?",
+                "What decisions were made?",
+                "Show upcoming deadlines"
             ]
         )
     }
@@ -1156,7 +1105,7 @@ final class ConversationSummaryService {
         var phoneList: [AIChatPhoneNumberItem] = []
         var seen = Set<String>()
 
-        // 1. Extract phone numbers from deep crawled thread messages
+        // Extract phone numbers strictly from grounded messages
         let phoneRegex = try? NSRegularExpression(pattern: #"(\+?\d{1,3}[\s-]?)?\(?\d{3,5}\)?[\s-]?\d{3,5}[\s-]?\d{3,5}"#, options: [])
         for msg in threadMessages {
             let range = NSRange(msg.text.startIndex..., in: msg.text)
@@ -1167,7 +1116,7 @@ final class ConversationSummaryService {
                         let digitsOnly = candidate.filter { $0.isNumber }
                         if digitsOnly.count >= 10 && !seen.contains(candidate) {
                             seen.insert(candidate)
-                            let senderName = msg.sender.isEmpty || msg.sender.lowercased() == "you" ? "Group Contact" : msg.sender
+                            let senderName = msg.sender.isEmpty || msg.sender.lowercased() == "you" ? "Workspace Participant" : msg.sender
                             phoneList.append(AIChatPhoneNumberItem(
                                 name: senderName,
                                 number: candidate,
@@ -1179,76 +1128,14 @@ final class ConversationSummaryService {
             }
         }
 
-        // 2. Extract from crawled group members whose name is a phone number (e.g. WhatsApp non-saved contacts)
-        if let groupMembers = activeContext?.groupMembers {
-            for gm in groupMembers {
-                let digits = gm.name.filter { $0.isNumber }
-                if digits.count >= 10 && (gm.name.contains("+") || digits.count == 10) && !seen.contains(gm.name) {
-                    seen.insert(gm.name)
-                    phoneList.append(AIChatPhoneNumberItem(
-                        name: gm.name,
-                        number: gm.name,
-                        context: "\(gm.role) · \(gm.activity)"
-                    ))
-                }
-            }
-        }
-
-        // 3. Known directory contacts - All 12 Active Contributors ONLY for Gepnic
-        let isGepnic = currentConversation.message.sender.localizedCaseInsensitiveContains("gepnic") ||
-                       (activeContext?.contactName ?? "").localizedCaseInsensitiveContains("gepnic")
-        if isGepnic {
-            let contactDirectory: [(name: String, number: String, context: String)] = [
-                ("Rahul Sharma", "+91 98201 44552", "Engineering Lead · Call for urgent CPWD sync"),
-                ("Priya Patel", "+91 97112 88990", "Product Manager · Available on WhatsApp & Call"),
-                ("Vikram Malhotra", "+91 98450 33211", "Operations Lead · Field & Sites Coordinator"),
-                ("Anita Desai", "+91 99300 77441", "Finance & Accounts Lead · Budget Authorizations"),
-                ("Rajesh Kumar", "+91 98722 11980", "Senior Site Engineer · Civil & On-Site Inspection"),
-                ("Suresh Nair", "+91 98334 66712", "Quality & Compliance · Quality Assurance & CPWD Standards"),
-                ("Amit Verma", "+91 98110 55423", "Technical Coordinator · Technical Documentation & CAD"),
-                ("Neha Gupta", "+91 98670 99124", "Tenders & Circulars Lead · State Tenders & Circular Review"),
-                ("Sanjay Joshi", "+91 98229 44105", "CPWD Liaison · Govt. Liaison & Standards Verification"),
-                ("Deepa Iyer", "+91 98401 77332", "Field Operations · Regional Field Logistics"),
-                ("Rohit Saxena", "+91 98511 88290", "Site Inspector · Safety & Quality Auditing"),
-                ("Manoj Tiwari", "+91 98920 33118", "Infrastructure Team · Heavy Equipment & Site Coordination"),
-                (currentConversation.message.sender, "+91 98190 22345", "Direct Mobile (Synchronized from Account)")
-            ]
-
-            for contact in contactDirectory {
-                if !seen.contains(contact.number) && phoneList.count < 20 {
-                    seen.insert(contact.number)
-                    phoneList.append(AIChatPhoneNumberItem(
-                        name: contact.name,
-                        number: contact.number,
-                        context: contact.context
-                    ))
-                }
-            }
+        var text = ""
+        if phoneList.isEmpty {
+            text = "📞 **No Phone Numbers Detected**\n\nI scanned the accessible messages in **\(currentConversation.message.sender)**, but no phone numbers were shared in this conversation."
         } else {
-            // For other groups or personal chats, provide the contact if available or phone from crawl
-            if phoneList.isEmpty && !currentConversation.message.sender.isEmpty && currentConversation.message.sender.lowercased() != "you" {
-                phoneList.append(AIChatPhoneNumberItem(
-                    name: currentConversation.message.sender,
-                    number: "+91 98190 22345",
-                    context: "Direct Contact (Synchronized from Account)"
-                ))
+            text = "📞 **Detected Phone Numbers in \(currentConversation.message.sender)**:\n\n"
+            for p in phoneList {
+                text += "• **\(p.name)**: `\(p.number)` — *\(p.context)*\n"
             }
-        }
-
-        var text = "📞 **Identified Contact Numbers For Users in This Group**:\n\n"
-        for p in phoneList {
-            text += "• **\(p.name)**: `\(p.number)`\n  ↳ *\(p.context)*\n"
-        }
-        text += "\n📋 *You can click the Copy button next to any number to copy it to your clipboard.*"
-
-        let memberItems: [AIChatMemberItem] = phoneList.map { p in
-            AIChatMemberItem(
-                name: p.name,
-                role: p.context.components(separatedBy: "·").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Participant",
-                activity: p.context.components(separatedBy: "·").dropFirst().first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Active in group",
-                messageCount: 5,
-                phoneNumber: p.number
-            )
         }
 
         return AIChatMessage(
@@ -1256,13 +1143,11 @@ final class ConversationSummaryService {
             isUser: false,
             text: text,
             timestamp: Date(),
-            actionItems: nil,
-            phoneNumbers: phoneList,
-            members: memberItems,
+            phoneNumbers: phoneList.isEmpty ? nil : phoneList,
             relatedPrompts: [
-                "👥 List all members in this group",
-                "⚡ What is to-do for me today?",
-                "🏢 How many states are using CPWD?"
+                "What is to-do for me today?",
+                "What decisions were made?",
+                "Show upcoming deadlines"
             ]
         )
     }
@@ -1279,18 +1164,13 @@ final class ConversationSummaryService {
         let speakerTrigger = lower.contains("saying") || lower.contains("said") || lower.contains("think") || lower.contains("told") || lower.contains("mention")
         guard speakerTrigger else { return nil }
 
-        // Find candidate sender
-        let candidateSenders = [
-            currentConversation.message.sender,
-            "Rahul", "Rahul Sharma",
-            "Priya", "Priya Patel",
-            "Vikram", "Vikram Malhotra",
-            "Anita", "Anita Desai",
-            "Alex", "David", "Sarah"
-        ]
+        // Find candidate sender dynamically from thread & conversation messages
+        var candidateSenders = Set(threadMessages.map(\.sender))
+        candidateSenders.insert(currentConversation.message.sender)
+        for msg in allMessages { candidateSenders.insert(msg.message.sender) }
 
         var targetSpeaker: String? = nil
-        for s in candidateSenders {
+        for s in candidateSenders where !s.isEmpty && s.lowercased() != "you" {
             if lower.contains(s.lowercased()) {
                 targetSpeaker = s
                 break

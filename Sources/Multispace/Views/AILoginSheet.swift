@@ -1,160 +1,189 @@
 import SwiftUI
-import WebKit
 
 struct AILoginProviderItem: Identifiable {
     let id: String
 }
 
+/// A single, honest connection flow for hosted AI providers. Consumer website
+/// cookies are intentionally not treated as API credentials.
 struct AILoginWebSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AppStore
     let provider: String // "gemini" or "chatgpt"
 
-    @State private var pageTitle: String = "Connecting..."
-    @State private var currentURLString: String = ""
-    @State private var isConnected = false
+    @State private var credential = ""
+    @State private var isShowingCredential = false
+    @State private var isTesting = false
+    @State private var result: (success: Bool, message: String)?
 
-    private var targetURL: URL {
-        provider == "gemini" ? AIService.geminiURL : AIService.chatGptURL
+    private var isGemini: Bool { provider == "gemini" }
+    private var providerName: String { isGemini ? "Google Gemini" : "OpenAI" }
+    private var credentialName: String { isGemini ? "Gemini API key" : "OpenAI API key" }
+    private var placeholder: String { isGemini ? "Paste Gemini API key" : "sk-proj-…" }
+    private var model: String {
+        isGemini ? store.preferences.geminiModelTier : store.preferences.openAiModelTier
     }
-
-    private var providerName: String {
-        provider == "gemini" ? "Google Gemini" : "OpenAI ChatGPT"
-    }
-
     private var providerColor: Color {
-        provider == "gemini" ? Color(red: 0.26, green: 0.52, blue: 0.96) : Color(red: 0.06, green: 0.65, blue: 0.53)
+        isGemini ? Color(red: 0.26, green: 0.52, blue: 0.96) : Color(red: 0.06, green: 0.65, blue: 0.53)
+    }
+    private var isCurrentlyConnected: Bool {
+        isGemini
+            ? (!store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn)
+            : (!store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header bar
+        VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(providerColor.opacity(0.14)).frame(width: 32, height: 32)
+                    Circle().fill(providerColor.opacity(0.14)).frame(width: 42, height: 42)
                     Image(systemName: "sparkles")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(providerColor)
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("Connect \(providerName)")
-                            .font(.system(size: 14, weight: .bold))
-                        if isConnected {
-                            HStack(spacing: 3) {
-                                Circle().fill(Color.green).frame(width: 6, height: 6)
-                                Text("Active Session")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(.green)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.12), in: Capsule())
-                        }
-                    }
-                    Text("Log in with your personal account. Cookies are isolated to PINGGO's secure partition.")
-                        .font(.system(size: 11))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Connect \(providerName)")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Validate once, then store the credential in macOS Keychain.")
+                        .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                 }
-
                 Spacer()
+                if isCurrentlyConnected {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.green)
+                }
+            }
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How to connect")
+                    .font(.system(size: 13, weight: .bold))
+                instructionRow(number: 1, text: isGemini
+                    ? "Open Google AI Studio and sign in with your Google account."
+                    : "Open the OpenAI Platform API keys page. This is separate from ChatGPT settings.")
+                instructionRow(number: 2, text: isGemini
+                    ? "Select Create API key, choose or create a project, then copy the key."
+                    : "Create a project API key and copy it. Add API billing or credits if your project requires them.")
+                instructionRow(number: 3, text: "Paste the key below and select Validate & Connect.")
+
+                Link(destination: isGemini
+                    ? URL(string: "https://aistudio.google.com/app/apikey")!
+                    : URL(string: "https://platform.openai.com/api-keys")!) {
+                    Label(isGemini ? "Open Google AI Studio" : "Open OpenAI API Keys", systemImage: "arrow.up.right.square")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .padding(14)
+            .background(providerColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(credentialName)
+                    .font(.system(size: 13, weight: .semibold))
+                HStack {
+                    Group {
+                        if isShowingCredential {
+                            TextField(placeholder, text: $credential)
+                        } else {
+                            SecureField(placeholder, text: $credential)
+                        }
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+
+                    Button {
+                        isShowingCredential.toggle()
+                    } label: {
+                        Image(systemName: isShowingCredential ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Text("Model: \(model). Website subscriptions and browser cookies cannot authorize API requests.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(16)
+            .background(Palette.card.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
+
+            if let result {
+                Label(result.message, systemImage: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(result.success ? .green : .red)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background((result.success ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            HStack {
+                if isCurrentlyConnected {
+                    Button("Disconnect", role: .destructive) {
+                        Task {
+                            await AIService.shared.signOut(provider: provider, store: store)
+                            credential = ""
+                            result = nil
+                        }
+                    }
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.bordered)
                 Button {
-                    if provider == "gemini" {
-                        store.preferences.isGeminiLoggedIn = true
-                    } else {
-                        store.preferences.isChatGptLoggedIn = true
-                    }
-                    store.showToast("\(providerName) connected successfully!")
-                    dismiss()
+                    connect()
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Done / Connected")
+                    if isTesting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Validate & Connect")
                     }
-                    .font(.system(size: 11, weight: .semibold))
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(providerColor)
-                .controlSize(.small)
-
-                Button("Close") {
-                    dismiss()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .disabled(credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTesting)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Palette.panel)
+        }
+        .padding(24)
+        .frame(width: 560)
+        .onAppear {
+            credential = isGemini ? store.preferences.geminiApiKey : store.preferences.openAiApiKey
+        }
+    }
 
-            Divider()
-
-            // WebKit View
-            AIWebLoginView(
-                url: targetURL,
-                dataStore: provider == "gemini" ? AIService.shared.geminiDataStore : AIService.shared.chatGptDataStore,
-                onTitleChange: { title in pageTitle = title },
-                onURLChange: { url in
-                    currentURLString = url.absoluteString
-                    if provider == "gemini" && url.host?.contains("gemini.google.com") == true && !url.path.contains("signin") {
-                        isConnected = true
-                        store.preferences.isGeminiLoggedIn = true
-                    } else if provider == "chatgpt" && url.host?.contains("chatgpt.com") == true && !url.path.contains("auth") {
-                        isConnected = true
-                        store.preferences.isChatGptLoggedIn = true
-                    }
+    private func connect() {
+        let clean = credential.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        isTesting = true
+        result = nil
+        Task {
+            let test = await AIService.shared.testAPIConnection(provider: provider, apiKey: clean, model: model)
+            await MainActor.run {
+                isTesting = false
+                result = test
+                guard test.success else { return }
+                if isGemini {
+                    store.preferences.geminiApiKey = clean
+                    store.preferences.isGeminiLoggedIn = true
+                } else {
+                    store.preferences.openAiApiKey = clean
+                    store.preferences.isChatGptLoggedIn = true
                 }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(width: 900, height: 660)
-    }
-}
-
-struct AIWebLoginView: NSViewRepresentable {
-    let url: URL
-    let dataStore: WKWebsiteDataStore
-    let onTitleChange: (String) -> Void
-    let onURLChange: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = dataStore
-        config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 660), configuration: config)
-        webView.navigationDelegate = context.coordinator
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
-        webView.load(URLRequest(url: url))
-        return webView
-    }
-
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
-
-    class Coordinator: NSObject, WKNavigationDelegate {
-        let parent: AIWebLoginView
-
-        init(_ parent: AIWebLoginView) {
-            self.parent = parent
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            if let title = webView.title { parent.onTitleChange(title) }
-            if let current = webView.url { parent.onURLChange(current) }
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-            if let targetURL = navigationAction.request.url {
-                parent.onURLChange(targetURL)
+                store.preferences.aiProvider = provider
+                store.showToast("\(providerName) connected securely")
+                dismiss()
             }
-            decisionHandler(.allow)
+        }
+    }
+
+    private func instructionRow(number: Int, text: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Text("\(number)")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(providerColor, in: Circle())
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

@@ -57,6 +57,7 @@ namespace PINGGO.ViewModels
         public ObservableCollection<PlatformAccount> Accounts { get; } = new();
         private readonly Dictionary<string, Guid> _selectedAccountIds = new();
         public Dictionary<Guid, ActiveThreadContext> AccountThreadContexts { get; } = new();
+        public Dictionary<string, ActiveThreadContext> AccountThreadContextsByContact { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<Guid, PlatformActivitySnapshot> PlatformActivity { get; } = new();
         public event Action? OnInboxDataChanged;
 
@@ -94,6 +95,11 @@ namespace PINGGO.ViewModels
             PortalSessionManager.Shared.OnActiveThreadUpdated += (accountId, ctx) =>
             {
                 AccountThreadContexts[accountId] = ctx;
+                if (!string.IsNullOrWhiteSpace(ctx.ContactName))
+                {
+                    var key = $"{accountId}_{ctx.ContactName.Trim().ToLowerInvariant()}";
+                    AccountThreadContextsByContact[key] = ctx;
+                }
                 if (ActiveAccountId == accountId)
                 {
                     App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
@@ -317,26 +323,26 @@ namespace PINGGO.ViewModels
             switch (platform.Id.ToLowerInvariant())
             {
                 case "whatsapp":
-                    items.Add(CreateSampleItem(account, platform, "Vikram Mehta", "Are you available for a quick sync today at 3 PM to review the deliverables?", "10:45 AM", true, "Meeting"));
-                    items.Add(CreateSampleItem(account, platform, "Anita Roy", "Thanks for sharing the updated schedule. Looks solid!", "Yesterday", false, "Normal"));
+                    items.Add(CreateSampleItem(account, platform, "Project Lead", "Deployment plan updated for Project Alpha. Review meeting scheduled for tomorrow.", "10:45 AM", true, "Meeting"));
+                    items.Add(CreateSampleItem(account, platform, "Design Team", "New file shared: UI_Updates.fig. Ready for team review.", "Yesterday", false, "Normal"));
                     break;
                 case "linkedin":
-                    items.Add(CreateSampleItem(account, platform, "Rahul Sharma", "We are reviewing the CPWD guidelines across Maharashtra, Delhi and Gujarat state projects. Can you share the latest compliance sheet?", "11:15 AM", true, "Question"));
-                    items.Add(CreateSampleItem(account, platform, "Pooja Verma", "Loved your recent post on enterprise multi-space architecture!", "2d ago", false, "Normal"));
+                    items.Add(CreateSampleItem(account, platform, "Operations Team", "Timeline needs confirmation before staging deployment. Can you share the latest compliance sheet?", "11:15 AM", true, "Question"));
+                    items.Add(CreateSampleItem(account, platform, "Client Project", "Review requested for the updated milestone deliverables.", "2d ago", false, "Normal"));
                     break;
                 case "instagram":
-                    items.Add(CreateSampleItem(account, platform, "Sneha Kapoor", "Love the new UI design! Could you share the deck with the marketing team?", "1:20 PM", true, "Question"));
+                    items.Add(CreateSampleItem(account, platform, "Product Team", "New action items added for the upcoming release cycle.", "1:20 PM", true, "Question"));
                     break;
                 case "telegram":
-                    items.Add(CreateSampleItem(account, platform, "Alex Chen", "Urgent: The staging server build failed. Please check the deployment log ASAP.", "9:30 AM", true, "Urgent"));
-                    items.Add(CreateSampleItem(account, platform, "DevOps Bot", "Production cluster health: 100% operational.", "8:00 AM", false, "Normal"));
+                    items.Add(CreateSampleItem(account, platform, "Review Team", "Project Alpha staging build ready. Please verify the deployment log.", "9:30 AM", true, "Urgent"));
+                    items.Add(CreateSampleItem(account, platform, "Operations Team", "Workspace system status: 100% operational.", "8:00 AM", false, "Normal"));
                     break;
                 case "x":
                 case "twitter":
-                    items.Add(CreateSampleItem(account, platform, "Tech Insider", "What is to do for me today regarding the product launch announcements?", "9:50 AM", true, "Question"));
+                    items.Add(CreateSampleItem(account, platform, "Project Workspace", "What is to do for me today regarding the product launch announcements?", "9:50 AM", true, "Question"));
                     break;
                 default:
-                    items.Add(CreateSampleItem(account, platform, "Support Team", "Welcome to PINGGO consolidated multi-space inbox!", "Just now", false, "Normal"));
+                    items.Add(CreateSampleItem(account, platform, "Support Team", "Welcome to PINGGO consolidated workspace intelligence inbox!", "Just now", false, "Normal"));
                     break;
             }
             return items;
@@ -366,6 +372,45 @@ namespace PINGGO.ViewModels
                 DetectedQuestion = analysis.DetectedQuestion,
                 SuggestedReplies = analysis.SuggestedReplies
             };
+        }
+
+        public ActiveThreadContext? GetActiveThreadContext(Guid accountId, string? contactName = null)
+        {
+            if (string.IsNullOrWhiteSpace(contactName))
+            {
+                return AccountThreadContexts.TryGetValue(accountId, out var ctx) ? ctx : null;
+            }
+            var clean = contactName.Trim().ToLowerInvariant();
+            var key = $"{accountId}_{clean}";
+            if (AccountThreadContextsByContact.TryGetValue(key, out var found))
+            {
+                return found;
+            }
+            foreach (var kvp in AccountThreadContextsByContact)
+            {
+                if (kvp.Key.StartsWith($"{accountId}_", StringComparison.OrdinalIgnoreCase))
+                {
+                    var ctx = kvp.Value;
+                    var storedClean = ctx.ContactName.Trim().ToLowerInvariant();
+                    if (storedClean == clean || storedClean.Contains(clean) || clean.Contains(storedClean))
+                        return ctx;
+                    if (ctx.Messages.Any(m => m.Sender.Equals(clean, StringComparison.OrdinalIgnoreCase)))
+                        return ctx;
+                    if (ctx.GroupMembers != null && ctx.GroupMembers.Any(m => m.Name.Equals(clean, StringComparison.OrdinalIgnoreCase)))
+                        return ctx;
+                }
+            }
+            if (AccountThreadContexts.TryGetValue(accountId, out var current))
+            {
+                var activeClean = current.ContactName.Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(clean) || activeClean == clean || activeClean.Contains(clean) || clean.Contains(activeClean))
+                    return current;
+                if (current.Messages.Any(m => m.Sender.Equals(clean, StringComparison.OrdinalIgnoreCase)))
+                    return current;
+                if (current.GroupMembers != null && current.GroupMembers.Any(m => m.Name.Equals(clean, StringComparison.OrdinalIgnoreCase)))
+                    return current;
+            }
+            return null;
         }
     }
 }

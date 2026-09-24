@@ -72,13 +72,24 @@ namespace PINGGO.Models
         public string ChatGptAccountEmail { get; set; } = string.Empty;
 
         [JsonPropertyName("geminiApiKey")]
+        [JsonIgnore]
         public string GeminiApiKey { get; set; } = string.Empty;
 
         [JsonPropertyName("openAiApiKey")]
+        [JsonIgnore]
         public string OpenAiApiKey { get; set; } = string.Empty;
 
         [JsonPropertyName("aiModelTier")]
-        public string AiModelTier { get; set; } = "gemini-1.5-flash";
+        public string AiModelTier { get; set; } = "gemini-3.5-flash";
+
+        [JsonPropertyName("geminiModelTier")]
+        public string GeminiModelTier { get; set; } = "gemini-3.5-flash";
+
+        [JsonPropertyName("openAiModelTier")]
+        public string OpenAiModelTier { get; set; } = "gpt-4o-mini";
+
+        [JsonPropertyName("ollamaModelTier")]
+        public string OllamaModelTier { get; set; } = "llama3.2";
 
         [JsonPropertyName("ollamaEndpoint")]
         public string OllamaEndpoint { get; set; } = "http://localhost:11434";

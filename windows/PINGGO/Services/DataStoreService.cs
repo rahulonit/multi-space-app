@@ -60,6 +60,20 @@ namespace PINGGO.Services
                     var data = JsonSerializer.Deserialize<AppData>(json);
                     if (data != null)
                     {
+                        string legacyGeminiKey = string.Empty;
+                        string legacyOpenAiKey = string.Empty;
+                        try
+                        {
+                            using var legacyDocument = JsonDocument.Parse(json);
+                            if (legacyDocument.RootElement.TryGetProperty("preferences", out var preferences))
+                            {
+                                if (preferences.TryGetProperty("geminiApiKey", out var geminiKey)) legacyGeminiKey = geminiKey.GetString() ?? string.Empty;
+                                if (preferences.TryGetProperty("openAiApiKey", out var openAiKey)) legacyOpenAiKey = openAiKey.GetString() ?? string.Empty;
+                            }
+                        }
+                        catch { }
+
+                        HydrateAICredentials(data, legacyGeminiKey, legacyOpenAiKey);
                         EnsureDefaultPlatforms(data);
                         EnsurePrimaryAccounts(data);
                         SaveData(data);
@@ -105,6 +119,7 @@ namespace PINGGO.Services
             }
 
             EnsurePrimaryAccounts(defaultData);
+            HydrateAICredentials(defaultData, string.Empty, string.Empty);
             SaveData(defaultData);
             return defaultData;
         }
@@ -172,6 +187,26 @@ namespace PINGGO.Services
         public void Save()
         {
             SaveData(CurrentData);
+        }
+
+        private static void HydrateAICredentials(AppData data, string legacyGeminiKey, string legacyOpenAiKey)
+        {
+            var geminiKey = AICredentialStore.Load("gemini");
+            var openAiKey = AICredentialStore.Load("openai");
+
+            if (string.IsNullOrWhiteSpace(geminiKey) && !string.IsNullOrWhiteSpace(legacyGeminiKey))
+            {
+                AICredentialStore.Save("gemini", legacyGeminiKey);
+                geminiKey = legacyGeminiKey;
+            }
+            if (string.IsNullOrWhiteSpace(openAiKey) && !string.IsNullOrWhiteSpace(legacyOpenAiKey))
+            {
+                AICredentialStore.Save("openai", legacyOpenAiKey);
+                openAiKey = legacyOpenAiKey;
+            }
+
+            data.Preferences.GeminiApiKey = geminiKey;
+            data.Preferences.OpenAiApiKey = openAiKey;
         }
 
         private void SaveData(AppData data)

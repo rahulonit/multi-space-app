@@ -108,7 +108,7 @@ struct ContentView: View {
             } else {
                 switch store.destination {
                 case .home: HomeView()
-                case .inbox: InboxView()
+                case .inbox: IntelligenceInboxView()
                 case .browser: BrowserView()
                 case .platform(let id): PlatformPortalView(platformID: id)
                 case .channel, .conversation, .profile, .settings:
