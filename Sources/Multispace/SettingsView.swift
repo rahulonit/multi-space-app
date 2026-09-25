@@ -1,32 +1,52 @@
 import SwiftUI
 import WebKit
 
-enum SettingsPage: String, CaseIterable {
-    case profile = "Profile", general = "General", ai = "AI Assistant", security = "Security", launch = "Performance"
-    case interaction = "Interaction", subscription = "Subscription", about = "About"
+enum SettingsPage: String, CaseIterable, Identifiable {
+    case general = "General"
+    case account = "Account & Cloud"
+    case ai = "AI Co-Pilot"
+    case security = "Security & Lock"
+    case performance = "Performance"
+    case about = "About & Support"
+
+    var id: String { rawValue }
+
+    // Backward-compatibility aliases
+    static var profile: SettingsPage { .account }
+    static var launch: SettingsPage { .performance }
+    static var interaction: SettingsPage { .general }
+    static var subscription: SettingsPage { .account }
 
     var symbol: String {
         switch self {
-        case .profile: "person.crop.circle.fill"
-        case .general: "gearshape.fill"
-        case .ai: "sparkles"
-        case .security: "lock.shield.fill"
-        case .launch: "bolt.fill"
-        case .interaction: "cursorarrow.click.2"
-        case .subscription: "crown.fill"
-        case .about: "info.circle.fill"
+        case .general: return "gearshape.fill"
+        case .account: return "person.crop.circle.fill"
+        case .ai: return "sparkles"
+        case .security: return "lock.shield.fill"
+        case .performance: return "bolt.fill"
+        case .about: return "info.circle.fill"
         }
     }
+
     var color: Color {
         switch self {
-        case .profile: .indigo
-        case .general: .cyan
-        case .ai: .purple
-        case .security: .purple
-        case .launch: .orange
-        case .interaction: .blue
-        case .subscription: .yellow
-        case .about: .blue
+        case .general: return .cyan
+        case .account: return .indigo
+        case .ai: return .purple
+        case .security: return .green
+        case .performance: return .orange
+        case .about: return .blue
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "Appearance, startup, and dashboard settings"
+        case .account: return "Cloud profile, sign-in, and synchronization"
+        case .ai: return "AI engines, persona, and API credentials"
+        case .security: return "Touch ID, custom PIN, and app lock"
+        case .performance: return "Memory saver, tab freezing, and optimization"
+        case .about: return "App information, shortcuts, and privacy"
         }
     }
 }
@@ -34,7 +54,7 @@ enum SettingsPage: String, CaseIterable {
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     var initialPage: SettingsPage? = nil
-    @State private var page: SettingsPage = .profile
+    @State private var page: SettingsPage = .general
     @State private var detail: String?
     @State private var hibernatedFeedback = false
     @State private var showingPinSetupSheet = false
@@ -47,6 +67,10 @@ struct SettingsView: View {
     @State private var testingAiConnection = false
     @State private var aiTestResult: (success: Bool, message: String)? = nil
     @State private var keychainDiagnosticResult: String? = nil
+    @State private var ollamaIsOnline: Bool? = nil
+    @State private var ollamaInstalledModels: [String] = []
+    @State private var isCheckingOllama: Bool = false
+    @State private var ollamaStatusDetail: String? = nil
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,7 +78,7 @@ struct SettingsView: View {
             HStack(spacing: 0) {
                 if !narrow { settingsSidebar }
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 25) {
+                    VStack(alignment: .leading, spacing: 22) {
                         if narrow {
                             HStack {
                                 Button { store.destination = .home } label: {
@@ -62,27 +86,44 @@ struct SettingsView: View {
                                 }
                                 Spacer()
                                 Picker("Settings", selection: $page) {
-                                    ForEach(SettingsPage.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                    ForEach(SettingsPage.allCases) { Text($0.rawValue).tag($0) }
                                 }
                                 .labelsHidden()
                                 .frame(maxWidth: 190)
                             }
                         }
-                        Text(page.rawValue)
-                            .font(.system(size: 27, weight: .bold))
-                            .padding(.bottom, 28)
+
+                        // Page Header
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 10) {
+                                Image(systemName: page.symbol)
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundStyle(page.color)
+                                    .frame(width: 32, height: 32)
+                                    .background(page.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+                                Text(page.rawValue)
+                                    .font(.system(size: 24, weight: .bold))
+
+                                Spacer()
+                            }
+                            Text(page.subtitle)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .padding(.bottom, 6)
+
+                        // Render active page
                         switch page {
-                        case .profile: profilePage
                         case .general: generalPage
+                        case .account: accountPage
                         case .ai: aiSettingsPage
                         case .security: securityPage
-                        case .launch: launchPage
-                        case .interaction: interactionPage
-                        case .subscription: subscriptionPage
+                        case .performance: performancePage
                         case .about: aboutPage
                         }
                     }
-                    .padding(narrow ? 22 : 30)
+                    .padding(narrow ? 20 : 32)
                     .frame(maxWidth: 860, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
@@ -93,15 +134,15 @@ struct SettingsView: View {
             if let initialPage {
                 page = initialPage
             } else if store.destination == .profile {
-                page = .profile
+                page = .account
             } else if store.destination == .settings {
                 page = .general
             }
         }
         .onChange(of: store.destination) { _, newDestination in
             if newDestination == .profile {
-                page = .profile
-            } else if newDestination == .settings && page == .profile {
+                page = .account
+            } else if newDestination == .settings && page == .account {
                 page = .general
             }
         }
@@ -132,52 +173,108 @@ struct SettingsView: View {
     }
 
     private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             Button { store.destination = .home } label: {
-                Label("Back to PINGGO", systemImage: "chevron.left")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Overview")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(Palette.muted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Palette.panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 13)
-            Text("Settings")
-                .font(.system(size: 19, weight: .bold))
-                .padding(.horizontal, 13)
-                .padding(.top, 12)
-                .padding(.bottom, 18)
-            ForEach(SettingsPage.allCases, id: \.self) { item in
-                Button { page = item } label: {
-                    HStack(spacing: 11) {
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
-                            .background(item.color.gradient, in: RoundedRectangle(cornerRadius: 9))
-                        Text(item.rawValue).font(.system(size: 15, weight: page == item ? .semibold : .medium))
-                        Spacer()
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+
+            HStack {
+                Text("Preferences")
+                    .font(.system(size: 18, weight: .bold))
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+
+            VStack(spacing: 4) {
+                ForEach(SettingsPage.allCases) { item in
+                    let isSelected = (page == item)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            page = item
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: item.symbol)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(isSelected ? .white : item.color)
+                                .frame(width: 26, height: 26)
+                                .background(isSelected ? item.color : item.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+
+                            Text(item.rawValue)
+                                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                .foregroundStyle(isSelected ? .primary : Palette.muted)
+
+                            Spacer()
+
+                            if isSelected {
+                                Circle()
+                                    .fill(Palette.accent)
+                                    .frame(width: 5, height: 5)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 38)
+                        .background(
+                            isSelected ? Palette.accent.opacity(0.12) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 9)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(isSelected ? Palette.accent.opacity(0.3) : Color.clear, lineWidth: 1)
+                        )
                     }
-                    .padding(.horizontal, 11)
-                    .frame(height: 48)
-                    .background(page == item ? Palette.accent.opacity(0.52) : .clear,
-                                in: RoundedRectangle(cornerRadius: 11))
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+
+            Spacer()
+
+            // Footer user info
+            Divider()
+                .padding(.horizontal, 10)
+
+            HStack(spacing: 10) {
+                Avatar(member: store.me, size: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(store.userProfile.isSignedIn ? store.userProfile.displayName : store.me.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(store.userProfile.isSignedIn ? (store.userProfile.provider ?? "Cloud Account") : "Local Offline")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.muted)
+                }
+                Spacer()
+                Button { page = .account } label: {
+                    Image(systemName: "pencil.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Palette.muted)
                 }
                 .buttonStyle(.plain)
+                .help("Manage Account")
             }
-            Spacer()
-            Button { store.destination = .profile } label: {
-                Label("Edit profile", systemImage: "person.crop.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
-            }
-            .buttonStyle(.plain)
-            .padding(13)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
         }
-        .padding(12)
-        .frame(width: 210)
+        .frame(width: 220)
         .background(Palette.sidebar)
     }
 
-    private var profilePage: some View {
+    private var accountPage: some View {
         VStack(spacing: 24) {
             if !store.userProfile.isSignedIn {
                 guestProfileBanner
@@ -820,25 +917,108 @@ struct SettingsView: View {
                 Divider()
 
                 // Ollama Local LLM (Offline / Privacy-First)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Image(systemName: "cpu.fill")
-                            .foregroundStyle(.purple)
-                        Text("Ollama Local LLM (Offline / Privacy-First)")
-                            .font(.system(size: 12.5, weight: .semibold))
+                        HStack(spacing: 6) {
+                            Image(systemName: "cpu.fill")
+                                .foregroundStyle(.purple)
+                            Text("Ollama Local LLM (Offline / Privacy-First)")
+                                .font(.system(size: 12.5, weight: .semibold))
+                        }
+
                         Spacer()
-                        TextField("llama3.2", text: $store.preferences.ollamaModelTier)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11, design: .monospaced))
-                            .frame(width: 140)
+
+                        // Live Status Badge
+                        if isCheckingOllama {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("Detecting...")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Palette.card, in: Capsule())
+                        } else if let online = ollamaIsOnline {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(online ? Color.green : Color.orange)
+                                    .frame(width: 6, height: 6)
+                                Text(online ? "Active (\(ollamaInstalledModels.count) models)" : "Offline")
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(online ? .green : .orange)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background((online ? Color.green : Color.orange).opacity(0.12), in: Capsule())
+                        }
                     }
 
+                    // Model Selection
+                    HStack(spacing: 10) {
+                        Text("Active Model")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+
+                        if !ollamaInstalledModels.isEmpty {
+                            Picker("Model", selection: $store.preferences.ollamaModelTier) {
+                                ForEach(ollamaInstalledModels, id: \.self) { model in
+                                    Text(model).tag(model)
+                                }
+                            }
+                            .labelsHidden()
+                            .onChange(of: store.preferences.ollamaModelTier) { _, newModel in
+                                store.preferences.ollamaModel = newModel
+                            }
+                        } else {
+                            TextField("llama3.2", text: $store.preferences.ollamaModelTier)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .frame(width: 140)
+                                .onChange(of: store.preferences.ollamaModelTier) { _, newModel in
+                                    store.preferences.ollamaModel = newModel
+                                }
+                        }
+
+                        Spacer()
+
+                        // Quick Model Preset Pills
+                        HStack(spacing: 4) {
+                            ForEach(["llama3.2", "mistral", "qwen2.5", "deepseek-r1"], id: \.self) { preset in
+                                Button(preset) {
+                                    store.preferences.ollamaModelTier = preset
+                                    store.preferences.ollamaModel = preset
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 9.5, weight: store.preferences.ollamaModelTier.contains(preset) ? .bold : .medium, design: .monospaced))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2.5)
+                                .background(store.preferences.ollamaModelTier.contains(preset) ? Palette.accent.opacity(0.2) : Palette.card, in: RoundedRectangle(cornerRadius: 4))
+                                .foregroundStyle(store.preferences.ollamaModelTier.contains(preset) ? Palette.accent : Palette.muted)
+                            }
+                        }
+                    }
+
+                    // Endpoint & Actions
                     HStack(spacing: 8) {
                         TextField("http://localhost:11434", text: $store.preferences.ollamaEndpoint)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12, design: .monospaced))
 
-                        Button("Test Local Server") {
+                        Button {
+                            checkOllamaServer()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Detect Status")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isCheckingOllama)
+
+                        Button("Test Prompt") {
                             testingAiConnection = true
                             aiTestResult = nil
                             Task {
@@ -854,6 +1034,17 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(testingAiConnection)
+                    }
+
+                    if let detail = ollamaStatusDetail {
+                        Text(detail)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(ollamaIsOnline == true ? .green : Palette.muted)
+                    }
+                }
+                .onAppear {
+                    if ollamaIsOnline == nil {
+                        checkOllamaServer()
                     }
                 }
 
@@ -969,53 +1160,131 @@ struct SettingsView: View {
         )
     }
 
-    private var generalPage: some View {
-        VStack(spacing: 24) {
-            settingsCard("Language Settings", symbol: "character.book.closed.fill", color: .indigo) {
-                settingsRow("Language", "English is the available interface language in this build.") {
-                    Picker("Language", selection: $store.preferences.language) {
-                        Text("Follow System").tag("Follow System")
-                        Text("English").tag("English")
+    private func checkOllamaServer() {
+        guard !isCheckingOllama else { return }
+        isCheckingOllama = true
+        ollamaStatusDetail = nil
+        Task {
+            let res = await AIService.shared.fetchOllamaStatus(endpoint: store.preferences.ollamaEndpoint)
+            isCheckingOllama = false
+            ollamaIsOnline = res.isOnline
+            ollamaInstalledModels = res.models
+            if res.isOnline {
+                ollamaStatusDetail = res.models.isEmpty
+                    ? "Ollama is running, but no models are downloaded yet (run 'ollama pull llama3.2')."
+                    : "Connected to Ollama! \(res.models.count) model\(res.models.count == 1 ? "" : "s") available on-device."
+                if !res.models.isEmpty && !res.models.contains(store.preferences.ollamaModelTier) {
+                    if let first = res.models.first {
+                        store.preferences.ollamaModelTier = first
+                        store.preferences.ollamaModel = first
                     }
-                    .labelsHidden().frame(width: 190)
                 }
+            } else {
+                ollamaStatusDetail = "Ollama is not running. Start Ollama or download it from ollama.com to enable offline AI."
             }
+        }
+    }
+
+    private var generalPage: some View {
+        VStack(spacing: 20) {
             settingsCard("Appearance", symbol: "paintpalette.fill", color: .cyan) {
-                settingsRow("Appearance", "Choose the interface appearance.") {
+                settingsRow("Theme", "Choose light, dark, or automatic system appearance.") {
                     Picker("Appearance", selection: $store.preferences.appearance) {
                         Text("Follow System").tag("Follow System")
                         Text("Light").tag("Light")
                         Text("Dark").tag("Dark")
                     }
-                    .labelsHidden().pickerStyle(.segmented).frame(maxWidth: 340)
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
                 }
+
                 Divider()
-                settingsRow("Accent Color", "Used for buttons and selection.") {
-                    HStack(spacing: 9) {
+
+                settingsRow("Accent Color", "Custom color applied to active tabs, buttons, and badges.") {
+                    HStack(spacing: 10) {
                         ForEach(["blue", "cyan", "indigo", "orange", "green", "pink"], id: \.self) { color in
                             Button { store.preferences.accent = color } label: {
-                                Circle().fill(accentColor(color))
-                                    .frame(width: 25, height: 25)
-                                    .padding(4)
-                                    .overlay(Circle().stroke(.primary.opacity(store.preferences.accent == color ? 0.9 : 0), lineWidth: 2))
+                                ZStack {
+                                    Circle()
+                                        .fill(accentColor(color))
+                                        .frame(width: 22, height: 22)
+                                    if store.preferences.accent == color {
+                                        Circle()
+                                            .strokeBorder(Color.white, lineWidth: 2)
+                                            .frame(width: 14, height: 14)
+                                    }
+                                }
+                                .padding(2)
+                                .overlay(
+                                    Circle()
+                                        .stroke(store.preferences.accent == color ? accentColor(color) : Color.clear, lineWidth: 2)
+                                )
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("\(color.capitalized) accent")
                         }
                     }
                 }
+
                 Divider()
-                settingsRow("Compact Mode", "Use a tighter layout.") {
-                    Toggle("Compact Mode", isOn: $store.preferences.compactMode).labelsHidden().tint(Palette.accent)
+
+                settingsRow("Compact Mode", "Compress vertical spacing and margins for smaller displays.") {
+                    Toggle("Compact Mode", isOn: $store.preferences.compactMode)
+                        .labelsHidden()
+                        .tint(Palette.accent)
                 }
             }
-            settingsCard("Startup", symbol: "house.fill", color: .blue) {
-                settingsRow("Open To", "Default view when PINGGO opens.") {
+
+            settingsCard("Startup & Launch", symbol: "house.fill", color: .blue) {
+                settingsRow("Open On Launch", "Choose the initial workspace screen when PINGGO opens.") {
                     Picker("Open To", selection: $store.preferences.openTo) {
-                        Text("Home").tag("Home")
-                        Text("Last Platform").tag("Last Platform")
+                        Text("Overview Dashboard").tag("Home")
+                        Text("Last Active Platform").tag("Last Platform")
                     }
-                    .labelsHidden().frame(width: 190)
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+
+                Divider()
+
+                settingsRow("Initialize Portals", "Pre-load and monitor connected social portals upon application launch.") {
+                    Toggle("Websites", isOn: $store.preferences.launchWebsites)
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+
+                if store.preferences.launchWebsites {
+                    Divider()
+
+                    settingsRow("Launch Stagger Delay", "Delay before starting background connections to prevent startup lag.") {
+                        Picker("Delay", selection: $store.preferences.launchDelay) {
+                            Text("Instant (No Delay)").tag(0)
+                            Text("5 Seconds").tag(5)
+                            Text("15 Seconds").tag(15)
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                    }
+                }
+            }
+
+            settingsCard("Dashboard & Live Activity", symbol: "bell.badge.fill", color: .indigo) {
+                settingsRow("Show Website Alerts", "Stream unread badges and notification summaries onto the Overview screen.") {
+                    Toggle("Website Alerts", isOn: $store.preferences.showWebsiteAlerts)
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+
+                Divider()
+
+                settingsRow("Interface Language", "Language for menus, prompts, and interface controls.") {
+                    Picker("Language", selection: $store.preferences.language) {
+                        Text("Follow System").tag("Follow System")
+                        Text("English").tag("English")
+                    }
+                    .labelsHidden()
+                    .frame(width: 170)
                 }
             }
         }
@@ -1232,17 +1501,19 @@ struct SettingsView: View {
         }
     }
 
-    private var launchPage: some View {
-        VStack(spacing: 24) {
+    private var performancePage: some View {
+        VStack(spacing: 20) {
             settingsCard("Memory Saver & Tab Freezing", symbol: "bolt.fill", color: .orange) {
-                settingsRow("Smart Tab Freezing", "Hibernate inactive web views to dramatically reduce RAM and battery usage.") {
+                settingsRow("Smart Tab Freezing", "Automatically hibernate background web portals to dramatically conserve RAM and battery life.") {
                     Toggle("Tab Freezing", isOn: $store.preferences.tabFreezingEnabled)
                         .labelsHidden()
                         .tint(Palette.accent)
                 }
+
                 if store.preferences.tabFreezingEnabled {
                     Divider()
-                    settingsRow("Freeze Inactive Tabs", "Unload web portals when not used for a period of time.") {
+
+                    settingsRow("Freeze Inactivity Timeout", "Unload web view memory when a tab has been inactive for this duration.") {
                         Picker("Freeze Timeout", selection: $store.preferences.tabFreezeMinutes) {
                             Text("5 minutes").tag(5)
                             Text("15 minutes").tag(15)
@@ -1252,125 +1523,180 @@ struct SettingsView: View {
                         .labelsHidden()
                         .frame(width: 160)
                     }
+
                     Divider()
-                    settingsRow("Hibernate Background Tabs", "Free RAM immediately for all tabs not currently active.") {
+
+                    settingsRow("Hibernate Background Tabs", "Instantly release memory for all portals not currently visible.") {
                         HStack(spacing: 8) {
                             if hibernatedFeedback {
-                                Text("Hibernated!")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.green)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                    Text("Memory Released!")
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.green)
                             }
-                            Button("Hibernate Inactive Tabs") {
+
+                            Button {
                                 PortalSessionRegistry.shared.hibernateAllInactive(activeAccountIDs: Set(store.currentActiveAccountIDs))
                                 hibernatedFeedback = true
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                                     hibernatedFeedback = false
                                 }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "leaf.fill")
+                                    Text("Free RAM Now")
+                                }
                             }
                             .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
                     }
                 }
             }
 
-            settingsCard("Startup & Background", symbol: "play.fill", color: .cyan) {
-                settingsRow("Websites Check", "Check your connected accounts when PINGGO opens.") {
-                    Toggle("Websites", isOn: $store.preferences.launchWebsites).labelsHidden().tint(Palette.accent)
-                }
-                Divider()
-                settingsRow("Check Delay", "Wait before checking websites on startup.") {
-                    Picker("Delay", selection: $store.preferences.launchDelay) {
-                        Text("No Delay").tag(0)
-                        Text("5 Seconds").tag(5)
-                        Text("15 Seconds").tag(15)
+            settingsCard("Resource Optimization Metrics", symbol: "chart.bar.fill", color: .green) {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Sleeping Tabs")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                        Text("\(store.sleepingSessionCount())")
+                            .font(.system(size: 20, weight: .bold))
+                        Text("Hibernate background processes")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
                     }
-                    .labelsHidden().frame(width: 160)
-                }
-            }
-        }
-    }
-
-    private var interactionPage: some View {
-        VStack(spacing: 24) {
-            settingsCard("Dashboard", symbol: "cursorarrow.click.2", color: .blue) {
-                settingsRow("Website Alerts", "Show alerts exposed by social websites on Home.") {
-                    Toggle("Website Alerts", isOn: $store.preferences.showWebsiteAlerts).labelsHidden().tint(Palette.accent)
-                }
-            }
-            Text("Message previews depend on what each signed-in website makes available.")
-                .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var subscriptionPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Purchase Info").font(.system(size: 22, weight: .bold))
-            settingsCard("Subscription", symbol: "crown.fill", color: .yellow) {
-                settingsRow("Purchase Status", "PINGGO is currently a local prototype.") {
-                    Text("No subscription")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .padding(9)
-                        .background(Palette.card, in: Capsule())
-                }
-                Divider()
-                Text("Purchases are not available in this build.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Estimated RAM Saved")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                        let mb = store.sleepingSessionCount() * 140 + (store.sleepingSessionCount() > 0 ? 60 : 0)
+                        Text("\(mb) MB")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.green)
+                        Text("WebKit process suspension")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                }
             }
         }
     }
 
     private var aboutPage: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 12) {
-                AppLogo(size: 72, cornerRadius: 16)
-                    .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
-                Text("PINGGO")
-                    .font(.system(size: 22, weight: .bold))
-                Text("All your social apps, in one native macOS workspace")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.muted)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+        VStack(spacing: 20) {
+            // App Branding Banner
+            VStack(spacing: 10) {
+                AppLogo(size: 64, cornerRadius: 14)
+                    .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
 
-            settingsCard("App Info", symbol: "info.circle.fill", color: .blue) {
-                settingsRow("Version", "PINGGO") {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")
+                VStack(spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("PINGGO")
+                            .font(.system(size: 20, weight: .bold))
+                        Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Palette.card, in: Capsule())
+                    }
+
+                    Text("All your social workspaces in one native macOS application")
+                        .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                 }
             }
-            settingsCard("Support", symbol: "questionmark.circle.fill", color: .cyan) {
-                settingsRow("Help", "How to use social portals and the dashboard.") {
-                    Button("Open") { detail = "Help" }
-                }
-                Divider()
-                settingsRow("Privacy", "Learn how local data is handled.") {
-                    Button("Open") { detail = "Privacy" }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+
+            settingsCard("Power Keyboard Shortcuts", symbol: "command", color: .purple) {
+                VStack(spacing: 8) {
+                    shortcutCheatRow("Command Palette", "Global search & quick switcher", "⌘K")
+                    Divider()
+                    shortcutCheatRow("Toggle Split View", "Side-by-side workspace comparison", "⌘\\")
+                    Divider()
+                    shortcutCheatRow("Lock PINGGO", "Immediate biometric / password lock", "⌘L")
+                    Divider()
+                    shortcutCheatRow("Open Settings", "Preferences and configuration", "⌘,")
+                    Divider()
+                    shortcutCheatRow("Overview Screen", "Home dashboard & activity stream", "⌘1")
+                    Divider()
+                    shortcutCheatRow("Private Browser", "Tabbed web browser with adblocker", "⌘2")
                 }
             }
+
+            settingsCard("Support & Legal", symbol: "shield.lefthalf.filled", color: .cyan) {
+                settingsRow("User Guide & Portal Help", "Learn how multi-account sessions and portals work.") {
+                    Button("Open Guide") { detail = "Help" }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+
+                Divider()
+
+                settingsRow("Privacy & Data Isolation", "Learn how WebKit cookies, credentials, and AI queries are isolated.") {
+                    Button("View Privacy Policy") { detail = "Privacy" }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private func shortcutCheatRow(_ name: String, _ desc: String, _ key: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 12.5, weight: .semibold))
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+            Spacer()
+            Text(key)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.card, lineWidth: 1))
         }
     }
 
     private func settingsCard<Content: View>(_ title: String, symbol: String, color: Color,
                                               @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).foregroundStyle(color)
-                    .frame(width: 34, height: 34)
-                    .background(color.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
-                Text(title).font(.system(size: 21, weight: .bold))
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 7))
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
             Divider()
-            VStack(alignment: .leading, spacing: 17, content: content)
-                .padding(20)
+
+            VStack(alignment: .leading, spacing: 14, content: content)
+                .padding(16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.primary.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.card, lineWidth: 1))
     }
 
     private func settingsRow<Control: View>(_ title: String, _ subtitle: String,
@@ -1381,7 +1707,7 @@ struct SettingsView: View {
                 Spacer(minLength: 8)
                 control()
             }
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 rowLabel(title, subtitle)
                 control()
             }
@@ -1390,9 +1716,9 @@ struct SettingsView: View {
     }
 
     private func rowLabel(_ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 17, weight: .semibold))
-            Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.muted)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Text(subtitle).font(.system(size: 11.5)).foregroundStyle(Palette.muted)
         }
     }
 

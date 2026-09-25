@@ -66,10 +66,10 @@ namespace PINGGO
                 if (AppWindowTitleBar.IsCustomizationSupported())
                 {
                     var titleBar = _appWindow.TitleBar;
-                    titleBar.BackgroundColor = ColorHelper.FromArgb(255, 19, 21, 27);
-                    titleBar.ButtonBackgroundColor = ColorHelper.FromArgb(255, 19, 21, 27);
+                    titleBar.BackgroundColor = ColorHelper.FromArgb(255, 18, 21, 26);
+                    titleBar.ButtonBackgroundColor = ColorHelper.FromArgb(255, 18, 21, 26);
                     titleBar.ButtonForegroundColor = Colors.White;
-                    titleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(255, 34, 38, 52);
+                    titleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(255, 28, 33, 41);
                 }
             }
         }

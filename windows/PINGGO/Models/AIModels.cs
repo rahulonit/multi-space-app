@@ -86,58 +86,172 @@ namespace PINGGO.Models
 
         public bool IsGroupChat =>
             (GroupMemberCount.HasValue && GroupMemberCount.Value > 2) ||
-            (!string.IsNullOrEmpty(GroupSubtitle) && (GroupSubtitle.ToLowerInvariant().Contains("participant") || GroupSubtitle.ToLowerInvariant().Contains("member") || GroupSubtitle.Contains(","))) ||
-            (GroupMembers != null && GroupMembers.Count > 1) ||
-            (Messages.Where(m => !string.IsNullOrEmpty(m.Sender) && m.Sender.ToLowerInvariant() != "you" && m.Sender.ToLowerInvariant() != "me").Select(m => m.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+            (!string.IsNullOrEmpty(GroupSubtitle) && (GroupSubtitle.ToLowerInvariant().Contains("participant") || GroupSubtitle.ToLowerInvariant().Contains("member") || GroupSubtitle.ToLowerInvariant().Contains("subscriber") || (GroupSubtitle.Contains(",") && !GroupSubtitle.ToLowerInvariant().Contains("last seen") && !GroupSubtitle.ToLowerInvariant().Contains("typing") && !GroupSubtitle.ToLowerInvariant().Contains("online")))) ||
+            (Messages.Where(m => !string.IsNullOrEmpty(m.Sender) && m.Sender.ToLowerInvariant() != "you" && m.Sender.ToLowerInvariant() != "me" && m.Sender.ToLowerInvariant() != "contact" && !string.Equals(m.Sender, ContactName, StringComparison.OrdinalIgnoreCase)).Select(m => m.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
 
         public List<AIChatMemberItem> EffectiveMembers
         {
             get
             {
-                var dict = new Dictionary<string, AIChatMemberItem>(StringComparer.OrdinalIgnoreCase);
+                if (!IsGroupChat)
+                {
+                    var trimmed = (ContactName ?? "").Trim();
+                    if (string.IsNullOrEmpty(trimmed)) return new List<AIChatMemberItem>();
+                    var count = Messages.Count(m => !m.IsFromMe);
+                    int digits = trimmed.Count(char.IsDigit);
+                    bool isPhone = trimmed.StartsWith("+") || (digits >= 9 && !trimmed.Any(char.IsLetter));
+                    return new List<AIChatMemberItem>
+                    {
+                        new AIChatMemberItem
+                        {
+                            Name = isPhone ? string.Empty : trimmed,
+                            Role = "Contact",
+                            Activity = "1-on-1 Direct Chat",
+                            MessageCount = count,
+                            PhoneNumber = isPhone ? trimmed : null
+                        }
+                    };
+                }
+
+                var merged = new List<AIChatMemberItem>();
+
+                string GetDigits(string? s) => string.Concat((s ?? "").Where(char.IsDigit));
+
+                int? FindIndex(AIChatMemberItem item)
+                {
+                    var itemPhoneDigits = GetDigits(item.CleanPhone);
+                    var itemName = item.CleanName.ToLowerInvariant();
+
+                    for (int i = 0; i < merged.Count; i++)
+                    {
+                        var ex = merged[i];
+                        var exPhoneDigits = GetDigits(ex.CleanPhone);
+                        var exName = ex.CleanName.ToLowerInvariant();
+
+                        if (!string.IsNullOrEmpty(itemPhoneDigits) && !string.IsNullOrEmpty(exPhoneDigits) && itemPhoneDigits.Length >= 7 && exPhoneDigits.Length >= 7)
+                        {
+                            if (itemPhoneDigits == exPhoneDigits || itemPhoneDigits.EndsWith(exPhoneDigits) || exPhoneDigits.EndsWith(itemPhoneDigits))
+                                return i;
+                        }
+
+                        if (!string.IsNullOrEmpty(itemName) && !string.IsNullOrEmpty(exName) && itemName == exName)
+                            return i;
+
+                        var exUser = (ex.Username ?? "").Trim().ToLowerInvariant();
+                        var itemUser = (item.Username ?? "").Trim().ToLowerInvariant();
+                        if (!string.IsNullOrEmpty(itemUser) && !string.IsNullOrEmpty(exUser) && itemUser == exUser)
+                            return i;
+                        if (!string.IsNullOrEmpty(itemName) && !string.IsNullOrEmpty(exUser) && itemName == exUser)
+                            return i;
+                        if (!string.IsNullOrEmpty(itemUser) && !string.IsNullOrEmpty(exName) && itemUser == exName)
+                            return i;
+
+                        if (item.IsPhoneInName && !string.IsNullOrEmpty(exPhoneDigits) && GetDigits(item.Name) == exPhoneDigits)
+                            return i;
+
+                        if (ex.IsPhoneInName && !string.IsNullOrEmpty(itemPhoneDigits) && GetDigits(ex.Name) == itemPhoneDigits)
+                            return i;
+                    }
+                    return null;
+                }
+
+                void MergeItem(AIChatMemberItem incoming)
+                {
+                    var cleanN = (incoming.Name ?? "").Trim();
+                    if (string.IsNullOrEmpty(cleanN) && string.IsNullOrEmpty(incoming.PhoneNumber)) return;
+                    if (string.Equals(cleanN, ContactName, StringComparison.OrdinalIgnoreCase) || cleanN.Equals("you", StringComparison.OrdinalIgnoreCase) || cleanN.Equals("me", StringComparison.OrdinalIgnoreCase) || cleanN.Equals("contact", StringComparison.OrdinalIgnoreCase)) return;
+
+                    var idx = FindIndex(incoming);
+                    if (idx.HasValue)
+                    {
+                        var ex = merged[idx.Value];
+                        if ((string.IsNullOrEmpty(ex.CleanName) || ex.IsPhoneInName) && !string.IsNullOrEmpty(incoming.CleanName)) ex.Name = incoming.CleanName;
+                        if (string.IsNullOrEmpty(ex.PhoneNumber) && !string.IsNullOrEmpty(incoming.CleanPhone)) ex.PhoneNumber = incoming.CleanPhone;
+                        if (string.IsNullOrEmpty(ex.Username) && !string.IsNullOrEmpty(incoming.Username)) ex.Username = incoming.Username;
+                        if (incoming.NormalizedRole == "Group Admin") ex.Role = "Group Admin";
+                        ex.MessageCount = Math.Max(ex.MessageCount, incoming.MessageCount);
+                        merged[idx.Value] = ex;
+                    }
+                    else
+                    {
+                        merged.Add(incoming);
+                    }
+                }
+
                 if (GroupMembers != null)
                 {
                     foreach (var gm in GroupMembers)
                     {
-                        if (!string.IsNullOrWhiteSpace(gm.Name)) dict[gm.Name] = gm;
+                        MergeItem(gm);
                     }
                 }
+
                 foreach (var msg in Messages)
                 {
                     var s = (msg.Sender ?? "").Trim();
-                    if (!string.IsNullOrEmpty(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase) && !s.Equals("me", StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(s) && !s.Equals("you", StringComparison.OrdinalIgnoreCase) && !s.Equals("me", StringComparison.OrdinalIgnoreCase) && !s.Equals("contact", StringComparison.OrdinalIgnoreCase) && !string.Equals(s, ContactName, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (dict.TryGetValue(s, out var existing))
+                        MergeItem(new AIChatMemberItem
                         {
-                            existing.MessageCount = Math.Max(existing.MessageCount, Messages.Count(m => string.Equals(m.Sender, s, StringComparison.OrdinalIgnoreCase)));
-                        }
-                        else
-                        {
-                            dict[s] = new AIChatMemberItem
-                            {
-                                Name = s,
-                                Role = "Member",
-                                Activity = "Active in chat",
-                                MessageCount = Messages.Count(m => string.Equals(m.Sender, s, StringComparison.OrdinalIgnoreCase))
-                            };
-                        }
+                            Name = s,
+                            Role = "Member",
+                            Activity = "Active in chat",
+                            MessageCount = 0
+                        });
                     }
                 }
-                var list = dict.Values.ToList();
-                list.Sort((a, b) =>
+
+                for (int i = 0; i < merged.Count; i++)
                 {
-                    bool aAdmin = a.Role.ToLowerInvariant().Contains("admin");
-                    bool bAdmin = b.Role.ToLowerInvariant().Contains("admin");
+                    var m = merged[i];
+                    var mName = m.CleanName.ToLowerInvariant();
+                    var mPhoneDigits = GetDigits(m.CleanPhone);
+                    var rawNameDigits = GetDigits(m.Name);
+
+                    int count = Messages.Count(msg =>
+                    {
+                        if (msg.IsFromMe) return false;
+                        var s = (msg.Sender ?? "").Trim().ToLowerInvariant();
+                        if (!string.IsNullOrEmpty(mName) && s == mName) return true;
+                        var sDigits = GetDigits(s);
+                        if (!string.IsNullOrEmpty(sDigits) && sDigits.Length >= 7)
+                        {
+                            if (!string.IsNullOrEmpty(mPhoneDigits) && (sDigits == mPhoneDigits || sDigits.EndsWith(mPhoneDigits) || mPhoneDigits.EndsWith(sDigits))) return true;
+                            if (!string.IsNullOrEmpty(rawNameDigits) && (sDigits == rawNameDigits || sDigits.EndsWith(rawNameDigits) || rawNameDigits.EndsWith(sDigits))) return true;
+                        }
+                        return false;
+                    });
+
+                    merged[i].MessageCount = count;
+                    if (count > 0)
+                    {
+                        merged[i].Activity = $"Active in thread ({count} message{(count == 1 ? "" : "s")})";
+                    }
+                    else if (merged[i].Activity.ToLowerInvariant().Contains("active in thread"))
+                    {
+                        merged[i].Activity = "In group roster";
+                    }
+                }
+
+                merged.Sort((a, b) =>
+                {
+                    bool aAdmin = a.NormalizedRole == "Group Admin";
+                    bool bAdmin = b.NormalizedRole == "Group Admin";
                     if (aAdmin && !bAdmin) return -1;
                     if (!aAdmin && bAdmin) return 1;
-                    return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+                    var aDisplay = string.IsNullOrEmpty(a.CleanName) ? (a.CleanPhone ?? "") : a.CleanName;
+                    var bDisplay = string.IsNullOrEmpty(b.CleanName) ? (b.CleanPhone ?? "") : b.CleanName;
+                    return string.Compare(aDisplay, bDisplay, StringComparison.OrdinalIgnoreCase);
                 });
-                return list;
+
+                return merged;
             }
         }
 
         public List<AIChatMemberItem> GroupAdmins =>
-            EffectiveMembers.Where(m => m.Role.ToLowerInvariant().Contains("admin") || m.Role.ToLowerInvariant().Contains("owner")).ToList();
+            IsGroupChat
+                ? EffectiveMembers.Where(m => m.NormalizedRole == "Group Admin").ToList()
+                : new List<AIChatMemberItem>();
 
         public string FullTranscript =>
             Messages.Count == 0
@@ -158,6 +272,31 @@ namespace PINGGO.Models
                 }
                 return $"Conversation with {ContactName} ({Messages.Count} messages exchanged).";
             }
+        }
+
+        public string ExportCSV()
+        {
+            var lines = new List<string> { "Name,Phone Number,Role,Username,Message Count" };
+            foreach (var m in EffectiveMembers)
+            {
+                var cleanN = m.CleanName;
+                var nameEscaped = cleanN.Contains(",") ? $"\"{cleanN}\"" : cleanN;
+                lines.Add($"{nameEscaped},{m.CleanPhone ?? ""},{m.NormalizedRole},{m.Username ?? ""},{m.MessageCount}");
+            }
+            return string.Join("\n", lines);
+        }
+
+        public string ExportJSON()
+        {
+            var list = EffectiveMembers.ConvertAll(m => new Dictionary<string, object>
+            {
+                ["name"] = m.CleanName,
+                ["phoneNumber"] = m.CleanPhone ?? "",
+                ["role"] = m.NormalizedRole,
+                ["username"] = m.Username ?? "",
+                ["messageCount"] = m.MessageCount
+            });
+            return System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         }
     }
 
@@ -254,12 +393,61 @@ namespace PINGGO.Models
 
     public class AIChatMemberItem
     {
-        public string Id => Name;
+        public string Id => $"{Name}-{Username ?? ""}-{PhoneNumber ?? ""}";
         public string Name { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public string Activity { get; set; } = string.Empty;
         public int MessageCount { get; set; }
         public string? PhoneNumber { get; set; }
+        public string? Username { get; set; }
+
+        public bool IsPhoneInName
+        {
+            get
+            {
+                var trimmed = (Name ?? "").Trim();
+                if (string.IsNullOrEmpty(trimmed)) return false;
+                int digitCount = trimmed.Count(char.IsDigit);
+                if (trimmed.StartsWith("+") && digitCount >= 7) return true;
+                if (digitCount >= 9 && !trimmed.Any(char.IsLetter)) return true;
+                return false;
+            }
+        }
+
+        public string? CleanPhone
+        {
+            get
+            {
+                var p = (PhoneNumber ?? "").Trim();
+                if (!string.IsNullOrEmpty(p)) return p;
+                if (IsPhoneInName) return (Name ?? "").Trim();
+                return null;
+            }
+        }
+
+        public string CleanName
+        {
+            get
+            {
+                if (IsPhoneInName)
+                {
+                    var u = (Username ?? "").Trim();
+                    if (!string.IsNullOrEmpty(u)) return u;
+                    return string.Empty;
+                }
+                return (Name ?? "").Trim();
+            }
+        }
+
+        public string NormalizedRole
+        {
+            get
+            {
+                var low = (Role ?? "").ToLowerInvariant();
+                if (low.Contains("admin") || low.Contains("owner") || low.Contains("creator")) return "Group Admin";
+                return "Member";
+            }
+        }
     }
 
     public enum AIResponseSourceType
@@ -538,5 +726,41 @@ namespace PINGGO.Models
         public int TopicCount => Topics.Count;
 
         public int ProgressPercent => Tasks.Count == 0 ? 0 : (CompletedTaskCount * 100) / Tasks.Count;
+    }
+
+    public class BrowserHistoryItem
+    {
+        [JsonPropertyName("id")]
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [JsonPropertyName("urlString")]
+        public string UrlString { get; set; } = string.Empty;
+
+        [JsonPropertyName("visitedAt")]
+        public DateTime VisitedAt { get; set; } = DateTime.Now;
+
+        [JsonPropertyName("faviconURLString")]
+        public string? FaviconURLString { get; set; }
+    }
+
+    public class OllamaModelTag
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("model")]
+        public string? Model { get; set; }
+
+        [JsonPropertyName("size")]
+        public long? Size { get; set; }
+    }
+
+    public class OllamaTagsResponse
+    {
+        [JsonPropertyName("models")]
+        public List<OllamaModelTag>? Models { get; set; }
     }
 }

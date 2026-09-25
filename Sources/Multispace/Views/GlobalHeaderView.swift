@@ -38,10 +38,10 @@ struct GlobalHeaderView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Brand Area: 220–260 px (Pinggo logo + name)
+        HStack(spacing: 10) {
+            // Compact brand area
             brandArea
-                .frame(width: usesCompactHeaderControls ? 44 : 220, alignment: .leading)
+                .frame(width: usesCompactHeaderControls ? 38 : 184, alignment: .leading)
 
             if windowWidth > 1200 {
                 // Centered Navigation Pill layout
@@ -63,9 +63,9 @@ struct GlobalHeaderView: View {
                 primaryNavigationPill
             }
         }
-        .padding(.leading, 76) // Space for macOS window controls (close, minimize, zoom)
-        .padding(.trailing, 22)
-        .frame(height: 64)
+        .padding(.leading, 72) // Space for macOS window controls
+        .padding(.trailing, 16)
+        .frame(height: 56)
         .background(Palette.panel)
     }
 
@@ -76,10 +76,10 @@ struct GlobalHeaderView: View {
                 store.destination = .home
             }
         } label: {
-            HStack(spacing: 10) {
-                AppLogo(size: 32)
+            HStack(spacing: 8) {
+                AppLogo(size: 28)
                 Text("Pinggo")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .opacity(usesCompactHeaderControls ? 0 : 1)
@@ -92,7 +92,7 @@ struct GlobalHeaderView: View {
 
     // MARK: - Primary Navigation (Segmented Pill)
     private var primaryNavigationPill: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(HeaderNavTab.allCases) { tab in
                 let isActive = (activeTab == tab)
                 Button {
@@ -107,20 +107,20 @@ struct GlobalHeaderView: View {
                             .fixedSize(horizontal: true, vertical: false)
                     }
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 14)
-                    .frame(height: 32)
-                    .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                     .foregroundStyle(isActive ? Palette.navActiveText : Palette.navInactiveText)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(4)
-        .frame(height: 40)
-        .background(Palette.card.opacity(0.55), in: RoundedRectangle(cornerRadius: 20))
+        .padding(3)
+        .frame(height: 36)
+        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 9))
         .overlay(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 9)
                 .stroke(Palette.border, lineWidth: 1)
         )
         .fixedSize(horizontal: true, vertical: false)
@@ -150,7 +150,7 @@ struct GlobalHeaderView: View {
 
     // MARK: - Right Controls
     private var rightControls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // Security Status (80–100 px)
             if !usesCompactHeaderControls {
                 securityPill
@@ -181,16 +181,16 @@ struct GlobalHeaderView: View {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.green)
-                Text("SECURE")
-                    .font(.system(size: 10.5, weight: .bold))
+                Text("Secure")
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(Color.green)
             }
             .padding(.horizontal, 10)
-            .frame(width: 90, height: 32)
-            .background(Color.green.opacity(0.12), in: Capsule())
+            .frame(width: 82, height: 30)
+            .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
             .overlay(
-                Capsule()
-                    .stroke(Color.green.opacity(0.28), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.green.opacity(0.18), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -262,10 +262,10 @@ struct GlobalHeaderView: View {
                     .background(Palette.panel, in: RoundedRectangle(cornerRadius: 4))
             }
             .padding(.horizontal, 12)
-            .frame(height: 40)
-            .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+            .frame(height: 34)
+            .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 7))
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 7)
                     .stroke(Palette.border, lineWidth: 1)
             )
         }
@@ -281,10 +281,10 @@ struct GlobalHeaderView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.primary.opacity(0.85))
-                .frame(width: 40, height: 40)
-                .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+                .frame(width: 34, height: 34)
+                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 7)
                         .stroke(Palette.border, lineWidth: 1)
                 )
         }
@@ -301,10 +301,10 @@ struct GlobalHeaderView: View {
                 Image(systemName: "bell.fill")
                     .font(.system(size: 13.5))
                     .foregroundStyle(Color.primary.opacity(0.85))
-                    .frame(width: 40, height: 40)
-                    .background(Palette.card.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+                    .frame(width: 34, height: 34)
+                    .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 7))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 7)
                             .stroke(Palette.border, lineWidth: 1)
                     )
 
@@ -329,20 +329,14 @@ struct GlobalHeaderView: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Palette.accent, Palette.accent.opacity(0.75)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 36, height: 36)
+                    .fill(Palette.accent)
+                    .frame(width: 32, height: 32)
 
                 Text(profileInitial)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
         .help("User Profile & Settings")
@@ -386,15 +380,15 @@ struct MobileBottomNavView: View {
                     }
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 38)
-                    .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 18))
+                    .frame(height: 34)
+                    .background(isActive ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                     .foregroundStyle(isActive ? Palette.navActiveText : Palette.navInactiveText)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: 52)
+        .frame(height: 48)
         .background(Palette.panel)
     }
 

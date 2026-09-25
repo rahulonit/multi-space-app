@@ -111,11 +111,18 @@ You behave with the analytical power, depth, and helpfulness of ChatGPT and Goog
 Default response tone: {tone}.
 {(string.IsNullOrEmpty(prefs.CustomAiPrompt) ? "" : "User guidelines: " + prefs.CustomAiPrompt)}
 
-CORE CAPABILITIES & MANDATE:
+STRICT BOUNDARY & ACCURACY MANDATE:
+- You operate STRICTLY and SOLELY within the currently SELECTED conversation thread in the messaging platform.
+- You must NEVER list, reference, invent, or mix in contacts or chats from the platform's sidebar chat list / inbox listing.
+- If the conversation is a Direct 1-on-1 Chat: explicitly confirm that it is a 1-on-1 chat with that specific contact and You. State that there are no group members or group admins.
+- If the conversation is a Group Chat: only reference the verified members, participants, and admins of this specific group.
+
+CORE CAPABILITIES & BEHAVIOR:
 1. Full Conversational & Analytical Intelligence:
    - Answer ANY question about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
    - When asked about group information, member count, or group admins: inspect the verified Group Roster & Admin Information provided below. Clearly identify admins and participants with their roles and contact details.
-   - When asked if this is a group chat or 1-on-1 chat: clearly state the chat type and participants.
+   - When asked to export or download member details or roster data (CSV / table): generate a clean markdown table with columns (Name, Phone Number, Role, Username, Message Count) followed by a formatted CSV code block ready for 1-click copying.
+   - Provide thorough, specific answers quoting verified facts from the transcript. Do not give vague or evasive answers.
 2. Direct Answering vs. Reply Drafting:
    - If the user asks a question about the chat: answer directly with deep analysis and clean markdown.
    - If the user asks to draft a reply: craft an articulate, ready-to-send draft in the requested {tone} tone.
@@ -432,6 +439,35 @@ CORE CAPABILITIES & MANDATE:
         private string GenerateLocalSmartSummary(string prompt)
         {
             return $"[PINGGO Local AI]: Reviewed query: \"{prompt}\". Thread status is active, zero critical blockers identified, and all platform channels are synced.";
+        }
+
+        public async Task<(bool isOnline, List<string> models, string? error)> FetchOllamaStatusAsync(string endpoint = "http://localhost:11434")
+        {
+            var clean = endpoint.TrimEnd('/', ' ');
+            if (string.IsNullOrWhiteSpace(clean)) clean = "http://localhost:11434";
+            try
+            {
+                var res = await _httpClient.GetAsync($"{clean}/api/tags");
+                if (res.IsSuccessStatusCode)
+                {
+                    var json = await res.Content.ReadAsStringAsync();
+                    var data = JsonSerializer.Deserialize<OllamaTagsResponse>(json);
+                    var list = new List<string>();
+                    if (data?.Models != null)
+                    {
+                        foreach (var m in data.Models)
+                        {
+                            if (!string.IsNullOrEmpty(m.Name)) list.Add(m.Name);
+                        }
+                    }
+                    return (true, list, null);
+                }
+                return (false, new List<string>(), $"HTTP {(int)res.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                return (false, new List<string>(), ex.Message);
+            }
         }
     }
 }

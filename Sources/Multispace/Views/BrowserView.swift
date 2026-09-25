@@ -23,6 +23,8 @@ enum AdBlockEngine {
                     "*googleadservices.com*",
                     "*googlesyndication.com*",
                     "*adservice.google.*",
+                    "*googleads.g.doubleclick.net*",
+                    "*pagead2.googlesyndication.com*",
                     "*adnxs.com*",
                     "*advertising.com*",
                     "*scorecardresearch.com*",
@@ -43,7 +45,15 @@ enum AdBlockEngine {
                     "*lijit.com*",
                     "*exponential.com*",
                     "*contextweb.com*",
-                    "*advertising.amazon.com*"
+                    "*advertising.amazon.com*",
+                    "*media.net*",
+                    "*sovrn.com*",
+                    "*liveramp.com*",
+                    "*inmobi.com*",
+                    "*unityads.unity3d.com*",
+                    "*applovin.com*",
+                    "*ironsrc.com*",
+                    "*vungle.com*"
                 ]
             },
             "action": {
@@ -52,7 +62,15 @@ enum AdBlockEngine {
         },
         {
             "trigger": {
-                "url-filter": ".*(adserver|adservices|adsystem|googlesyndication|googleadservices|doubleclick|taboola|outbrain|adnxs|carbonads|adroll|popads|popcash).*"
+                "url-filter": ".*(pagead|googleadservices|googlesyndication|doubleclick|taboola|outbrain|adnxs|carbonads|adroll|popads|popcash|smartadserver|criteo|rubiconproject|pubmatic).*"
+            },
+            "action": {
+                "type": "block"
+            }
+        },
+        {
+            "trigger": {
+                "url-filter": ".*youtube\\\\.com/(pagead/|api/stats/ads|youtubei/v1/player/ad_break|get_midroll_info|ptracking).*"
             },
             "action": {
                 "type": "block"
@@ -64,42 +82,283 @@ enum AdBlockEngine {
             },
             "action": {
                 "type": "css-display-none",
-                "selector": ".ad, .ads, .adsbygoogle, .ad-container, .ad-banner, .advertisement, [id^='ad_'], [id^='google_ads_'], [class*='sponsored'], [class*='promoted'], .ad-box, .banner-ad, iframe[id*='google_ads'], div[data-ad-unit], .sidebar-ads, [data-ad-slot], .native-ad, .outbrain, .taboola"
+                "selector": ".ad, .ads, .adsbygoogle, .ad-container, .ad-banner, .advertisement, [id^='ad_'], [id^='google_ads_'], [class*='sponsored'], [class*='promoted'], .ad-box, .banner-ad, iframe[id*='google_ads'], div[data-ad-unit], .sidebar-ads, [data-ad-slot], .native-ad, .outbrain, .taboola, ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-banner-promo-renderer, ytd-statement-banner-renderer, #masthead-ad, ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads'], .ytp-ad-overlay-container, .ytp-ad-message-container, .ytp-ad-progress-list, .ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-action-interstitial, #player-ads, ytd-promoted-sparkles-web-renderer, ytd-compact-promoted-video-renderer, ytd-promoted-video-renderer, ytd-display-ad-renderer, .sparkles-light-cta, ytd-feed-nudge-renderer, ytd-search-pyv-renderer, ytd-merch-shelf-renderer, .ytd-mealbar-promo-renderer, ytd-enforcement-message-view-model, tp-yt-iron-overlay-backdrop, #onetrust-banner-sdk, .cookie-banner, .cookie-consent, #cookie-notice"
             }
         }
     ]
     """
 
-    static let countScript = """
-    (() => {
-        let lastReported = 0;
-        function inspectBlockedAds() {
-            const adNodes = document.querySelectorAll('.ad, .ads, .adsbygoogle, .ad-container, .ad-banner, .advertisement, [id^="ad_"], [id^="google_ads_"], [class*="sponsored"], [class*="promoted"], .banner-ad, iframe[id*="google_ads"], div[data-ad-unit]');
-            let count = 0;
-            adNodes.forEach(node => {
-                const style = window.getComputedStyle(node);
-                if (style.display === 'none' || node.offsetParent === null) {
-                    count++;
-                }
-            });
-            if (count !== lastReported) {
-                lastReported = count;
+    static func earlyScript(blockYouTube: Bool = true) -> String {
+        """
+        (() => {
+            if (window.__pinggo_early_injected) return;
+            window.__pinggo_early_injected = true;
+
+            const blockYT = \(blockYouTube);
+
+            function cleanseYT(data) {
+                if (!blockYT || !data || typeof data !== 'object') return;
                 try {
-                    window.webkit.messageHandlers.pinggoAdBlock.postMessage({ count: count });
+                    delete data.adPlacements;
+                    delete data.playerAds;
+                    delete data.adSlots;
+                    if (data.playbackTracking) {
+                        delete data.playbackTracking.videostatsPlaybackUrl;
+                        delete data.playbackTracking.videostatsDelayplayUrl;
+                        delete data.playbackTracking.videostatsWatchtimeUrl;
+                        delete data.playbackTracking.videostatsAdPlaybackUrl;
+                    }
+                } catch (e) {}
+            }
+
+            if (blockYT) {
+                try {
+                    let _ytInitialPlayerResponse = window.ytInitialPlayerResponse;
+                    cleanseYT(_ytInitialPlayerResponse);
+                    Object.defineProperty(window, 'ytInitialPlayerResponse', {
+                        get: () => _ytInitialPlayerResponse,
+                        set: (val) => {
+                            cleanseYT(val);
+                            _ytInitialPlayerResponse = val;
+                        },
+                        configurable: true,
+                        enumerable: true
+                    });
+                } catch (e) {}
+
+                if (typeof window.fetch === 'function') {
+                    const origFetch = window.fetch;
+                    window.fetch = async function(...args) {
+                        const url = (typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+                        if (typeof url === 'string' && (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next'))) {
+                            try {
+                                const response = await origFetch.apply(this, args);
+                                const clone = response.clone();
+                                const text = await clone.text();
+                                try {
+                                    const json = JSON.parse(text);
+                                    cleanseYT(json);
+                                    return new Response(JSON.stringify(json), {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: response.headers
+                                    });
+                                } catch (pe) {
+                                    return response;
+                                }
+                            } catch (e) {
+                                return origFetch.apply(this, args);
+                            }
+                        }
+                        return origFetch.apply(this, args);
+                    };
+                }
+            }
+
+            function injectStyles() {
+                if (document.getElementById('pinggo-adblock-styles')) return;
+                const style = document.createElement('style');
+                style.id = 'pinggo-adblock-styles';
+                let css = `
+                    .ad, .ads, .adsbygoogle, .ad-container, .ad-banner, .advertisement,
+                    [id^='ad_'], [id^='google_ads_'], [class*='sponsored'], [class*='promoted'],
+                    .ad-box, .banner-ad, iframe[id*='google_ads'], div[data-ad-unit],
+                    .sidebar-ads, [data-ad-slot], .native-ad, .outbrain, .taboola,
+                    #onetrust-banner-sdk, .cookie-banner, .cookie-consent, #cookie-notice {
+                        display: none !important;
+                    }
+                `;
+                if (blockYT) {
+                    css += `
+                        ytd-ad-slot-renderer,
+                        ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+                        ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
+                        ytd-in-feed-ad-layout-renderer,
+                        ytd-banner-promo-renderer,
+                        ytd-statement-banner-renderer,
+                        #masthead-ad,
+                        ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads'],
+                        .ytp-ad-overlay-container,
+                        .ytp-ad-message-container,
+                        .ytp-ad-progress-list,
+                        .ytp-ad-player-overlay,
+                        .ytp-ad-player-overlay-layout,
+                        .ytp-ad-action-interstitial,
+                        #player-ads,
+                        ytd-promoted-sparkles-web-renderer,
+                        ytd-compact-promoted-video-renderer,
+                        ytd-promoted-video-renderer,
+                        ytd-display-ad-renderer,
+                        .sparkles-light-cta,
+                        ytd-feed-nudge-renderer,
+                        ytd-search-pyv-renderer,
+                        ytd-merch-shelf-renderer,
+                        .ytd-mealbar-promo-renderer,
+                        ytd-enforcement-message-view-model,
+                        tp-yt-paper-dialog:has(ytd-enforcement-message-view-model),
+                        tp-yt-iron-overlay-backdrop {
+                            display: none !important;
+                        }
+                    `;
+                }
+                style.textContent = css;
+                const head = document.head || document.documentElement;
+                if (head) head.appendChild(style);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', injectStyles, { once: true });
+            } else {
+                injectStyles();
+            }
+        })();
+        """
+    }
+
+    static func runtimeScript(blockYouTube: Bool = true) -> String {
+        """
+        (() => {
+            if (window.__pinggo_runtime_injected) return;
+            window.__pinggo_runtime_injected = true;
+
+            const blockYT = \(blockYouTube);
+            let skippedAds = 0;
+            let lastReported = -1;
+
+            const skipSelectors = [
+                '.ytp-ad-skip-button',
+                '.ytp-ad-skip-button-modern',
+                '.ytp-skip-ad-button',
+                '.ytp-ad-skip-button-slot button',
+                'button.ytp-ad-skip-button-modern',
+                '.ytp-ad-overlay-close-button',
+                '[id^="skip-button"] button',
+                '.videoAdUiSkipButton'
+            ];
+
+            function handleAds() {
+                if (!blockYT) return;
+                const isYouTube = window.location.hostname.includes('youtube.com');
+                if (!isYouTube) return;
+
+                // 1. Bypass & dismiss anti-adblock enforcement dialog
+                const enforcement = document.querySelector('ytd-enforcement-message-view-model');
+                if (enforcement) {
+                    const dialog = enforcement.closest('tp-yt-paper-dialog') || enforcement;
+                    try { dialog.remove(); } catch(e) {}
+                    document.querySelectorAll('tp-yt-iron-overlay-backdrop').forEach(b => {
+                        try { b.remove(); } catch(e) {}
+                    });
+                    document.body.style.overflow = 'auto';
+                    const v = document.querySelector('video');
+                    if (v && v.paused) {
+                        v.play().catch(() => {});
+                    }
+                    skippedAds++;
+                }
+
+                // 2. Video ad detection & high-speed fast forward
+                const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                const isAdShowing = player && (
+                    player.classList.contains('ad-showing') ||
+                    player.classList.contains('ad-interrupting') ||
+                    document.querySelector('.ytp-ad-player-overlay') !== null
+                );
+
+                if (isAdShowing) {
+                    // Click skip button immediately
+                    for (const sel of skipSelectors) {
+                        const btn = document.querySelector(sel);
+                        if (btn && typeof btn.click === 'function') {
+                            btn.click();
+                            break;
+                        }
+                    }
+
+                    // Native player skip if supported
+                    if (player && typeof player.skipAd === 'function') {
+                        try { player.skipAd(); } catch(e) {}
+                    }
+
+                    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+                    if (video) {
+                        if (!video.muted) {
+                            video.muted = true;
+                            video.__pinggo_ad_muted = true;
+                        }
+                        video.playbackRate = 16.0;
+                        if (isFinite(video.duration) && video.duration > 0) {
+                            video.currentTime = video.duration - 0.02;
+                        } else {
+                            video.currentTime = 99999;
+                        }
+                        skippedAds++;
+                    }
+                } else {
+                    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+                    if (video) {
+                        if (video.__pinggo_ad_muted) {
+                            video.muted = false;
+                            video.__pinggo_ad_muted = false;
+                        }
+                        if (video.playbackRate > 4.0) {
+                            video.playbackRate = 1.0;
+                        }
+                    }
+                }
+            }
+
+            if (blockYT) {
+                setInterval(handleAds, 50);
+                try {
+                    const observer = new MutationObserver(() => handleAds());
+                    observer.observe(document.body || document.documentElement, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['class', 'src']
+                    });
                 } catch(e) {}
             }
-        }
-        setInterval(inspectBlockedAds, 1500);
-        inspectBlockedAds();
-    })();
-    """
+
+            function inspectBlockedAds() {
+                const adNodes = document.querySelectorAll(
+                    '.ad, .ads, .adsbygoogle, .ad-container, .ad-banner, .advertisement, [id^="ad_"], [id^="google_ads_"], [class*="sponsored"], [class*="promoted"], .banner-ad, iframe[id*="google_ads"], div[data-ad-unit], ytd-ad-slot-renderer, ytd-banner-promo-renderer, #masthead-ad'
+                );
+                let hiddenCount = 0;
+                adNodes.forEach(node => {
+                    const style = window.getComputedStyle(node);
+                    if (style.display === 'none' || node.offsetParent === null) {
+                        hiddenCount++;
+                    }
+                });
+
+                const total = hiddenCount + skippedAds;
+                if (total !== lastReported) {
+                    lastReported = total;
+                    try {
+                        window.webkit.messageHandlers.pinggoAdBlock.postMessage({ count: total });
+                    } catch(e) {}
+                }
+            }
+
+            setInterval(inspectBlockedAds, 1200);
+            inspectBlockedAds();
+        })();
+        """
+    }
 
     @MainActor
     static func compileRuleList(completion: @escaping @MainActor @Sendable (WKContentRuleList?) -> Void) {
         WKContentRuleListStore.default()?.compileContentRuleList(
             forIdentifier: "PinggoAdBlockRuleList",
             encodedContentRuleList: rulesJSON
-        ) { ruleList, _ in
+        ) { ruleList, error in
+            if let error = error {
+                print("[PinggoAdBlock] Rule list compilation failed: \(error)")
+            } else {
+                print("[PinggoAdBlock] Rule list compiled successfully")
+            }
             completion(ruleList)
         }
     }
@@ -121,6 +380,23 @@ struct SavedBrowserSession: Codable {
     let activeTabID: UUID
 }
 
+// MARK: - Browser History Model
+struct BrowserHistoryItem: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String
+    let urlString: String
+    let visitedAt: Date
+    var faviconURLString: String?
+
+    init(id: UUID = UUID(), title: String, urlString: String, visitedAt: Date = Date(), faviconURLString: String? = nil) {
+        self.id = id
+        self.title = title.isEmpty ? (URL(string: urlString)?.host ?? urlString) : title
+        self.urlString = urlString
+        self.visitedAt = visitedAt
+        self.faviconURLString = faviconURLString
+    }
+}
+
 // MARK: - Browser Tab Item Model
 struct BrowserTabItem: Identifiable, Equatable {
     let id: UUID
@@ -136,14 +412,17 @@ struct BrowserTabItem: Identifiable, Equatable {
     var isReaderModeActive: Bool
     var readerContent: String?
     var faviconURL: URL? = nil
+    var isIncognito: Bool = false
 }
 
 // MARK: - Dedicated Tab WKWebView Subclass
 final class PinggoTabWebView: WKWebView {
     let tabID: UUID
+    let isIncognito: Bool
 
-    init(tabID: UUID, frame: CGRect, configuration: WKWebViewConfiguration) {
+    init(tabID: UUID, frame: CGRect, configuration: WKWebViewConfiguration, isIncognito: Bool = false) {
         self.tabID = tabID
+        self.isIncognito = isIncognito
         super.init(frame: frame, configuration: configuration)
     }
 
@@ -161,10 +440,12 @@ final class BrowserState: ObservableObject {
     private let sessionKey = "pinggo.browser.saved_session"
     private let bookmarksKey = "pinggo.browser.saved_bookmarks"
     private let whitelistKey = "pinggo.browser.whitelisted_domains"
+    private let historyKey = "pinggo.browser.saved_history"
 
     @Published var tabs: [BrowserTabItem] = []
     @Published var activeTabID: UUID = UUID()
     @Published var whitelistedDomains: Set<String> = []
+    @Published var history: [BrowserHistoryItem] = []
 
     @Published var urlInput: String = ""
     @Published var currentURL: URL? = nil
@@ -181,8 +462,18 @@ final class BrowserState: ObservableObject {
 
     // Granular AdBlock Filter Categories
     @Published var blockAds: Bool = true
+    @Published var blockYouTubeAds: Bool = true
     @Published var blockTrackers: Bool = true
     @Published var blockCookieBanners: Bool = true
+
+    // Find in Page State
+    @Published var isFindInPageActive: Bool = false
+    @Published var findQuery: String = ""
+    @Published var findMatchCount: Int = 0
+    @Published var currentMatchIndex: Int = 0
+
+    // Zoom State
+    @Published var currentZoom: Double = 1.0
 
     // Download Tracker
     @Published var recentDownloads: [String] = []
@@ -288,6 +579,12 @@ final class BrowserState: ObservableObject {
             ]
         }
 
+        // 4. Restore browsing history
+        if let hData = UserDefaults.standard.data(forKey: historyKey),
+           let hDecoded = try? JSONDecoder().decode([BrowserHistoryItem].self, from: hData) {
+            self.history = hDecoded
+        }
+
         AdBlockEngine.compileRuleList { [weak self] list in
             guard let self = self else { return }
             self.contentRuleList = list
@@ -297,7 +594,7 @@ final class BrowserState: ObservableObject {
 
     func saveSession() {
         saveActiveTabSnapshot()
-        let savedTabs = tabs.map { tab in
+        let savedTabs = tabs.filter { !$0.isIncognito }.map { tab in
             SavedBrowserTab(
                 id: tab.id,
                 title: tab.title,
@@ -330,26 +627,43 @@ final class BrowserState: ObservableObject {
             return existing
         }
 
+        let tab = tabs.first(where: { $0.id == tabID })
+        let isIncognito = tab?.isIncognito ?? false
+
         let configuration = WKWebViewConfiguration()
+        if isIncognito {
+            configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        let tab = tabs.first(where: { $0.id == tabID })
         let host = tab?.currentURL?.host?.lowercased()
         let isWhitelisted = host != nil && whitelistedDomains.contains(host!)
-        if let ruleList = contentRuleList, isAdBlockerActive && !isWhitelisted {
-            configuration.userContentController.add(ruleList)
+        if isAdBlockerActive && !isWhitelisted {
+            if let ruleList = contentRuleList {
+                configuration.userContentController.add(ruleList)
+            }
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: AdBlockEngine.earlyScript(blockYouTube: blockYouTubeAds), injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            )
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: AdBlockEngine.runtimeScript(blockYouTube: blockYouTubeAds), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+            )
         }
-
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: AdBlockEngine.countScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-        )
         configuration.userContentController.add(coordinator, name: "pinggoAdBlock")
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: VideoDownloadManager.snifferScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        )
+        configuration.userContentController.add(coordinator, name: "pinggoVideoSniffer")
+        configuration.userContentController.add(coordinator, name: "pinggoVideoDownload")
 
-        let wv = PinggoTabWebView(tabID: tabID, frame: .zero, configuration: configuration)
+        configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+
+        let wv = PinggoTabWebView(tabID: tabID, frame: .zero, configuration: configuration, isIncognito: isIncognito)
         wv.navigationDelegate = coordinator
         wv.uiDelegate = coordinator
         wv.allowsBackForwardNavigationGestures = true
+        wv.pageZoom = CGFloat(currentZoom)
         wv.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
 
         tabWebViews[tabID] = wv
@@ -363,13 +677,13 @@ final class BrowserState: ObservableObject {
         return wv
     }
 
-    func addNewTab(urlString: String = "") {
+    func addNewTab(urlString: String = "", isIncognito: Bool = false) {
         saveActiveTabSnapshot()
         let newID = UUID()
         let initialURL = urlString.isEmpty ? nil : (URL(string: urlString) ?? searchURL(for: urlString))
         let newTab = BrowserTabItem(
             id: newID,
-            title: "New Tab",
+            title: isIncognito ? "Private Tab" : "New Tab",
             urlString: initialURL?.absoluteString ?? "",
             currentURL: initialURL,
             pageTitle: "",
@@ -379,16 +693,28 @@ final class BrowserState: ObservableObject {
             canGoForward: false,
             blockedAdsCount: 0,
             isReaderModeActive: false,
-            readerContent: nil
+            readerContent: nil,
+            faviconURL: nil,
+            isIncognito: isIncognito
         )
         tabs.append(newTab)
         activeTabID = newID
         restoreTab(newTab)
-        saveSession()
+        if !isIncognito {
+            saveSession()
+        }
 
         if let target = initialURL {
             activeWebView?.load(URLRequest(url: target))
         }
+    }
+
+    func addNewIncognitoTab() {
+        addNewTab(urlString: "", isIncognito: true)
+    }
+
+    var activeTabIsIncognito: Bool {
+        tabs.first(where: { $0.id == activeTabID })?.isIncognito ?? false
     }
 
     func selectTab(id: UUID) {
@@ -404,6 +730,7 @@ final class BrowserState: ObservableObject {
             wv.stopLoading()
             wv.removeFromSuperview()
         }
+        VideoDownloadManager.shared.clearDetectedVideos(forTabID: id)
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs.remove(at: idx)
         if tabs.isEmpty {
@@ -525,16 +852,34 @@ final class BrowserState: ObservableObject {
     }
 
     func applyAdBlockerState() {
-        guard let ruleList = contentRuleList else { return }
         for (tabID, wv) in tabWebViews {
             let ucc = wv.configuration.userContentController
-            ucc.remove(ruleList)
+            if let ruleList = contentRuleList {
+                ucc.remove(ruleList)
+            }
+            ucc.removeAllUserScripts()
             let tab = tabs.first(where: { $0.id == tabID })
             let host = tab?.currentURL?.host?.lowercased()
             let isWhitelisted = host != nil && whitelistedDomains.contains(host!)
             if isAdBlockerActive && !isWhitelisted {
-                ucc.add(ruleList)
+                if let ruleList = contentRuleList {
+                    ucc.add(ruleList)
+                }
+                ucc.addUserScript(
+                    WKUserScript(source: AdBlockEngine.earlyScript(blockYouTube: blockYouTubeAds), injectionTime: .atDocumentStart, forMainFrameOnly: false)
+                )
+                ucc.addUserScript(
+                    WKUserScript(source: AdBlockEngine.runtimeScript(blockYouTube: blockYouTubeAds), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+                )
             }
+        }
+    }
+
+    func toggleYouTubeAdBlocker() {
+        blockYouTubeAds.toggle()
+        applyAdBlockerState()
+        if let host = currentHost, host.contains("youtube.com") {
+            activeWebView?.reload()
         }
     }
 
@@ -556,6 +901,109 @@ final class BrowserState: ObservableObject {
         }
         applyAdBlockerState()
         activeWebView?.reload()
+    }
+
+    // MARK: - Zoom Controls
+    func zoomIn() {
+        currentZoom = min(3.0, (currentZoom + 0.1 * 10).rounded() / 10)
+        activeWebView?.pageZoom = CGFloat(currentZoom)
+    }
+
+    func zoomOut() {
+        currentZoom = max(0.5, (currentZoom - 0.1 * 10).rounded() / 10)
+        activeWebView?.pageZoom = CGFloat(currentZoom)
+    }
+
+    func resetZoom() {
+        currentZoom = 1.0
+        activeWebView?.pageZoom = 1.0
+    }
+
+    // MARK: - Find in Page
+    func showFindInPage() {
+        isFindInPageActive = true
+        if !findQuery.isEmpty {
+            performFind(forward: true)
+        }
+    }
+
+    func hideFindInPage() {
+        isFindInPageActive = false
+        findQuery = ""
+        findMatchCount = 0
+        currentMatchIndex = 0
+        activeWebView?.evaluateJavaScript("window.getSelection()?.removeAllRanges();", completionHandler: nil)
+    }
+
+    func updateFindQuery(_ query: String) {
+        findQuery = query
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            findMatchCount = 0
+            currentMatchIndex = 0
+            activeWebView?.evaluateJavaScript("window.getSelection()?.removeAllRanges();", completionHandler: nil)
+            return
+        }
+        countMatches(query: query)
+        performFind(forward: true)
+    }
+
+    func findNext() {
+        guard !findQuery.isEmpty else { return }
+        if findMatchCount > 0 {
+            currentMatchIndex = (currentMatchIndex % findMatchCount) + 1
+        }
+        performFind(forward: true)
+    }
+
+    func findPrevious() {
+        guard !findQuery.isEmpty else { return }
+        if findMatchCount > 0 {
+            currentMatchIndex = (currentMatchIndex - 2 + findMatchCount) % findMatchCount + 1
+        }
+        performFind(forward: false)
+    }
+
+    private func performFind(forward: Bool) {
+        guard let wv = activeWebView, !findQuery.isEmpty else { return }
+        let escaped = findQuery
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "window.find(\"\(escaped)\", false, \(!forward), true, false, true, false);"
+        wv.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func countMatches(query: String) {
+        guard let wv = activeWebView else { return }
+        let escaped = query
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        (() => {
+            try {
+                const text = document.body ? document.body.innerText : '';
+                const query = "\(escaped)";
+                if (!query) return 0;
+                const escapedQuery = query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+                const regex = new RegExp(escapedQuery, 'gi');
+                const matches = text.match(regex);
+                return matches ? matches.length : 0;
+            } catch(e) {
+                return 0;
+            }
+        })();
+        """
+        wv.evaluateJavaScript(script) { [weak self] result, _ in
+            DispatchQueue.main.async {
+                if let count = result as? Int {
+                    self?.findMatchCount = count
+                    if count > 0 && self?.currentMatchIndex == 0 {
+                        self?.currentMatchIndex = 1
+                    } else if count == 0 {
+                        self?.currentMatchIndex = 0
+                    }
+                }
+            }
+        }
     }
 
     func reorderTab(draggedID: UUID, targetID: UUID) {
@@ -633,6 +1081,9 @@ final class BrowserState: ObservableObject {
         if let idx = tabs.firstIndex(where: { $0.id == id }) {
             tabs[idx].pageTitle = title
             tabs[idx].title = title
+            if !tabs[idx].isIncognito, let url = tabs[idx].currentURL {
+                updateHistoryTitle(url: url, title: title)
+            }
         }
         if id == activeTabID {
             self.pageTitle = title
@@ -649,6 +1100,9 @@ final class BrowserState: ObservableObject {
             }
             if tabs[idx].title.isEmpty || tabs[idx].title == "New Tab" {
                 tabs[idx].title = url.host ?? url.absoluteString
+            }
+            if !tabs[idx].isIncognito {
+                recordHistory(url: url, title: tabs[idx].title, faviconURL: tabs[idx].faviconURL)
             }
         }
         if id == activeTabID {
@@ -676,6 +1130,81 @@ final class BrowserState: ObservableObject {
             self.canGoForward = canGoForward
         }
     }
+
+    // MARK: - Browsing History Methods
+    func recordHistory(url: URL, title: String, faviconURL: URL?) {
+        let urlStr = url.absoluteString
+        guard !urlStr.isEmpty, urlStr.hasPrefix("http") else { return }
+
+        // Deduplicate consecutive visits to identical URL within 10 seconds
+        if let first = history.first, first.urlString == urlStr, abs(first.visitedAt.timeIntervalSinceNow) < 10 {
+            return
+        }
+
+        let item = BrowserHistoryItem(
+            title: title.isEmpty ? (url.host ?? urlStr) : title,
+            urlString: urlStr,
+            visitedAt: Date(),
+            faviconURLString: faviconURL?.absoluteString
+        )
+        history.insert(item, at: 0)
+        if history.count > 2500 {
+            history.removeLast(history.count - 2500)
+        }
+        saveHistory()
+    }
+
+    func updateHistoryTitle(url: URL, title: String) {
+        let urlStr = url.absoluteString
+        guard !title.isEmpty, !urlStr.isEmpty else { return }
+        if let idx = history.firstIndex(where: { $0.urlString == urlStr && abs($0.visitedAt.timeIntervalSinceNow) < 60 }) {
+            history[idx].title = title
+            saveHistory()
+        }
+    }
+
+    func removeHistoryItem(id: UUID) {
+        history.removeAll(where: { $0.id == id })
+        saveHistory()
+    }
+
+    func clearHistory() {
+        history.removeAll()
+        saveHistory()
+    }
+
+    func saveHistory() {
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: historyKey)
+        }
+    }
+
+    func clearBrowsingData(clearHistory: Bool, clearCookies: Bool, clearCache: Bool, completion: (@MainActor @Sendable () -> Void)? = nil) {
+        if clearHistory {
+            self.clearHistory()
+        }
+        var dataTypes = Set<String>()
+        if clearCookies {
+            dataTypes.insert(WKWebsiteDataTypeCookies)
+            dataTypes.insert(WKWebsiteDataTypeLocalStorage)
+            dataTypes.insert(WKWebsiteDataTypeSessionStorage)
+            dataTypes.insert(WKWebsiteDataTypeIndexedDBDatabases)
+            dataTypes.insert(WKWebsiteDataTypeWebSQLDatabases)
+        }
+        if clearCache {
+            dataTypes.insert(WKWebsiteDataTypeDiskCache)
+            dataTypes.insert(WKWebsiteDataTypeMemoryCache)
+        }
+        if !dataTypes.isEmpty {
+            WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: .distantPast) {
+                Task { @MainActor in
+                    completion?()
+                }
+            }
+        } else {
+            completion?()
+        }
+    }
 }
 
 // MARK: - Main Browser View
@@ -685,7 +1214,19 @@ struct BrowserView: View {
     @State private var showingAdBlockPopover: Bool = false
     @State private var showingBookmarksPopover: Bool = false
     @State private var showingDownloadsPopover: Bool = false
+    @State private var showingHistoryPopover: Bool = false
+    @State private var showingClearDataDialog: Bool = false
+    @State private var historySearchQuery: String = ""
+    @State private var clearHistoryChecked: Bool = true
+    @State private var clearCookiesChecked: Bool = true
+    @State private var clearCacheChecked: Bool = true
+    @State private var isClearingData: Bool = false
     @State private var draggedTabID: UUID? = nil
+    @ObservedObject private var downloadManager: VideoDownloadManager = VideoDownloadManager.shared
+
+    private var activeTabVideos: [DetectedVideoMedia] {
+        downloadManager.detectedVideosByTab[browserState.activeTabID] ?? []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -706,7 +1247,7 @@ struct BrowserView: View {
                 .background(Palette.border)
 
             // 3. Web View or Start Page or Reader Mode
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 if browserState.isReaderModeActive, let content = browserState.readerContent {
                     readerModeView(content: content)
                 } else {
@@ -717,9 +1258,73 @@ struct BrowserView: View {
                         BrowserStartPage(state: browserState)
                     }
                 }
+
+                if browserState.isFindInPageActive {
+                    findInPageOverlay
+                        .padding(.top, 10)
+                        .padding(.trailing, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.background)
+            .background {
+                // Invisible buttons for global shortcuts within BrowserView
+                Group {
+                    Button("") {
+                        if browserState.isFindInPageActive {
+                            browserState.hideFindInPage()
+                        } else {
+                            browserState.showFindInPage()
+                        }
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+
+                    Button("") { browserState.zoomIn() }
+                        .keyboardShortcut("=", modifiers: .command)
+
+                    Button("") { browserState.zoomIn() }
+                        .keyboardShortcut("+", modifiers: .command)
+
+                    Button("") { browserState.zoomOut() }
+                        .keyboardShortcut("-", modifiers: .command)
+
+                    Button("") { browserState.resetZoom() }
+                        .keyboardShortcut("0", modifiers: .command)
+
+                    Button("") { showingHistoryPopover.toggle() }
+                        .keyboardShortcut("y", modifiers: .command)
+
+                    Button("") { browserState.addNewIncognitoTab() }
+                        .keyboardShortcut("n", modifiers: [.command, .shift])
+                }
+                .opacity(0)
+                .allowsHitTesting(false)
+            }
+
+            // 4. Download Notification Toast Banner
+            if let notice = downloadManager.notificationMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(notice)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button("Show in Downloads") {
+                        let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                        NSWorkspace.shared.open(downloadsDir)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .onAppear {
             handleRequestedURL()
@@ -772,9 +1377,15 @@ struct BrowserView: View {
                                     .foregroundStyle(isActive ? Palette.accent : Palette.muted)
                             }
 
-                            Text(tab.title.isEmpty ? "New Tab" : tab.title)
+                            if tab.isIncognito {
+                                Image(systemName: "eye.slash.fill")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(.purple)
+                            }
+
+                            Text(tab.title.isEmpty ? (tab.isIncognito ? "Private Tab" : "New Tab") : tab.title)
                                 .font(.system(size: 11, weight: isActive ? .semibold : .regular))
-                                .foregroundStyle(isActive ? Color.primary : Palette.muted)
+                                .foregroundStyle(isActive ? (tab.isIncognito ? Color.purple : Color.primary) : Palette.muted)
                                 .lineLimit(1)
                                 .frame(maxWidth: 130, alignment: .leading)
 
@@ -793,12 +1404,12 @@ struct BrowserView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
-                            isActive ? Palette.panel : Palette.card.opacity(0.3),
+                            isActive ? (tab.isIncognito ? Color.purple.opacity(0.18) : Palette.panel) : Palette.card.opacity(0.3),
                             in: RoundedRectangle(cornerRadius: 8)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(isActive ? Palette.accent.opacity(0.5) : Palette.border.opacity(0.5), lineWidth: 1)
+                                .stroke(isActive ? (tab.isIncognito ? Color.purple.opacity(0.6) : Palette.accent.opacity(0.5)) : Palette.border.opacity(0.5), lineWidth: 1)
                         )
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -819,18 +1430,33 @@ struct BrowserView: View {
                 .padding(.horizontal, 8)
             }
 
-            // New Tab button
-            Button {
-                browserState.addNewTab()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: 24, height: 24)
-                    .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            // New Tab & Private Tab buttons
+            HStack(spacing: 4) {
+                Button {
+                    browserState.addNewTab()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 24, height: 24)
+                        .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .help("New Tab (⌘T)")
+
+                Button {
+                    browserState.addNewIncognitoTab()
+                } label: {
+                    Image(systemName: "eye.slash.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.purple)
+                        .frame(width: 24, height: 24)
+                        .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.purple.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("New Private Tab (⌘⇧N)")
             }
-            .buttonStyle(.plain)
-            .help("New Tab (⌘T)")
             .padding(.trailing, 8)
         }
         .frame(height: 36)
@@ -896,18 +1522,33 @@ struct BrowserView: View {
             // AdBlocker Status Pill
             adBlockerPill
 
+            // Video Downloader Pill
+            if !activeTabVideos.isEmpty {
+                videoDownloaderPill
+            }
+
             // Download Tracker Pill
-            if !browserState.recentDownloads.isEmpty {
+            let ongoingDownloads = downloadManager.activeDownloads.filter { !$0.isComplete && $0.error == nil }
+            if !browserState.recentDownloads.isEmpty || !downloadManager.activeDownloads.isEmpty {
                 Button {
                     showingDownloadsPopover.toggle()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Palette.accent)
-                        Text("\(browserState.recentDownloads.count)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Palette.accent)
+                        if !ongoingDownloads.isEmpty {
+                            ProgressView()
+                                .scaleEffect(0.55)
+                                .frame(width: 12, height: 12)
+                            Text("\(ongoingDownloads.count)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                        } else {
+                            Text("\(browserState.recentDownloads.count + downloadManager.activeDownloads.filter { $0.isComplete }.count)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                        }
                     }
                     .padding(.horizontal, 8)
                     .frame(height: 32)
@@ -915,7 +1556,7 @@ struct BrowserView: View {
                     .overlay(Capsule().stroke(Palette.accent.opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help("Recent Downloads")
+                .help("Downloads & Media Progress")
                 .popover(isPresented: $showingDownloadsPopover, arrowEdge: .bottom) {
                     downloadsPopoverContent
                 }
@@ -923,6 +1564,47 @@ struct BrowserView: View {
 
             // Action controls
             HStack(spacing: 6) {
+                // Find in Page Button
+                Button {
+                    if browserState.isFindInPageActive {
+                        browserState.hideFindInPage()
+                    } else {
+                        browserState.showFindInPage()
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(browserState.isFindInPageActive ? Palette.accent : Color.primary.opacity(0.85))
+                        .frame(width: 32, height: 32)
+                        .background(browserState.isFindInPageActive ? Palette.accent.opacity(0.15) : Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(browserState.isFindInPageActive ? Palette.accent.opacity(0.4) : Palette.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Find in Page (⌘F)")
+
+                // Zoom Level Controls
+                Menu {
+                    Button("Zoom In (⌘+)") { browserState.zoomIn() }
+                    Button("Zoom Out (⌘-)") { browserState.zoomOut() }
+                    Divider()
+                    Button("Reset to 100% (⌘0)") { browserState.resetZoom() }
+                } label: {
+                    HStack(spacing: 2) {
+                        Image(systemName: "textformat.size")
+                            .font(.system(size: 10))
+                        Text("\(Int((browserState.currentZoom * 100).rounded()))%")
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .padding(.horizontal, 6)
+                    .frame(height: 32)
+                    .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 64)
+                .help("Page Zoom Level (⌘+ / ⌘-)")
+
                 // Bookmarks Popover Button
                 Button { showingBookmarksPopover.toggle() } label: {
                     Image(systemName: "book.fill")
@@ -936,6 +1618,21 @@ struct BrowserView: View {
                 .help("Bookmarks & Quick Access")
                 .popover(isPresented: $showingBookmarksPopover, arrowEdge: .bottom) {
                     bookmarksPopoverContent
+                }
+
+                // Browsing History Popover Button
+                Button { showingHistoryPopover.toggle() } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(showingHistoryPopover ? Palette.accent : Color.primary.opacity(0.85))
+                        .frame(width: 32, height: 32)
+                        .background(showingHistoryPopover ? Palette.accent.opacity(0.15) : Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(showingHistoryPopover ? Palette.accent.opacity(0.4) : Palette.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Browsing History (⌘Y)")
+                .popover(isPresented: $showingHistoryPopover, arrowEdge: .bottom) {
+                    historyPopoverContent
                 }
 
                 // Open in External Safari
@@ -962,8 +1659,19 @@ struct BrowserView: View {
     private var omnibarField: some View {
         ZStack(alignment: .bottom) {
             HStack(spacing: 8) {
-                // Security / Search Indicator
-                if browserState.currentURL != nil {
+                // Security / Search / Private Indicator
+                if browserState.activeTabIsIncognito {
+                    HStack(spacing: 3) {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 9))
+                        Text("Private")
+                            .font(.system(size: 9.5, weight: .bold))
+                    }
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(Color.purple.opacity(0.15), in: Capsule())
+                } else if browserState.currentURL != nil {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(.green)
@@ -1182,6 +1890,13 @@ struct BrowserView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(.green)
+                    Text("YouTube pre-roll & mid-roll ads eliminated")
+                        .font(.system(size: 11))
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.green)
                     Text("Third-party tracking cookies blocked")
                         .font(.system(size: 11))
                 }
@@ -1196,7 +1911,7 @@ struct BrowserView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(.green)
-                    Text("Zero CPU & battery overhead")
+                    Text("Anti-adblock detection bypassed")
                         .font(.system(size: 11))
                 }
             }
@@ -1207,6 +1922,21 @@ struct BrowserView: View {
                 Text("PROTECTION CATEGORIES")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Palette.muted)
+
+                HStack {
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.accent)
+                    Text("YouTube Video Ads & Promos")
+                        .font(.system(size: 11.5))
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { browserState.blockYouTubeAds },
+                        set: { _ in browserState.toggleYouTubeAdBlocker() }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
 
                 HStack {
                     Image(systemName: "hand.raised.fill")
@@ -1249,17 +1979,58 @@ struct BrowserView: View {
         .frame(width: 320)
     }
 
+    // MARK: - Video Downloader Pill
+    private var videoDownloaderPill: some View {
+        Menu {
+            ForEach(activeTabVideos) { media in
+                Section(header: Text(media.title).lineLimit(1)) {
+                    ForEach(media.availableOptions) { opt in
+                        Button {
+                            downloadManager.startDownload(media: media, quality: opt, webView: browserState.activeWebView)
+                        } label: {
+                            HStack {
+                                Text(opt.label)
+                                Spacer()
+                                Text(opt.format.uppercased())
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Text("Download Video (\(activeTabVideos.count))")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Palette.accent.opacity(0.8))
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 32)
+            .background(Palette.accent.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(Palette.accent.opacity(0.4), lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .help("Download video with audio in full quality or selected resolution")
+    }
+
     // MARK: - Downloads Popover Content
     private var downloadsPopoverContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(Palette.accent)
-                Text("Recent Downloads")
+                Text("Downloads & Media")
                     .font(.system(size: 12.5, weight: .bold))
                 Spacer()
                 Button("Clear") {
                     browserState.recentDownloads.removeAll()
+                    downloadManager.activeDownloads.removeAll(where: { $0.isComplete })
                     showingDownloadsPopover = false
                 }
                 .buttonStyle(.plain)
@@ -1267,32 +2038,187 @@ struct BrowserView: View {
                 .foregroundStyle(Palette.muted)
             }
             Divider()
-            ForEach(browserState.recentDownloads.suffix(5).reversed(), id: \.self) { filename in
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                    Text(filename)
-                        .font(.system(size: 11.5))
-                        .lineLimit(1)
-                    Spacer()
-                    Button {
-                        let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-                        let fileURL = downloadsDir.appendingPathComponent(filename)
-                        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.accent)
+
+            // Active Video Downloads
+            let ongoing = downloadManager.activeDownloads.filter { !$0.isComplete }
+            if !ongoing.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("ACTIVE DOWNLOADS")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Palette.accent)
+                    ForEach(ongoing) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(item.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(item.qualityLabel)
+                                    .font(.system(size: 9.5, weight: .medium))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                            ProgressView(value: item.progress)
+                                .progressViewStyle(.linear)
+                            HStack {
+                                Text(item.statusText)
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(item.error != nil ? Color.red : Palette.muted)
+                                Spacer()
+                                Text("\(Int(item.progress * 100))%")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                        }
+                        .padding(6)
+                        .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .buttonStyle(.plain)
-                    .help("Show in Finder")
+                    Divider()
                 }
-                .padding(.vertical, 2)
+            }
+
+            // Completed Video Downloads
+            let completedVideos = downloadManager.activeDownloads.filter { $0.isComplete && $0.savedFileURL != nil }
+            if !completedVideos.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("COMPLETED VIDEOS")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Palette.muted)
+                    ForEach(completedVideos.suffix(5).reversed()) { item in
+                        if let fileURL = item.savedFileURL {
+                            HStack(spacing: 8) {
+                                Image(systemName: "film.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.accent)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.title)
+                                        .font(.system(size: 11.5))
+                                        .lineLimit(1)
+                                    Text(item.qualityLabel)
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(Palette.muted)
+                                }
+                                Spacer()
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                                } label: {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Palette.accent)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Show in Finder")
+
+                                Button {
+                                    NSWorkspace.shared.open(fileURL)
+                                } label: {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Palette.accent)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Play Video")
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    if !browserState.recentDownloads.isEmpty {
+                        Divider()
+                    }
+                }
+            }
+
+            // Other Recent Downloads
+            if !browserState.recentDownloads.isEmpty {
+                ForEach(browserState.recentDownloads.suffix(5).reversed(), id: \.self) { filename in
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        Text(filename)
+                            .font(.system(size: 11.5))
+                            .lineLimit(1)
+                        Spacer()
+                        Button {
+                            let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                            let fileURL = downloadsDir.appendingPathComponent(filename)
+                            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show in Finder")
+                    }
+                    .padding(.vertical, 2)
+                }
             }
         }
         .padding(14)
-        .frame(width: 280)
+        .frame(width: 320)
+    }
+
+    // MARK: - Find In Page Overlay
+    private var findInPageOverlay: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.muted)
+
+            TextField("Find in page…", text: Binding(
+                get: { browserState.findQuery },
+                set: { browserState.updateFindQuery($0) }
+            ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .frame(width: 140)
+            .onSubmit {
+                browserState.findNext()
+            }
+
+            if !browserState.findQuery.isEmpty {
+                Text(browserState.findMatchCount > 0 ? "\(browserState.currentMatchIndex) of \(browserState.findMatchCount)" : "0 matches")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(browserState.findMatchCount > 0 ? Palette.muted : Color.red.opacity(0.85))
+            }
+
+            Divider().frame(height: 14)
+
+            Button { browserState.findPrevious() } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 20, height: 20)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .help("Previous match (Shift+Enter)")
+
+            Button { browserState.findNext() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 20, height: 20)
+                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .help("Next match (Enter)")
+
+            Button { browserState.hideFindInPage() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 20, height: 20)
+                    .background(Palette.hover, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Close (Esc)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
     }
 
     // MARK: - Bookmarks Popover Content
@@ -1344,6 +2270,301 @@ struct BrowserView: View {
         }
         .padding(14)
         .frame(width: 280)
+    }
+
+    // MARK: - History Popover Content
+    private var historyPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(Palette.accent)
+                    Text("Browsing History")
+                        .font(.system(size: 13, weight: .bold))
+                }
+
+                Spacer()
+
+                Button("Clear Data…") {
+                    showingClearDataDialog = true
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            // Search filter
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                TextField("Search history…", text: $historySearchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
+                if !historySearchQuery.isEmpty {
+                    Button {
+                        historySearchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.card, lineWidth: 1))
+
+            Divider()
+
+            let filteredHistory = browserState.history.filter { item in
+                if historySearchQuery.isEmpty { return true }
+                let q = historySearchQuery.lowercased()
+                return item.title.lowercased().contains(q) || item.urlString.lowercased().contains(q)
+            }
+
+            if filteredHistory.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.badge.xmark")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Palette.muted.opacity(0.6))
+                    Text(historySearchQuery.isEmpty ? "No browsing history recorded" : "No matching history results")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        let grouped = groupHistoryByDate(filteredHistory)
+                        ForEach(grouped, id: \.section) { group in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(group.section.uppercased())
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .padding(.horizontal, 4)
+
+                                ForEach(group.items) { item in
+                                    HStack(spacing: 8) {
+                                        if let favStr = item.faviconURLString, let favURL = URL(string: favStr) {
+                                            AsyncImage(url: favURL) { phase in
+                                                switch phase {
+                                                case .success(let img):
+                                                    img.resizable().scaledToFit().frame(width: 14, height: 14).clipShape(RoundedRectangle(cornerRadius: 2))
+                                                default:
+                                                    Image(systemName: "globe").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                                }
+                                            }
+                                            .frame(width: 14, height: 14)
+                                        } else {
+                                            Image(systemName: "globe")
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(Palette.muted)
+                                                .frame(width: 14, height: 14)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 1.5) {
+                                            Text(item.title)
+                                                .font(.system(size: 11.5, weight: .medium))
+                                                .foregroundStyle(Color.primary)
+                                                .lineLimit(1)
+
+                                            Text(URL(string: item.urlString)?.host ?? item.urlString)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(Palette.muted)
+                                                .lineLimit(1)
+                                        }
+
+                                        Spacer()
+
+                                        Text(formatHistoryTime(item.visitedAt))
+                                            .font(.system(size: 9.5))
+                                            .foregroundStyle(Palette.muted)
+
+                                        // Open in new tab
+                                        Button {
+                                            browserState.addNewTab(urlString: item.urlString)
+                                            showingHistoryPopover = false
+                                        } label: {
+                                            Image(systemName: "plus.square.on.square")
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Open in New Tab")
+
+                                        // Delete item
+                                        Button {
+                                            browserState.removeHistoryItem(id: item.id)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 9.5))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Remove from history")
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(Palette.hover.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        browserState.load(urlString: item.urlString)
+                                        showingHistoryPopover = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(height: 300)
+            }
+        }
+        .padding(14)
+        .frame(width: 360)
+        .sheet(isPresented: $showingClearDataDialog) {
+            clearBrowsingDataModal
+        }
+    }
+
+    // MARK: - Clear Browsing Data Modal
+    private var clearBrowsingDataModal: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.red)
+                Text("Clear Browsing Data")
+                    .font(.system(size: 15, weight: .bold))
+                Spacer()
+                Button {
+                    showingClearDataDialog = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Select data types to remove from PINGGO:")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.muted)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: $clearHistoryChecked) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Browsing History")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Clears recorded page visits and URLs")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+
+                Toggle(isOn: $clearCookiesChecked) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cookies & Site Data")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Signs you out of most websites")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+
+                Toggle(isOn: $clearCacheChecked) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cached Images & Files")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Frees disk and memory cache")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+            .padding(12)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+
+            HStack {
+                Button("Cancel") {
+                    showingClearDataDialog = false
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button {
+                    isClearingData = true
+                    browserState.clearBrowsingData(
+                        clearHistory: clearHistoryChecked,
+                        clearCookies: clearCookiesChecked,
+                        clearCache: clearCacheChecked
+                    ) {
+                        isClearingData = false
+                        showingClearDataDialog = false
+                    }
+                } label: {
+                    if isClearingData {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small)
+                            Text("Clearing...")
+                        }
+                    } else {
+                        Text("Clear Now")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(isClearingData || (!clearHistoryChecked && !clearCookiesChecked && !clearCacheChecked))
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private struct HistoryGroup {
+        let section: String
+        let items: [BrowserHistoryItem]
+    }
+
+    private func groupHistoryByDate(_ items: [BrowserHistoryItem]) -> [HistoryGroup] {
+        let calendar = Calendar.current
+        var today: [BrowserHistoryItem] = []
+        var yesterday: [BrowserHistoryItem] = []
+        var last7Days: [BrowserHistoryItem] = []
+        var older: [BrowserHistoryItem] = []
+
+        for item in items {
+            if calendar.isDateInToday(item.visitedAt) {
+                today.append(item)
+            } else if calendar.isDateInYesterday(item.visitedAt) {
+                yesterday.append(item)
+            } else if let daysAgo = calendar.dateComponents([.day], from: item.visitedAt, to: Date()).day, daysAgo <= 7 {
+                last7Days.append(item)
+            } else {
+                older.append(item)
+            }
+        }
+
+        var res: [HistoryGroup] = []
+        if !today.isEmpty { res.append(HistoryGroup(section: "Today", items: today)) }
+        if !yesterday.isEmpty { res.append(HistoryGroup(section: "Yesterday", items: yesterday)) }
+        if !last7Days.isEmpty { res.append(HistoryGroup(section: "Past 7 Days", items: last7Days)) }
+        if !older.isEmpty { res.append(HistoryGroup(section: "Older", items: older)) }
+        return res
+    }
+
+    private func formatHistoryTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            formatter.dateFormat = "h:mm a"
+        } else {
+            formatter.dateFormat = "MMM d, h:mm a"
+        }
+        return formatter.string(from: date)
     }
 
     // MARK: - Reader Mode View
@@ -1423,9 +2644,24 @@ struct BrowserStartPage: View {
                         Image(systemName: "shield.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(.green)
-                        Text("Native WebKit AdBlocker Active · Zero Trackers · Isolated Sandbox")
+                        Text("Complete AdBlocker Active · YouTube Ads Blocked · Zero Trackers")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Palette.muted)
+                    }
+
+                    if state.activeTabIsIncognito {
+                        HStack(spacing: 8) {
+                            Image(systemName: "eye.slash.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.purple)
+                            Text("Private Mode Active · Zero history or cookies saved")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.purple)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.purple.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(Color.purple.opacity(0.3), lineWidth: 1))
                     }
                 }
                 .padding(.top, 40)
@@ -1634,6 +2870,7 @@ struct BrowserWebContainer: NSViewRepresentable {
             guard let tabWV = webView as? PinggoTabWebView else { return }
             DispatchQueue.main.async {
                 self.parent.state.updateTabLoading(id: tabWV.tabID, isLoading: true)
+                VideoDownloadManager.shared.clearDetectedVideos(forTabID: tabWV.tabID)
             }
         }
 
@@ -1698,6 +2935,60 @@ struct BrowserWebContainer: NSViewRepresentable {
                         }
                     } else {
                         self.parent.state.blockedAdsCount = max(self.parent.state.blockedAdsCount, count)
+                    }
+                }
+            } else if message.name == "pinggoVideoSniffer", let dict = message.body as? [String: Any] {
+                let id = dict["id"] as? String ?? ""
+                let title = dict["title"] as? String ?? "Video"
+                let pageURL = (dict["pageURL"] as? String).flatMap { URL(string: $0) }
+                let thumb = (dict["thumbnailURL"] as? String).flatMap { URL(string: $0) }
+                let duration = dict["duration"] as? Double ?? 0
+                let isBlob = dict["isBlob"] as? Bool ?? false
+
+                var qualities: [VideoQualityOption] = []
+                if let qArray = dict["qualities"] as? [[String: Any]] {
+                    for q in qArray {
+                        let qId = q["id"] as? String ?? "full"
+                        let label = q["label"] as? String ?? "Full Quality"
+                        let res = q["resolution"] as? String ?? "Original"
+                        let url = q["url"] as? String ?? id
+                        let format = q["format"] as? String ?? "mp4"
+                        qualities.append(VideoQualityOption(id: qId, label: label, resolution: res, url: url, format: format))
+                    }
+                }
+                if qualities.isEmpty {
+                    qualities.append(VideoQualityOption(id: "full", label: "🌟 Full Quality (Best Available)", resolution: "Original", url: id, format: "mp4"))
+                }
+
+                let media = DetectedVideoMedia(
+                    id: id,
+                    title: title,
+                    pageURL: pageURL,
+                    thumbnailURL: thumb,
+                    duration: duration,
+                    qualities: qualities,
+                    isBlob: isBlob
+                )
+
+                DispatchQueue.main.async {
+                    if let tabWV = message.webView as? PinggoTabWebView {
+                        VideoDownloadManager.shared.registerDetectedVideo(media, forTabID: tabWV.tabID)
+                    }
+                }
+            } else if message.name == "pinggoVideoDownload", let dict = message.body as? [String: Any] {
+                let action = dict["action"] as? String ?? ""
+                if action == "blobChunk" || action == "blobError" {
+                    DispatchQueue.main.async {
+                        VideoDownloadManager.shared.handleBlobChunkMessage(dict)
+                    }
+                } else if action == "triggerVideoDownload", let videoId = dict["videoId"] as? String {
+                    DispatchQueue.main.async {
+                        if let tabWV = message.webView as? PinggoTabWebView,
+                           let mediaList = VideoDownloadManager.shared.detectedVideosByTab[tabWV.tabID],
+                           let media = mediaList.first(where: { $0.id == videoId }),
+                           let best = media.bestQuality {
+                            VideoDownloadManager.shared.startDownload(media: media, quality: best, webView: tabWV)
+                        }
                     }
                 }
             }

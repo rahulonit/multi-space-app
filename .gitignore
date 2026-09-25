@@ -2,3 +2,26 @@
 .cache/
 dist/
 .DS_Store
+
+# Swift / Xcode
+.swiftpm/
+DerivedData/
+*.xcworkspace
+*.xcodeproj
+*.app
+*.dmg
+
+# .NET / Windows build outputs
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pdb
+*.opendb
+
+# Packaging / generated artifacts
+*.appx
+*.msix

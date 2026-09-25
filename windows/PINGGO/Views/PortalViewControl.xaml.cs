@@ -397,21 +397,21 @@ namespace PINGGO.Views
 
             if (sentiment.Score <= -0.4)
             {
-                UrgencyBadgeText.Text = "🚨 Urgent";
+                UrgencyBadgeText.Text = "Urgent";
                 UrgencyBadgeText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
                 UrgencyBadge.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(50, 239, 68, 68));
                 SentimentScoreText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
             }
             else if (sentiment.Score >= 0.3)
             {
-                UrgencyBadgeText.Text = "✨ Positive";
+                UrgencyBadgeText.Text = "Positive";
                 UrgencyBadgeText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
                 UrgencyBadge.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(50, 34, 197, 94));
                 SentimentScoreText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
             }
             else
             {
-                UrgencyBadgeText.Text = "💬 Normal";
+                UrgencyBadgeText.Text = "Normal";
                 UrgencyBadgeText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 59, 130, 246));
                 UrgencyBadge.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(50, 59, 130, 246));
                 SentimentScoreText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 59, 130, 246));
@@ -439,7 +439,7 @@ namespace PINGGO.Views
             }
 
             CopilotHistoryContainer.Visibility = Visibility.Visible;
-            CopilotHistoryHeader.Text = $"CONVERSATION MEMORY ({_copilotHistory.Count})";
+            CopilotHistoryHeader.Text = $"Conversation · {_copilotHistory.Count}";
             CopilotHistoryList.Children.Clear();
 
             foreach (var msg in _copilotHistory)
@@ -447,22 +447,22 @@ namespace PINGGO.Views
                 var isUser = msg.Role == "user";
                 var border = new Border
                 {
-                    Background = isUser 
+                    Background = isUser
                         ? (Application.Current.Resources["AppAccentBrush"] as Microsoft.UI.Xaml.Media.Brush ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 99, 102, 241)))
-                        : (Application.Current.Resources["AppCardBrush"] as Microsoft.UI.Xaml.Media.Brush ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 30, 41, 59))),
-                    BorderBrush = Application.Current.Resources["AppBorderBrush"] as Microsoft.UI.Xaml.Media.Brush,
-                    BorderThickness = new Thickness(isUser ? 0 : 1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(8, 5, 8, 5),
+                        : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(isUser ? 10 : 0, isUser ? 6 : 4, isUser ? 10 : 0, isUser ? 6 : 4),
                     HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-                    MaxWidth = 260
+                    MaxWidth = 294
                 };
 
                 var text = new TextBlock
                 {
                     Text = msg.Content,
                     FontSize = 11,
-                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+                    Foreground = Application.Current.Resources["AppTextBrush"] as Microsoft.UI.Xaml.Media.Brush
+                        ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.White),
                     TextWrapping = TextWrapping.Wrap
                 };
                 border.Child = text;
@@ -492,7 +492,7 @@ namespace PINGGO.Views
             _isGeneratingReply = true;
 
             DraftCard.Visibility = Visibility.Visible;
-            DraftToneHeader.Text = $"REPLY DRAFT ({tone.ToUpperInvariant()})";
+            DraftToneHeader.Text = $"Reply · {tone}";
             DraftGeneratingRing.IsActive = true;
             DraftContentBox.Text = "";
 
@@ -590,7 +590,7 @@ namespace PINGGO.Views
             CustomPromptBox.Text = "";
             _isGeneratingReply = true;
             DraftCard.Visibility = Visibility.Visible;
-            DraftToneHeader.Text = "CO-PILOT RESPONSE";
+            DraftToneHeader.Text = "AI response";
             DraftGeneratingRing.IsActive = true;
             DraftContentBox.Text = "";
 

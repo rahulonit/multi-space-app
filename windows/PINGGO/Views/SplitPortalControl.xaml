@@ -2,76 +2,68 @@
     x:Class="PINGGO.Views.SplitPortalControl"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:PINGGO.Views">
-
+    xmlns:local="using:PINGGO.Views"
+    IsTabStop="True"
+    KeyDown="OnKeyDown">
     <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
-            <!-- Secondary Header (38px) -->
-            <RowDefinition Height="38" />
+            <RowDefinition Height="42" />
             <RowDefinition Height="1" />
-            <!-- Dual Panes -->
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Top Header for Split View -->
-        <Grid Grid.Row="0" Background="{StaticResource AppSidebarBrush}" Padding="16,0">
+        <Grid Grid.Row="0" Background="{StaticResource AppSidebarBrush}" Padding="12,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-
-            <!-- Left pane indicator -->
-            <TextBlock x:Name="LeftPaneTitle" Grid.Column="0" Text="Left Workspace" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
-
-            <!-- Center Controls: Ratio Presets, 1-Click Swap Button, and Close -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <!-- Quick Ratio Presets (1:2, 1:1, 2:1) -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                <Ellipse x:Name="LeftActiveDot" Width="6" Height="6" Fill="{StaticResource AppAccentBrush}" />
+                <TextBlock x:Name="LeftPaneTitle" Text="Primary" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button x:Name="LayoutButton" Click="OnLayoutClicked" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Switch between side-by-side and stacked layout">
+                    <FontIcon x:Name="LayoutIcon" Glyph="&#xE6E5;" FontSize="13" />
+                </Button>
                 <Border Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="2">
                     <StackPanel Orientation="Horizontal" Spacing="2">
-                        <Button x:Name="RatioBtn12" Click="OnRatio12Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="1:2 Ratio (Left compact, Right wide)">
-                            <TextBlock Text="1:2" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
-                        </Button>
-                        <Button x:Name="RatioBtn11" Click="OnRatio11Clicked" Background="{StaticResource AppSidebarBrush}" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="1:1 Ratio (Equal half width)">
-                            <TextBlock Text="1:1" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-                        </Button>
-                        <Button x:Name="RatioBtn21" Click="OnRatio21Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="2:1 Ratio (Left wide, Right compact)">
-                            <TextBlock Text="2:1" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
-                        </Button>
+                        <Button x:Name="RatioBtn12" Click="OnRatio12Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="Primary compact"><TextBlock Text="1:2" FontSize="11" FontWeight="SemiBold" /></Button>
+                        <Button x:Name="RatioBtn11" Click="OnRatio11Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="Equal panes"><TextBlock Text="1:1" FontSize="11" FontWeight="SemiBold" /></Button>
+                        <Button x:Name="RatioBtn21" Click="OnRatio21Clicked" Background="Transparent" BorderThickness="0" CornerRadius="6" Padding="8,4" ToolTipService.ToolTip="Primary wide"><TextBlock Text="2:1" FontSize="11" FontWeight="SemiBold" /></Button>
                     </StackPanel>
                 </Border>
-
-                <Button Click="OnSwapClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,4" ToolTipService.ToolTip="Swap left and right panes">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE8AB;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" />
-                        <TextBlock Text="Swap Panes ⇄" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-                    </StackPanel>
+                <Button Click="OnAiBridgeClicked" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,5" ToolTipService.ToolTip="Compare both active conversations with your configured AI provider">
+                    <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE945;" FontSize="12" Foreground="{StaticResource AppAccentBrush}" /><TextBlock Text="AI Bridge" FontSize="11" FontWeight="SemiBold" /></StackPanel>
                 </Button>
-
-                <Button Click="OnCloseSplitClicked" Style="{StaticResource IconButtonStyle}" Width="28" Height="28" ToolTipService.ToolTip="Exit Split View">
-                    <FontIcon Glyph="&#xE711;" FontSize="11" />
-                </Button>
+                <Button Click="OnSwapClicked" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Swap panes (Ctrl+Alt+X)"><FontIcon Glyph="&#xE8AB;" FontSize="13" /></Button>
+                <Button x:Name="SoloButton" Click="OnSoloClicked" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Focus or restore active pane (Ctrl+Shift+M)"><FontIcon x:Name="SoloIcon" Glyph="&#xE740;" FontSize="12" /></Button>
+                <Button Click="OnCloseSplitClicked" Style="{StaticResource IconButtonStyle}" Width="30" Height="30" ToolTipService.ToolTip="Exit Split View"><FontIcon Glyph="&#xE711;" FontSize="11" /></Button>
             </StackPanel>
-
-            <!-- Right pane indicator -->
-            <TextBlock x:Name="RightPaneTitle" Grid.Column="2" HorizontalAlignment="Right" Text="Right Workspace" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock x:Name="RightPaneTitle" Text="Secondary" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Ellipse x:Name="RightActiveDot" Width="6" Height="6" Fill="{StaticResource AppAccentBrush}" Opacity="0" />
+            </StackPanel>
         </Grid>
-
         <Border Grid.Row="1" Background="{StaticResource AppBorderBrush}" />
 
-        <!-- Side-by-Side Panes -->
-        <Grid Grid.Row="2">
+        <Grid x:Name="PaneGrid" Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="LeftColumn" Width="*" />
-                <ColumnDefinition Width="6" />
-                <ColumnDefinition x:Name="RightColumn" Width="*" />
+                <ColumnDefinition x:Name="PrimaryColumn" Width="*" />
+                <ColumnDefinition x:Name="DividerColumn" Width="6" />
+                <ColumnDefinition x:Name="SecondaryColumn" Width="*" />
             </Grid.ColumnDefinitions>
-
-            <local:PortalViewControl x:Name="LeftPortal" Grid.Column="0" />
-            <Border Grid.Column="1" Background="{StaticResource AppSidebarBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1,0">
-                <FontIcon Glyph="&#xE784;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="PrimaryRow" Height="*" />
+                <RowDefinition x:Name="DividerRow" Height="0" />
+                <RowDefinition x:Name="SecondaryRow" Height="*" />
+            </Grid.RowDefinitions>
+            <Border x:Name="LeftPaneBorder" Grid.Column="0" Grid.Row="0" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" Tapped="OnLeftPaneTapped" DoubleTapped="OnLeftPaneDoubleTapped"><local:PortalViewControl x:Name="LeftPortal" /></Border>
+            <Border x:Name="Divider" Grid.Column="1" Grid.Row="0" Background="{StaticResource AppSidebarBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1,0"
+                    PointerEntered="OnDividerPointerEntered" PointerExited="OnDividerPointerExited" PointerPressed="OnDividerPointerPressed" PointerMoved="OnDividerPointerMoved" PointerReleased="OnDividerPointerReleased" DoubleTapped="OnDividerDoubleTapped">
+                <FontIcon x:Name="DividerIcon" Glyph="&#xE784;" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
-            <local:PortalViewControl x:Name="RightPortal" Grid.Column="2" />
+            <Border x:Name="RightPaneBorder" Grid.Column="2" Grid.Row="0" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="0" Tapped="OnRightPaneTapped" DoubleTapped="OnRightPaneDoubleTapped"><local:PortalViewControl x:Name="RightPortal" /></Border>
         </Grid>
     </Grid>
 </UserControl>

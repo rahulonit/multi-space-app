@@ -572,6 +572,8 @@ private struct PortalBrowser: View {
     @State private var showingPasskeyAssistant = false
     @State private var dismissedPasskeyBanner = false
     @State private var showingAIDrawer = false
+    @State private var copilotWidth: CGFloat = 380
+    @ObservedObject private var downloadManager: VideoDownloadManager = VideoDownloadManager.shared
 
     private var isAuthenticationPage: Bool {
         let urlStr = (session.currentURL ?? url).absoluteString.lowercased()
@@ -592,11 +594,9 @@ private struct PortalBrowser: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                PlatformLogo(platform: platform, size: 25)
-                Text(platform.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .lineLimit(1)
+            // Unified Modern 50px Portal Toolbar
+            HStack(spacing: 10) {
+                // Platform & Account Switcher Pill
                 Menu {
                     ForEach(store.accounts(for: platform.id)) { item in
                         Button {
@@ -619,17 +619,60 @@ private struct PortalBrowser: View {
                         }
                     }
                 } label: {
-                    Label(account.name, systemImage: "person.crop.circle")
-                        .lineLimit(1)
+                    HStack(spacing: 7) {
+                        PlatformLogo(platform: platform, size: 20)
+                        Text(platform.name)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.primary)
+                        Text("·")
+                            .foregroundStyle(Palette.muted)
+                        Text(account.name)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
                 }
                 .menuStyle(.borderlessButton)
-                Spacer(minLength: 8)
-                toolbarButton("chevron.left", help: "Back", enabled: session.canGoBack) { session.webView.goBack() }
-                toolbarButton("chevron.right", help: "Forward", enabled: session.canGoForward) { session.webView.goForward() }
-                toolbarButton("arrow.clockwise", help: "Reload", enabled: true) { session.webView.reload() }
-                toolbarButton("square.on.square", help: "Open in browser", enabled: true) {
-                    NSWorkspace.shared.open(session.currentURL ?? url)
+
+                // Navigation Cluster
+                HStack(spacing: 2) {
+                    toolbarButton("chevron.left", help: "Back", enabled: session.canGoBack) { session.webView.goBack() }
+                    toolbarButton("chevron.right", help: "Forward", enabled: session.canGoForward) { session.webView.goForward() }
+                    toolbarButton("arrow.clockwise", help: "Reload", enabled: true) { session.webView.reload() }
                 }
+                .padding(2)
+                .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
+
+                // Center Omni-Address Pill
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isAuthenticationPage ? .orange : .green)
+                    Text(session.currentURL?.host ?? url.host ?? platform.name)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                    if session.isMuted {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4.5)
+                .frame(minWidth: 140, maxWidth: 260)
+                .background(Palette.card.opacity(0.5), in: Capsule())
+                .overlay(Capsule().stroke(Palette.card, lineWidth: 1))
+
+                Spacer(minLength: 8)
+
+                // Right Action Cluster
                 if isAuthenticationPage {
                     Button {
                         showingPasskeyAssistant = true
@@ -644,7 +687,7 @@ private struct PortalBrowser: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.orange.opacity(0.15), in: Capsule())
-                        .overlay(Capsule().stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                        .overlay(Capsule().stroke(Color.orange.opacity(0.35), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .help("Fast Passkey & Login Assistant available")
@@ -653,27 +696,89 @@ private struct PortalBrowser: View {
                         "key.fill",
                         help: "Passkey & Fast Login Assistant",
                         enabled: true,
-                        tint: Palette.accent
+                        tint: Palette.muted
                     ) {
                         showingPasskeyAssistant = true
                     }
                 }
+
                 toolbarButton(
                     session.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
-                    help: session.isMuted ? "Unmute tab" : "Mute tab",
+                    help: session.isMuted ? "Unmute audio" : "Mute audio",
                     enabled: true,
-                    tint: session.isMuted ? Palette.accent : nil
+                    tint: session.isMuted ? .orange : Palette.muted
                 ) {
                     session.toggleMute()
                 }
+
                 toolbarButton(
                     store.isSplitView ? "rectangle.split.2x1.fill" : "rectangle.split.2x1",
-                    help: store.isSplitView ? "Exit split view" : "Split view side-by-side",
+                    help: store.isSplitView ? "Exit split view (⌘\\)" : "Split view side-by-side (⌘\\)",
                     enabled: true,
-                    tint: store.isSplitView ? Palette.accent : nil
+                    tint: store.isSplitView ? Palette.accent : Palette.muted
                 ) {
                     store.toggleSplitView()
                 }
+
+                // Video Downloader for Platform Media (WhatsApp Status, Instagram Reel, LinkedIn, TikTok, etc.)
+                let detectedVideos = downloadManager.detectedVideosByPlatform[platform.id] ?? []
+                if !detectedVideos.isEmpty {
+                    Menu {
+                        ForEach(detectedVideos) { media in
+                            Section(header: Text(media.title).lineLimit(1)) {
+                                ForEach(media.availableOptions) { opt in
+                                    Button {
+                                        downloadManager.startDownload(media: media, quality: opt, webView: session.webView)
+                                    } label: {
+                                        HStack {
+                                            Text(opt.label)
+                                            Spacer()
+                                            Text(opt.format.uppercased())
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Color.green)
+                            Text("Download Video (\(detectedVideos.count))")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Color.green)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(Color.green.opacity(0.8))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.14), in: Capsule())
+                        .overlay(Capsule().stroke(Color.green.opacity(0.35), lineWidth: 1))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Download video with full audio and chosen quality from \(platform.name)")
+                }
+
+                // Active Downloads indicator for this platform
+                let activeMedia = downloadManager.activeDownloads.filter { !$0.isComplete && $0.error == nil }
+                if !activeMedia.isEmpty {
+                    HStack(spacing: 5) {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 12, height: 12)
+                        Text(activeMedia.first?.statusText ?? "Downloading…")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Palette.accent)
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(Palette.accent.opacity(0.1), in: Capsule())
+                }
+
+                // AI Co-Pilot Toggle Button
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         showingAIDrawer.toggle()
@@ -683,43 +788,38 @@ private struct PortalBrowser: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: 11, weight: .bold))
                         Text("Co-Pilot")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 11.5, weight: .semibold))
                     }
                     .foregroundStyle(showingAIDrawer ? .white : Palette.accent)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                     .background(showingAIDrawer ? Palette.accent : Palette.accent.opacity(0.12), in: Capsule())
                     .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help("Toggle AI Co-Pilot & Smart Reply Drawer")
+                .help("Toggle AI Co-Pilot Chat & Analysis")
+
+                toolbarButton("square.and.arrow.up", help: "Open in external browser", enabled: true) {
+                    NSWorkspace.shared.open(session.currentURL ?? url)
+                }
+
                 Menu {
                     Button("Edit platform…") { store.editingPlatform = platform }
                     Button("Remove from sidebar", role: .destructive) { store.removePlatform(platform.id) }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .frame(width: 28, height: 28)
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 26, height: 26)
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 30)
+                .frame(width: 28)
             }
-            .padding(.horizontal, 16)
-            .frame(height: 51)
+            .padding(.horizontal, 14)
+            .frame(height: 50)
             .background(Palette.panel)
 
-            HStack(spacing: 7) {
-                Image(systemName: "lock.shield")
-                Text(session.currentURL?.host ?? url.host ?? "")
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Text("Sign in here if asked")
-                    .lineLimit(1)
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Palette.muted)
-            .padding(.horizontal, 17)
-            .frame(height: 29)
-            .background(Palette.sidebar)
+            Divider()
+                .background(Palette.border)
 
             if isAuthenticationPage && !dismissedPasskeyBanner {
                 HStack(spacing: 8) {
@@ -767,51 +867,79 @@ private struct PortalBrowser: View {
                 )
             }
 
-            ZStack(alignment: .trailing) {
-                PortalWebView(session: session)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if let error = session.error {
-                    VStack(spacing: 12) {
-                        Image(systemName: "wifi.exclamationmark")
-                            .font(.system(size: 28))
-                            .foregroundStyle(Palette.accent)
-                        Text("Couldn’t open \(platform.name)")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(error)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
-                            .multilineTextAlignment(.center)
-                        HStack {
-                            Button("Try again") { session.load(url) }
-                            Button("Open in browser") { NSWorkspace.shared.open(url) }
+            // 3-Pane Layout: Platform WebView on Left, Co-Pilot docked side-by-side as 3rd Pane on Right
+            HStack(spacing: 0) {
+                ZStack {
+                    PortalWebView(session: session)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if let error = session.error {
+                        VStack(spacing: 12) {
+                            Image(systemName: "wifi.exclamationmark")
+                                .font(.system(size: 28))
+                                .foregroundStyle(Palette.accent)
+                            Text("Couldn’t open \(platform.name)")
+                                .font(.system(size: 17, weight: .semibold))
+                            Text(error)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+                                .multilineTextAlignment(.center)
+                            HStack {
+                                Button("Try again") { session.load(url) }
+                                Button("Open in browser") { NSWorkspace.shared.open(url) }
+                            }
                         }
+                        .padding(24)
+                        .frame(maxWidth: 390)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                     }
-                    .padding(24)
-                    .frame(maxWidth: 390)
-                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
-                }
-                if session.isHibernated {
-                    VStack(spacing: 14) {
-                        Image(systemName: "moon.zzz.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(Palette.accent)
-                        Text("\(platform.name) is sleeping")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("This account was put to sleep while inactive to save RAM and battery life.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
-                            .multilineTextAlignment(.center)
-                        Button("Wake Session") {
-                            session.wake()
+                    if session.isHibernated {
+                        VStack(spacing: 14) {
+                            Image(systemName: "moon.zzz.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(Palette.accent)
+                            Text("\(platform.name) is sleeping")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("This account was put to sleep while inactive to save RAM and battery life.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+                                .multilineTextAlignment(.center)
+                            Button("Wake Session") {
+                                session.wake()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Palette.accent)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Palette.accent)
+                        .padding(28)
+                        .frame(maxWidth: 380)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                     }
-                    .padding(28)
-                    .frame(maxWidth: 380)
-                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                 if showingAIDrawer {
+                    // Resizable Divider Handle between Platform WebView and Co-Pilot 3rd Pane
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(Palette.border)
+                            .frame(width: 1)
+                    }
+                    .frame(width: 6)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                    .gesture(
+                        DragGesture()
+                            .onChanged { val in
+                                let newW = copilotWidth - val.translation.width
+                                copilotWidth = min(max(newW, 320), 650)
+                            }
+                    )
+
                     AICopilotDrawer(
                         session: session,
                         platform: platform,
@@ -822,8 +950,8 @@ private struct PortalBrowser: View {
                             }
                         }
                     )
+                    .frame(width: copilotWidth)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(10)
                 }
             }
             .background(.white)
@@ -1235,6 +1363,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     let webView: WKWebView
     let homeURL: URL
     let accountID: UUID
+    let platformID: String
     var activityHandler: ((String, [[String: String]], [String], [[String: String]], String?, [[String: Any]], Int?, String?, [AIChatMemberItem]?) -> Void)?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
 
@@ -1251,6 +1380,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
 
     init(account: PlatformAccount, url: URL) {
         accountID = account.id
+        platformID = account.platformID
         homeURL = url
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
@@ -1265,11 +1395,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         configuration.userContentController.addUserScript(WKUserScript(source: Self.audioScript,
                                                                        injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
+        configuration.userContentController.addUserScript(WKUserScript(source: VideoDownloadManager.snifferScript,
+                                                                       injectionTime: .atDocumentEnd,
+                                                                       forMainFrameOnly: false))
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: configuration)
         super.init()
         let weakHandler = WeakScriptMessageHandler(delegate: self)
         configuration.userContentController.add(weakHandler, name: "pinggoActivity")
         configuration.userContentController.add(weakHandler, name: "multispaceActivity")
+        configuration.userContentController.add(weakHandler, name: "pinggoVideoSniffer")
+        configuration.userContentController.add(weakHandler, name: "pinggoVideoDownload")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -1288,6 +1423,8 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.stopLoading()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoActivity")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "multispaceActivity")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoVideoSniffer")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoVideoDownload")
         activityHandler = nil
     }
 
@@ -1383,6 +1520,57 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "pinggoVideoSniffer", let dict = message.body as? [String: Any] {
+            let id = dict["id"] as? String ?? ""
+            let title = dict["title"] as? String ?? "Video"
+            let pageURL = (dict["pageURL"] as? String).flatMap { URL(string: $0) }
+            let thumb = (dict["thumbnailURL"] as? String).flatMap { URL(string: $0) }
+            let duration = dict["duration"] as? Double ?? 0
+            let isBlob = dict["isBlob"] as? Bool ?? false
+
+            var qualities: [VideoQualityOption] = []
+            if let qArray = dict["qualities"] as? [[String: Any]] {
+                for q in qArray {
+                    let qId = q["id"] as? String ?? "full"
+                    let label = q["label"] as? String ?? "Full Quality"
+                    let res = q["resolution"] as? String ?? "Original"
+                    let url = q["url"] as? String ?? id
+                    let format = q["format"] as? String ?? "mp4"
+                    qualities.append(VideoQualityOption(id: qId, label: label, resolution: res, url: url, format: format))
+                }
+            }
+            if qualities.isEmpty {
+                qualities.append(VideoQualityOption(id: "full", label: "🌟 Full Quality (Best Available)", resolution: "Original", url: id, format: "mp4"))
+            }
+
+            let media = DetectedVideoMedia(
+                id: id,
+                title: title,
+                pageURL: pageURL,
+                thumbnailURL: thumb,
+                duration: duration,
+                qualities: qualities,
+                isBlob: isBlob
+            )
+
+            VideoDownloadManager.shared.registerDetectedVideo(media, forPlatformID: platformID)
+            return
+        }
+
+        if message.name == "pinggoVideoDownload", let dict = message.body as? [String: Any] {
+            let action = dict["action"] as? String ?? ""
+            if action == "blobChunk" || action == "blobError" {
+                VideoDownloadManager.shared.handleBlobChunkMessage(dict)
+            } else if action == "triggerVideoDownload", let videoId = dict["videoId"] as? String {
+                if let mediaList = VideoDownloadManager.shared.detectedVideosByPlatform[platformID],
+                   let media = mediaList.first(where: { $0.id == videoId }),
+                   let best = media.bestQuality {
+                    VideoDownloadManager.shared.startDownload(media: media, quality: best, webView: webView)
+                }
+            }
+            return
+        }
+
         guard message.name == "pinggoActivity" || message.name == "multispaceActivity" else { return }
         if let currentHost = webView.url?.host?.lowercased(),
            let homeHost = homeURL.host?.lowercased() {
@@ -1421,12 +1609,26 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let groupSubtitle = body["groupSubtitle"] as? String
         let rawGroupMembers = body["groupMembers"] as? [[String: Any]] ?? []
         let groupMembers: [AIChatMemberItem] = rawGroupMembers.compactMap { dict in
-            guard let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
-            let role = (dict["role"] as? String) ?? "Participant"
-            let activity = (dict["activity"] as? String) ?? "In group roster"
-            let count = (dict["messageCount"] as? Int) ?? 1
+            let rawName = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let phone = (dict["phoneNumber"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return AIChatMemberItem(name: name, role: role, activity: activity, messageCount: count, phoneNumber: (phone?.isEmpty == false) ? phone : nil)
+            let username = (dict["username"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanPhone = (phone?.isEmpty == false) ? phone : nil
+            let cleanUsername = (username?.isEmpty == false) ? username : nil
+
+            let finalName = rawName.isEmpty ? (cleanUsername ?? (cleanPhone ?? "")) : rawName
+            guard !finalName.isEmpty || cleanPhone != nil else { return nil }
+
+            let role = (dict["role"] as? String) ?? "Member"
+            let activity = (dict["activity"] as? String) ?? "In group roster"
+            let count = (dict["messageCount"] as? Int) ?? 0
+            return AIChatMemberItem(
+                name: finalName,
+                role: role,
+                activity: activity,
+                messageCount: count,
+                phoneNumber: cleanPhone,
+                username: cleanUsername
+            )
         }
 
         let cleanContact = (activeContact ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1454,6 +1656,8 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 groupMembers: groupMembers.isEmpty ? nil : groupMembers,
                 updatedAt: .now
             )
+        } else {
+            self.activeThread = nil
         }
 
         activityHandler?(title, rows, notifications, rawNotifications, activeContact, activeThreadMessages, groupMemberCount, groupSubtitle, groupMembers)
@@ -1468,6 +1672,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         isLoading = true
         error = nil
         updateNavigation()
+        VideoDownloadManager.shared.clearDetectedVideos(forPlatformID: platformID)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1792,7 +1997,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let fileManager = FileManager.default
         let downloadsDir = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
-        
+
         var destinationURL = downloadsDir.appendingPathComponent(suggestedFilename)
         var counter = 1
         let ext = destinationURL.pathExtension
@@ -1895,6 +2100,230 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       const clean = value => (value || '').replace(/\s+/g, ' ').trim();
       let pending = null;
       let lastPayload = '';
+
+      // WhatsApp Web Backend IndexedDB & Memory Cache
+      const waBackendCache = {
+        contactsByName: new Map(),
+        contactsByDigits: new Map(),
+        groups: new Map(),
+        lastSync: 0
+      };
+
+      function formatPhoneNumber(digits) {
+        if (!digits) return '';
+        if (digits.startsWith('91') && digits.length === 12) {
+          return '+91 ' + digits.slice(2, 7) + ' ' + digits.slice(7);
+        }
+        if (digits.startsWith('1') && digits.length === 11) {
+          return '+1 ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) + ' ' + digits.slice(7);
+        }
+        if (digits.startsWith('44') && digits.length >= 12) {
+          return '+44 ' + digits.slice(2, 6) + ' ' + digits.slice(6);
+        }
+        return '+' + digits;
+      }
+
+      function extractDigitsFromId(idField) {
+        if (!idField) return '';
+        let s = '';
+        if (typeof idField === 'string') s = idField;
+        else if (typeof idField._serialized === 'string') s = idField._serialized;
+        else if (typeof idField.user === 'string') s = idField.user;
+        else if (typeof idField.jid === 'string') s = idField.jid;
+        s = s.split('@')[0];
+        return s.replace(/\D/g, '');
+      }
+
+      function processRawContact(c) {
+        if (!c) return;
+        let rawId = '';
+        if (typeof c.id === 'string') rawId = c.id;
+        else if (c.id && typeof c.id._serialized === 'string') rawId = c.id._serialized;
+        else if (c.id && typeof c.id.user === 'string') rawId = c.id.user + '@c.us';
+        else if (typeof c.jid === 'string') rawId = c.jid;
+        else if (typeof c.phoneNumber === 'string') rawId = c.phoneNumber;
+
+        if (!rawId || rawId.includes('@g.us')) return;
+
+        const digits = extractDigitsFromId(rawId);
+        if (!digits || digits.length < 7) return;
+
+        const phone = formatPhoneNumber(digits);
+        const name = clean(c.name || c.displayName || c.verifiedName || c.formattedName || '');
+        const pushname = clean(c.pushname || c.notifyName || c.shortName || '').replace(/^~/, '');
+
+        const item = {
+          digits: digits,
+          phone: phone,
+          name: name,
+          username: pushname
+        };
+
+        waBackendCache.contactsByDigits.set(digits, item);
+        if (digits.length >= 10) {
+          waBackendCache.contactsByDigits.set(digits.slice(-10), item);
+        }
+
+        if (name) {
+          const low = name.toLowerCase();
+          waBackendCache.contactsByName.set(low, item);
+          const stripped = low.replace(/[^a-z0-9]/g, '');
+          if (stripped && stripped !== low) {
+            waBackendCache.contactsByName.set(stripped, item);
+          }
+        }
+
+        if (pushname) {
+          const pLow = pushname.toLowerCase();
+          if (!waBackendCache.contactsByName.has(pLow)) {
+            waBackendCache.contactsByName.set(pLow, item);
+          }
+          const pStripped = pLow.replace(/[^a-z0-9]/g, '');
+          if (pStripped && pStripped !== pLow && !waBackendCache.contactsByName.has(pStripped)) {
+            waBackendCache.contactsByName.set(pStripped, item);
+          }
+        }
+      }
+
+      function processRawGroup(g) {
+        if (!g) return;
+        const subject = clean(g.subject || g.name || '');
+        const gid = typeof g.id === 'string' ? g.id : (g.id?._serialized || '');
+        const rawParts = g.participants || g.participantList || g.groupMetadata?.participants || [];
+        const participants = [];
+
+        for (const p of rawParts) {
+          let pid = '';
+          if (typeof p === 'string') pid = p;
+          else if (typeof p.id === 'string') pid = p.id;
+          else if (p.id?._serialized) pid = p.id._serialized;
+          else if (p.id?.user) pid = p.id.user + '@c.us';
+          else if (typeof p.jid === 'string') pid = p.jid;
+
+          const pDigits = extractDigitsFromId(pid);
+          if (!pDigits || pDigits.length < 7) continue;
+
+          const isAdmin = Boolean(p.isAdmin || p.isSuperAdmin || p.role === 'admin' || p.role === 'creator');
+          const contactInfo = waBackendCache.contactsByDigits.get(pDigits) ||
+                              (pDigits.length >= 10 ? waBackendCache.contactsByDigits.get(pDigits.slice(-10)) : null);
+          const resolvedName = contactInfo?.name || '';
+          const resolvedPushname = contactInfo?.username || clean(p.pushname || p.notifyName || '').replace(/^~/, '');
+          const phone = contactInfo?.phone || formatPhoneNumber(pDigits);
+
+          participants.push({
+            digits: pDigits,
+            phone: phone,
+            name: resolvedName,
+            username: resolvedPushname,
+            isAdmin: isAdmin
+          });
+        }
+
+        const groupData = {
+          id: gid,
+          subject: subject,
+          participants: participants
+        };
+
+        if (subject) {
+          const sLow = subject.toLowerCase();
+          waBackendCache.groups.set(sLow, groupData);
+          const sStripped = sLow.replace(/[^a-z0-9]/g, '');
+          if (sStripped && sStripped !== sLow) {
+            waBackendCache.groups.set(sStripped, groupData);
+          }
+        }
+        if (gid) {
+          waBackendCache.groups.set(gid.toLowerCase(), groupData);
+        }
+      }
+
+      let waSyncRunning = false;
+      async function syncWhatsAppBackend() {
+        if (waSyncRunning) return;
+        if (!location.hostname.toLowerCase().endsWith('whatsapp.com')) return;
+        if (Date.now() - waBackendCache.lastSync < 6000 && waBackendCache.contactsByName.size > 0) return;
+
+        waSyncRunning = true;
+        try {
+          // 1. Try window.Store if exposed or reachable
+          try {
+            if (window.Store) {
+              if (window.Store.Contact) {
+                const contacts = window.Store.Contact.models || window.Store.Contact._models || [];
+                for (const c of contacts) processRawContact(c);
+              }
+              if (window.Store.GroupMetadata) {
+                const groups = window.Store.GroupMetadata.models || window.Store.GroupMetadata._models || [];
+                for (const g of groups) processRawGroup(g);
+              }
+            }
+          } catch(e) {}
+
+          // 2. Open IndexedDB database 'model-storage' directly
+          if (window.indexedDB) {
+            await new Promise(resolve => {
+              try {
+                const req = window.indexedDB.open('model-storage');
+                req.onerror = () => resolve();
+                req.onblocked = () => resolve();
+                req.onsuccess = (e) => {
+                  const db = e.target.result;
+                  if (!db) return resolve();
+
+                  const storeNames = Array.from(db.objectStoreNames || []);
+                  const cStoreName = storeNames.find(s => s === 'contact' || s.includes('contact'));
+                  const gStoreName = storeNames.find(s => s === 'group-metadata' || s.includes('group-metadata'));
+                  const needed = [cStoreName, gStoreName].filter(Boolean);
+
+                  if (needed.length === 0) {
+                    db.close();
+                    return resolve();
+                  }
+
+                  try {
+                    const tx = db.transaction(needed, 'readonly');
+                    if (cStoreName) {
+                      const cs = tx.objectStore(cStoreName);
+                      const csReq = cs.getAll();
+                      csReq.onsuccess = () => {
+                        const all = csReq.result || [];
+                        for (const c of all) processRawContact(c);
+                      };
+                    }
+                    if (gStoreName) {
+                      const gs = tx.objectStore(gStoreName);
+                      const gsReq = gs.getAll();
+                      gsReq.onsuccess = () => {
+                        const all = gsReq.result || [];
+                        for (const g of all) processRawGroup(g);
+                      };
+                    }
+                    tx.oncomplete = () => {
+                      db.close();
+                      resolve();
+                    };
+                    tx.onerror = () => {
+                      db.close();
+                      resolve();
+                    };
+                  } catch(err) {
+                    db.close();
+                    resolve();
+                  }
+                };
+              } catch(err) {
+                resolve();
+              }
+            });
+          }
+
+          waBackendCache.lastSync = Date.now();
+        } catch(e) {
+        } finally {
+          waSyncRunning = false;
+        }
+      }
 
       function getCookie(name) {
         const parts = (document.cookie || '').split(';');
@@ -2038,6 +2467,13 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       async function collect(force = false) {
         const host = location.hostname.toLowerCase();
         let messages = [];
+
+        // 0. Direct WhatsApp IndexedDB & Model Sync
+        if (host.endsWith('whatsapp.com')) {
+          try {
+            await syncWhatsAppBackend();
+          } catch (e) {}
+        }
 
         // 1. Direct Background API Scrapers for Home Feeds
         if (host.endsWith('instagram.com')) {
@@ -2351,96 +2787,288 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           bubbleSelectors = '[data-tid="chat-pane-item"], [data-tid="message-pane-list-item"]';
         }
 
-        // Deep group roster & participant crawling
+        // Deep group roster & participant crawling (strictly within the SELECTED chat)
+        let isGroup = false;
         let groupMemberCount = 0;
         let groupSubtitle = '';
-        const groupMembers = [];
-        const seenMemberNames = new Set();
+        const membersMap = new Map();
 
-        const addGroupMember = (name, role, activity, count, phone) => {
-          const cleanName = clean(name);
-          if (!cleanName || cleanName.toLowerCase() === 'you' || cleanName.toLowerCase() === 'me' || cleanName === activeContact) return;
-          if (!seenMemberNames.has(cleanName)) {
-            seenMemberNames.add(cleanName);
-            groupMembers.push({
-              name: cleanName,
-              role: role || 'Participant',
+        const getPhoneDigits = (p) => (p || '').replace(/\D/g, '');
+
+        const findExistingMemberKey = (name, phone) => {
+          const cleanN = clean(name).toLowerCase();
+          const pDigits = getPhoneDigits(phone);
+
+          if (pDigits && pDigits.length >= 7) {
+            for (const [k, v] of membersMap.entries()) {
+              const vDigits = getPhoneDigits(v.phoneNumber || v.name);
+              if (vDigits && vDigits.length >= 7) {
+                if (vDigits === pDigits || vDigits.endsWith(pDigits) || pDigits.endsWith(vDigits)) {
+                  return k;
+                }
+              }
+            }
+          }
+          if (cleanN && membersMap.has(cleanN)) {
+            return cleanN;
+          }
+          return null;
+        };
+
+        const addGroupMember = (name, role, activity, count, phone, username) => {
+          let cleanName = clean(name);
+          if (!cleanName || cleanName.toLowerCase() === 'you' || cleanName.toLowerCase() === 'me' || cleanName.toLowerCase() === 'contact') return;
+          if (activeContact && cleanName.toLowerCase() === activeContact.toLowerCase()) return;
+
+          // Ignore action buttons and system labels in group info drawers
+          const lower = cleanName.toLowerCase();
+          if (lower.includes('add participant') || lower.includes('invite to group') || lower.includes('exit group') || lower.includes('report group') || lower.includes('block group') || lower.includes('dismiss as admin')) return;
+
+          let resolvedPhone = phone ? clean(phone) : undefined;
+          const isCleanNamePhone = /^\+?[0-9\s\-()]{7,}$/.test(cleanName);
+          if (!resolvedPhone && isCleanNamePhone) {
+            resolvedPhone = cleanName;
+          }
+
+          let resolvedUsername = username ? clean(username) : undefined;
+          if (!resolvedUsername && cleanName.startsWith('@')) {
+            resolvedUsername = cleanName.slice(1);
+          }
+          if (resolvedUsername && resolvedUsername.startsWith('@')) {
+            resolvedUsername = resolvedUsername.slice(1);
+          }
+
+          // BACKEND LOOKUP FOR MISSING PHONE NUMBERS ON NAMED CONTACTS:
+          if (!resolvedPhone && waBackendCache.contactsByName.size > 0) {
+            const cleanLower = cleanName.toLowerCase();
+            const cached = waBackendCache.contactsByName.get(cleanLower) ||
+                           waBackendCache.contactsByName.get(cleanLower.replace(/[^a-z0-9]/g, ''));
+            if (cached) {
+              resolvedPhone = cached.phone;
+              if (!resolvedUsername && cached.username) {
+                resolvedUsername = cached.username;
+              }
+            }
+          }
+
+          // IF CLEANNAME IS A PHONE NUMBER, RESOLVE SAVED CONTACT NAME FROM BACKEND:
+          let finalName = isCleanNamePhone ? (resolvedUsername || '') : cleanName;
+          if (isCleanNamePhone && (!finalName || finalName === cleanName)) {
+            const digits = getPhoneDigits(cleanName);
+            const cached = waBackendCache.contactsByDigits.get(digits) ||
+                           (digits.length >= 10 ? waBackendCache.contactsByDigits.get(digits.slice(-10)) : null);
+            if (cached) {
+              if (cached.name) finalName = cached.name;
+              if (cached.username && !resolvedUsername) resolvedUsername = cached.username;
+            }
+          }
+
+          let normalizedRole = 'Member';
+          if (role) {
+            const rLow = role.toLowerCase();
+            if (rLow.includes('admin') || rLow.includes('owner') || rLow.includes('creator')) {
+              normalizedRole = 'Group Admin';
+            }
+          }
+
+          const safeCount = (typeof count === 'number' && !isNaN(count)) ? count : 0;
+          const existingKey = findExistingMemberKey(finalName || cleanName, resolvedPhone);
+
+          if (existingKey) {
+            const existing = membersMap.get(existingKey);
+            if ((!existing.name || /^\+?[0-9\s\-()]{7,}$/.test(existing.name)) && finalName) {
+              existing.name = finalName;
+            }
+            if (!existing.phoneNumber && resolvedPhone) existing.phoneNumber = resolvedPhone;
+            if (!existing.username && resolvedUsername) existing.username = resolvedUsername;
+            if (normalizedRole === 'Group Admin') existing.role = 'Group Admin';
+            if (safeCount > 0) existing.messageCount = Math.max(existing.messageCount, safeCount);
+            if (activity && (!existing.activity || existing.activity === 'In group roster')) existing.activity = activity;
+          } else {
+            const key = (resolvedPhone || finalName || cleanName).toLowerCase();
+            membersMap.set(key, {
+              name: finalName,
+              role: normalizedRole,
               activity: activity || 'In group roster',
-              messageCount: count || 1,
-              phoneNumber: phone || undefined
+              messageCount: safeCount,
+              phoneNumber: resolvedPhone || undefined,
+              username: resolvedUsername || undefined
             });
           }
         };
 
         if (host.endsWith('whatsapp.com')) {
-          // Comprehensive header inspection for group title & participant count
-          const headerNodes = Array.from(document.querySelectorAll('#main header span, #main header div, #main header p'));
-          for (const node of headerNodes) {
-            const txt = clean(node.getAttribute('title') || node.innerText);
-            if (!txt || txt === activeContact) continue;
+          const mainContainer = document.querySelector('#main');
+          if (!mainContainer) {
+            // No chat selected in WhatsApp Web
+            activeContact = '';
+          } else {
+            // Header inspection strictly inside #main header
+            const headerNodes = Array.from(document.querySelectorAll('#main header span, #main header div, #main header p'));
+            for (const node of headerNodes) {
+              const txt = clean(node.getAttribute('title') || node.innerText);
+              if (!txt || txt === activeContact) continue;
 
-            const cm = txt.match(/(\d+)\s*(participants|members|contacts|people|subscribers)/i);
-            if (cm) {
-              groupMemberCount = parseInt(cm[1], 10);
-              groupSubtitle = txt;
-              break;
+              const cm = txt.match(/(\d+)\s*(participants|members|contacts|people|subscribers)/i);
+              if (cm) {
+                groupMemberCount = parseInt(cm[1], 10);
+                groupSubtitle = txt;
+                isGroup = true;
+                break;
+              }
+              const om = txt.match(/and\s*(\d+)\s*others?/i);
+              if (om) {
+                const othersCount = parseInt(om[1], 10);
+                const namedCount = txt.split(',').length;
+                groupMemberCount = othersCount + namedCount;
+                groupSubtitle = txt;
+                isGroup = true;
+                break;
+              }
+              if (txt.includes(',') && txt.length > 5 && !groupSubtitle && !txt.toLowerCase().includes('last seen') && !txt.toLowerCase().includes('typing') && !txt.toLowerCase().includes('online')) {
+                groupSubtitle = txt;
+                isGroup = true;
+              }
             }
-            const om = txt.match(/and\s*(\d+)\s*others?/i);
-            if (om) {
-              const othersCount = parseInt(om[1], 10);
-              const namedCount = txt.split(',').length;
-              groupMemberCount = othersCount + namedCount;
-              groupSubtitle = txt;
-              break;
-            }
-            if (txt.includes(',') && txt.length > 5 && !groupSubtitle) {
-              groupSubtitle = txt;
+
+            // Inject metadata participants directly from backend for active group
+            if (activeContact) {
+              const activeLower = activeContact.toLowerCase();
+              const activeStripped = activeLower.replace(/[^a-z0-9]/g, '');
+              let matchedGroup = waBackendCache.groups.get(activeLower) ||
+                                 (activeStripped ? waBackendCache.groups.get(activeStripped) : null);
+              if (!matchedGroup) {
+                for (const [subj, gData] of waBackendCache.groups.entries()) {
+                  if (subj === activeLower || (subj.length > 3 && (activeLower.includes(subj) || subj.includes(activeLower)))) {
+                    matchedGroup = gData;
+                    break;
+                  }
+                }
+              }
+
+              if (matchedGroup && matchedGroup.participants.length > 0) {
+                isGroup = true;
+                groupMemberCount = Math.max(groupMemberCount, matchedGroup.participants.length);
+                for (const p of matchedGroup.participants) {
+                  addGroupMember(
+                    p.name || p.username || p.phone,
+                    p.isAdmin ? 'Group Admin' : 'Member',
+                    'In group roster',
+                    0,
+                    p.phone,
+                    p.username
+                  );
+                }
+              }
             }
           }
         } else if (host.endsWith('telegram.org')) {
           const subEl = document.querySelector('.chat-info .peer-subtitle, .chat-info .info, .chat-info .status');
-          if (subEl) groupSubtitle = clean(subEl.innerText);
+          if (subEl) {
+            groupSubtitle = clean(subEl.innerText);
+            if (groupSubtitle.match(/(\d+)\s*(members|subscribers|participants)/i)) {
+              isGroup = true;
+            }
+          }
         } else if (host.endsWith('slack.com')) {
           const subEl = document.querySelector('[data-qa="channel_member_count"], .p-classic_nav__team_header__channel_members, button[aria-label*="member"]');
-          if (subEl) groupSubtitle = clean(subEl.innerText);
+          if (subEl) {
+            groupSubtitle = clean(subEl.innerText);
+            isGroup = true;
+          }
         } else if (host.endsWith('teams.microsoft.com')) {
           const subEl = document.querySelector('[data-tid="roster-button"], [data-tid="chat-header-members"], button[aria-label*="member"]');
-          if (subEl) groupSubtitle = clean(subEl.innerText || subEl.getAttribute('aria-label') || '');
-        }
-
-        // Extract count from group subtitle or drawer
-        const drawerText = (document.querySelector('[data-testid="chat-info-drawer"], [data-testid="group-info-drawer"], .chat-info')?.innerText || '');
-        const countRegex = /(\d+)\s*(participants|members|contacts|people|subscribers)/i;
-        const countMatch = (groupSubtitle + ' ' + drawerText).match(countRegex);
-        if (countMatch) {
-          groupMemberCount = parseInt(countMatch[1], 10);
-        } else if (groupMemberCount === 0) {
-          const othersMatch = (groupSubtitle + ' ' + drawerText).match(/and\s*(\d+)\s*others?/i);
-          if (othersMatch) {
-            const othersCount = parseInt(othersMatch[1], 10);
-            const explicitCount = groupSubtitle.split(',').length;
-            groupMemberCount = othersCount + explicitCount;
+          if (subEl) {
+            groupSubtitle = clean(subEl.innerText || subEl.getAttribute('aria-label') || '');
+            isGroup = true;
           }
         }
 
-        // Extract comma-separated member names from group subtitle
-        if (groupSubtitle && groupSubtitle.includes(',')) {
+        // Check open right-side group info drawer (NEVER query left sidebar #pane-side or chat lists)
+        let groupInfoDrawer = document.querySelector('[data-testid="group-info-drawer"], [data-testid="chat-info-drawer"], [data-testid="drawer-right"]');
+        if (!groupInfoDrawer) {
+          const titleEl = document.querySelector('header span[title="Group info"], header span[title="Group Info"]');
+          if (titleEl) {
+            groupInfoDrawer = titleEl.closest('div[tabindex="-1"], div[class*="drawer"], section');
+          }
+        }
+        if (groupInfoDrawer) {
+          const drawerText = clean(groupInfoDrawer.innerText || '');
+          const isGroupDrawer = drawerText.toLowerCase().includes('group info') || drawerText.toLowerCase().includes('participant') || drawerText.toLowerCase().includes('exit group');
+          if (isGroupDrawer) {
+            isGroup = true;
+            const countMatch = drawerText.match(/(\d+)\s*(participants|members|contacts)/i);
+            if (countMatch && groupMemberCount === 0) {
+              groupMemberCount = parseInt(countMatch[1], 10);
+            }
+
+            // Extract members strictly from rows inside the open group drawer
+            const rows = groupInfoDrawer.querySelectorAll('div[data-testid="cell-frame-container"], div[role="listitem"], div[class*="_ak72"]');
+            rows.forEach(row => {
+              if (row.closest('#pane-side') || row.closest('[data-testid="chat-list"]') || row.closest('#column-left') || row.closest('.p-channel_sidebar')) return;
+
+              const rowText = clean(row.innerText || '');
+              if (rowText.toLowerCase().includes('add participant') || rowText.toLowerCase().includes('invite to group') || rowText.toLowerCase().includes('exit group')) return;
+
+              const nameEl = row.querySelector('span[title], span[dir="auto"], div[title]');
+              if (nameEl) {
+                const primary = clean(nameEl.getAttribute('title') || nameEl.innerText);
+                if (!primary || primary.toLowerCase() === 'you') return;
+
+                const adminEl = row.querySelector('[data-testid*="admin"], span[class*="admin"], div[title*="Admin"], div[aria-label*="Admin"]');
+                const isAdmin = adminEl !== null || /\b(group\s+admin|admin)\b/i.test(rowText);
+                const role = isAdmin ? 'Group Admin' : 'Member';
+
+                let phone = undefined;
+                let username = undefined;
+
+                const phoneMatch = rowText.match(/(\+?\d[\d\s\-\(\)]{7,}\d)/);
+                if (phoneMatch) phone = clean(phoneMatch[1]);
+
+                // Check row avatar image URL for phone/JID
+                const imgEl = row.querySelector('img[src*="u="], img[src*="jid="], img[src*="c.us"]');
+                if (imgEl && imgEl.src && !phone) {
+                  const m = imgEl.src.match(/(?:u|jid)=(\d{7,15})(?:%40|@)c\.us/i);
+                  if (m) phone = formatPhoneNumber(m[1]);
+                }
+
+                const nickMatch = rowText.match(/~([^\n\r\t]+)/);
+                if (nickMatch) username = clean(nickMatch[1]);
+
+                addGroupMember(primary, role, 'In group roster', 0, phone, username);
+              }
+            });
+          }
+        }
+
+        // Check open Contact Info drawer in WhatsApp Web
+        const contactDrawer = document.querySelector('[data-testid="contact-info-drawer"]');
+        if (contactDrawer) {
+          const dText = clean(contactDrawer.innerText || '');
+          const phoneM = dText.match(/(\+?\d[\d\s\-\(\)]{7,}\d)/);
+          const nameEl = contactDrawer.querySelector('h2, span[title], span[dir="auto"]');
+          if (nameEl && phoneM) {
+            const cName = clean(nameEl.getAttribute('title') || nameEl.innerText);
+            const cPhone = clean(phoneM[1]);
+            const pDigits = getPhoneDigits(cPhone);
+            if (pDigits && pDigits.length >= 7) {
+              const item = { digits: pDigits, phone: cPhone, name: cName, username: '' };
+              waBackendCache.contactsByName.set(cName.toLowerCase(), item);
+              waBackendCache.contactsByDigits.set(pDigits, item);
+              const k = findExistingMemberKey(cName, cPhone);
+              if (k) {
+                const ex = membersMap.get(k);
+                if (!ex.phoneNumber) ex.phoneNumber = cPhone;
+              }
+            }
+          }
+        }
+
+        // Extract comma-separated member names from group subtitle only if confirmed group
+        if (isGroup && groupSubtitle && groupSubtitle.includes(',')) {
           const parts = groupSubtitle.split(',').map(s => clean(s.replace(/and \d+ others?/i, ''))).filter(Boolean);
-          parts.forEach(p => addGroupMember(p, 'Participant', 'In group roster', 1));
+          parts.forEach(p => addGroupMember(p, 'Member', 'In group roster', 0));
         }
-
-        // Extract members from open group info drawer
-        document.querySelectorAll('[data-testid="chat-info-drawer"] [role="listitem"], [data-testid="group-info-drawer"] [role="listitem"], [data-testid="cell-frame-container"]').forEach(row => {
-          const nameEl = row.querySelector('span[title], span[dir="auto"], div[title]');
-          if (nameEl) {
-            const n = clean(nameEl.getAttribute('title') || nameEl.innerText);
-            const adminEl = row.querySelector('[data-testid*="admin"], span[class*="admin"], div[title*="Admin"], div[aria-label*="Admin"]');
-            const role = adminEl ? 'Group Admin' : 'Group Participant';
-            const phoneEl = row.querySelector('span[title*="+"], span[dir="auto"]._ao3e, div[class*="secondary"] span');
-            const phone = phoneEl ? clean(phoneEl.getAttribute('title') || phoneEl.innerText) : undefined;
-            addGroupMember(n, role, 'Active in group', 1, phone);
-          }
-        });
 
         if (bubbleSelectors) {
           // Crawl deep: extract up to 200 rendered messages in the thread
@@ -2474,6 +3102,34 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 if (authorNode) sender = clean(authorNode.innerText);
               }
 
+              // 3. Extract sender phone number from WhatsApp protocol data-id (e.g. false_...@g.us_..._919861012929@c.us)
+              let bubblePhone = undefined;
+              let bubbleUsername = undefined;
+              const dataIdEl = bubble.closest('[data-id]') || bubble.querySelector('[data-id]') || (bubble.getAttribute('data-id') ? bubble : null);
+              if (dataIdEl) {
+                const dataId = dataIdEl.getAttribute('data-id') || '';
+                const jidMatch = dataId.match(/_(\d{7,15})@(c\.us|s\.whatsapp\.net)/);
+                if (jidMatch) {
+                  const digits = jidMatch[1];
+                  if (digits.startsWith('91') && digits.length === 12) {
+                    bubblePhone = '+91 ' + digits.slice(2, 7) + ' ' + digits.slice(7);
+                  } else if (digits.startsWith('1') && digits.length === 11) {
+                    bubblePhone = '+1 ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) + ' ' + digits.slice(7);
+                  } else {
+                    bubblePhone = '+' + digits;
+                  }
+                }
+              }
+
+              // 4. Extract pushName (~Nickname) from bubble
+              const nickNode = bubble.querySelector('span._ao3e, span[class*="_ao3e"]');
+              if (nickNode) {
+                const nickText = clean(nickNode.innerText);
+                if (nickText.startsWith('~')) {
+                  bubbleUsername = nickText.slice(1).trim();
+                }
+              }
+
               if (isFromMe) {
                 sender = 'You';
               } else if (!sender) {
@@ -2487,30 +3143,47 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 const timeNode = bubble.querySelector('[data-testid="msg-meta"] span, span[dir="auto"], span._ak8i');
                 if (timeNode) time = clean(timeNode.innerText);
               }
+
+              // Register participant for group chats with phone and username
+              if (isGroup && sender && !isFromMe && sender !== activeContact) {
+                addGroupMember(sender, 'Member', time || 'Active in thread', 1, bubblePhone, bubbleUsername);
+              }
             } else if (host.endsWith('telegram.org')) {
               isFromMe = bubble.classList.contains('is-out') || bubble.classList.contains('own');
               const textNode = bubble.querySelector('.text-content, .message-content, .translatable-message');
               if (textNode) text = clean(textNode.innerText);
               const authorNode = bubble.querySelector('.message-title, .message-author, .author');
               sender = isFromMe ? 'You' : (authorNode ? clean(authorNode.innerText) : (activeContact || 'Contact'));
+              if (isGroup && sender && !isFromMe && sender !== activeContact) {
+                addGroupMember(sender, 'Member', time || 'Active in thread', 1);
+              }
             } else if (host.endsWith('discord.com')) {
               const authorNode = bubble.querySelector('span[class*="username"]');
               if (authorNode) sender = clean(authorNode.innerText);
               const textNode = bubble.querySelector('div[id^="message-content-"]');
               if (textNode) text = clean(textNode.innerText);
               isFromMe = sender.toLowerCase() === 'you';
+              if (isGroup && sender && !isFromMe && sender !== activeContact) {
+                addGroupMember(sender, 'Member', time || 'Active in thread', 1);
+              }
             } else if (host.endsWith('slack.com')) {
               const authorNode = bubble.querySelector('.c-message__sender_button, [data-qa="message_sender_name"]');
               if (authorNode) sender = clean(authorNode.innerText);
               const textNode = bubble.querySelector('.c-message_kit__blocks, [data-qa="message-text"]');
               if (textNode) text = clean(textNode.innerText);
               isFromMe = sender.toLowerCase() === 'you';
+              if (isGroup && sender && !isFromMe && sender !== activeContact) {
+                addGroupMember(sender, 'Member', time || 'Active in thread', 1);
+              }
             } else if (host.endsWith('linkedin.com')) {
               const authorNode = bubble.querySelector('.msg-s-message-group__name, [data-anonymize="person-name"]');
               if (authorNode) sender = clean(authorNode.innerText);
               const textNode = bubble.querySelector('.msg-s-event-listitem__body, .msg-s-message-group__message, p');
               if (textNode) text = clean(textNode.innerText);
               isFromMe = sender.toLowerCase() === 'you' || bubble.classList.contains('msg-s-message-list__event--out');
+              if (isGroup && sender && !isFromMe && sender !== activeContact) {
+                addGroupMember(sender, 'Member', time || 'Active in thread', 1);
+              }
             } else {
               const textNode = bubble.querySelector('p, span, div');
               if (textNode) text = clean(textNode.innerText);
@@ -2524,15 +3197,17 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 isFromMe,
                 time: time || undefined
               });
-
-              if (sender && !isFromMe && sender !== activeContact) {
-                addGroupMember(sender, 'Active Contributor', time || 'Active in thread', 1);
-              }
             }
           });
         }
 
-        if (groupMemberCount === 0 && groupMembers.length > 0) {
+        const groupMembers = Array.from(membersMap.values());
+        // If this is not a group, clear any leftover group members to ensure zero leakage
+        if (!isGroup) {
+          groupMembers.length = 0;
+          groupMemberCount = 0;
+          groupSubtitle = '';
+        } else if (groupMemberCount === 0 && groupMembers.length > 0) {
           groupMemberCount = groupMembers.length + 1;
         }
 
@@ -2752,27 +3427,163 @@ struct AICopilotDrawer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 1. Top Navigation Bar (48 px)
-            topToolbar
+            minimalToolbar
 
             Divider()
 
-            // 2. Summary Header (Chat Type, Live Topic, Group/Admin Info)
-            summaryHeaderView
+            compactContextHeader
 
             Divider()
 
-            // 3. Conversational Message Stream (ChatGPT & Google AI UI)
             chatStreamView
 
             Divider()
 
-            // 4. Bottom Input Bar (ChatGPT / Gemini style)
-            bottomInputBar
+            minimalInputBar
         }
-        .frame(width: 360)
+        .frame(width: 348)
         .background(Palette.panel)
         .overlay(Rectangle().frame(width: 1).foregroundStyle(Palette.hover), alignment: .leading)
+    }
+
+    private var minimalToolbar: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+            Text("Pinggo AI")
+                .font(.system(size: 13, weight: .semibold))
+
+            HStack(spacing: 5) {
+                Circle().fill(providerIndicatorColor).frame(width: 5, height: 5)
+                Text(providerLabel).lineLimit(1)
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundStyle(Palette.muted)
+
+            Spacer()
+
+            Menu {
+                Button("Refresh chat context", systemImage: "arrow.clockwise") {
+                    session.forceCollect()
+                    store.showToast("Chat context refreshed")
+                }
+                Button("Clear AI conversation", systemImage: "trash") {
+                    session.clearCopilotHistory()
+                    store.showToast("AI conversation cleared")
+                }
+                Divider()
+                Button("Copy members as CSV", systemImage: "doc.on.doc") { copyMembersCSV() }
+                Button("Save members CSV", systemImage: "arrow.down.doc") { exportMembersCSV(openInFinder: true) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .help("More AI actions")
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .help("Close Pinggo AI")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 42)
+        .background(Palette.panel)
+    }
+
+    private var compactContextHeader: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Image(systemName: isGroup ? "person.3" : "person")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                Text(contactTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .lineLimit(1)
+                if isGroup {
+                    Text("\(activeContext?.groupMemberCount ?? effectiveMembers.count) members")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.muted)
+                }
+                Spacer()
+                Text(urgencyLevel)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+            }
+
+            Text(activeContext?.topicSummary ?? "Open a conversation to give Pinggo AI live context.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Palette.muted)
+                .lineLimit(2)
+
+            if isGroup {
+                Button {
+                    showingGroupRoster.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(showingGroupRoster ? "Hide participants" : "View participants")
+                        Image(systemName: showingGroupRoster ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.plain)
+
+                if showingGroupRoster {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 5) {
+                            ForEach(effectiveMembers) { member in
+                                HStack {
+                                    Text(member.name).lineLimit(1)
+                                    Spacer()
+                                    Text(member.role).foregroundStyle(Palette.muted)
+                                }
+                                .font(.system(size: 10))
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 92)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Palette.sidebar.opacity(0.55))
+    }
+
+    private var minimalInputBar: some View {
+        HStack(spacing: 8) {
+            TextField("Ask about this conversation…", text: $customPrompt)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .padding(.horizontal, 11)
+                .frame(height: 36)
+                .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border))
+                .onSubmit { sendQuery(customPrompt) }
+
+            Button { sendQuery(customPrompt) } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Palette.accent, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
+            .opacity(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? 0.45 : 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Palette.panel)
     }
 
     // MARK: - 1. Top Navigation Bar
@@ -2826,6 +3637,32 @@ struct AICopilotDrawer: View {
             }
             .buttonStyle(.plain)
             .help("Clear Co-Pilot dialogue history")
+
+            // Export Member Details Menu
+            Menu {
+                Button {
+                    exportMembersCSV(openInFinder: true)
+                } label: {
+                    Label("Save Members CSV to Downloads", systemImage: "arrow.down.doc")
+                }
+                Button {
+                    copyMembersCSV()
+                } label: {
+                    Label("Copy Members as CSV", systemImage: "doc.on.doc")
+                }
+                Button {
+                    copyMembersJSON()
+                } label: {
+                    Label("Copy Members as JSON", systemImage: "curlybraces")
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Export member details (Name, Phone Number, Role, Username)")
 
             // Close button
             Button(action: onClose) {
@@ -2892,6 +3729,27 @@ struct AICopilotDrawer: View {
                     Text(contactTitle)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
+
+                    Menu {
+                        Button {
+                            exportMembersCSV(openInFinder: true)
+                        } label: {
+                            Label("Save Contact CSV", systemImage: "arrow.down.doc")
+                        }
+                        Button {
+                            copyMembersCSV()
+                        } label: {
+                            Label("Copy Contact as CSV", systemImage: "doc.on.doc")
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Palette.muted)
+                            .padding(3)
+                            .background(Palette.hover, in: Circle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Export contact details")
                 }
 
                 Spacer()
@@ -2938,9 +3796,16 @@ struct AICopilotDrawer: View {
                                 HStack(spacing: 6) {
                                     Text("👑")
                                         .font(.system(size: 11))
-                                    Text(admin.name)
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(.primary)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(admin.name)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.primary)
+                                        if let u = admin.username, !u.isEmpty {
+                                            Text("@\(u)")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(Palette.muted)
+                                        }
+                                    }
                                     if let phone = admin.phoneNumber, !phone.isEmpty {
                                         Text("(\(phone))")
                                             .font(.system(size: 10))
@@ -2971,19 +3836,77 @@ struct AICopilotDrawer: View {
                     // All Participants Roster
                     if !effectiveMembers.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("ROSTER & PARTICIPANTS (\(effectiveMembers.count))")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Palette.muted)
+                            HStack {
+                                Text("ROSTER & PARTICIPANTS (\(effectiveMembers.count))")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+
+                                Spacer()
+
+                                Menu {
+                                    Button {
+                                        exportMembersCSV(openInFinder: true)
+                                    } label: {
+                                        Label("Save CSV to Downloads", systemImage: "arrow.down.doc")
+                                    }
+                                    Button {
+                                        copyMembersCSV()
+                                    } label: {
+                                        Label("Copy as CSV", systemImage: "doc.on.doc")
+                                    }
+                                    Button {
+                                        copyMembersJSON()
+                                    } label: {
+                                        Label("Copy as JSON", systemImage: "curlybraces")
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.system(size: 8.5))
+                                        Text("Export")
+                                            .font(.system(size: 9, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Palette.hover, in: RoundedRectangle(cornerRadius: 4))
+                                    .foregroundStyle(Palette.accent)
+                                }
+                                .menuStyle(.borderlessButton)
+                                .help("Export member details (Name, Phone Number, Role, Username)")
+                            }
 
                             ScrollView(.vertical, showsIndicators: true) {
                                 VStack(spacing: 3) {
                                     ForEach(effectiveMembers) { m in
                                         HStack(spacing: 6) {
-                                            Text(m.name)
-                                                .font(.system(size: 11, weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(m.name)
+                                                    .font(.system(size: 11, weight: .medium))
+                                                    .foregroundStyle(.primary)
+                                                    .lineLimit(1)
+                                                if let u = m.username, !u.isEmpty {
+                                                    Text("@\(u)")
+                                                        .font(.system(size: 9))
+                                                        .foregroundStyle(Palette.accent)
+                                                }
+                                            }
                                             Spacer()
+                                            if let phone = m.phoneNumber, !phone.isEmpty {
+                                                Text(phone)
+                                                    .font(.system(size: 9.5))
+                                                    .foregroundStyle(Palette.muted)
+                                                Button {
+                                                    NSPasteboard.general.clearContents()
+                                                    NSPasteboard.general.setString(phone, forType: .string)
+                                                    store.showToast("Copied \(phone)")
+                                                } label: {
+                                                    Image(systemName: "doc.on.doc")
+                                                        .font(.system(size: 8))
+                                                        .foregroundStyle(Palette.muted)
+                                                }
+                                                .buttonStyle(.plain)
+                                                .help("Copy phone number")
+                                            }
                                             Text(m.role)
                                                 .font(.system(size: 9.5))
                                                 .foregroundStyle(m.role.lowercased().contains("admin") ? Color.orange : Palette.muted)
@@ -3011,7 +3934,7 @@ struct AICopilotDrawer: View {
     private var chatStreamView: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 14) {
+                VStack(spacing: 12) {
                     if session.copilotHistory.isEmpty && !isGenerating {
                         emptyStateGreetingView
                     } else {
@@ -3030,7 +3953,7 @@ struct AICopilotDrawer: View {
                     }
                     Color.clear.frame(height: 1).id("bottomMarker")
                 }
-                .padding(14)
+                .padding(12)
             }
             .onChange(of: session.copilotHistory.count) {
                 withAnimation(.easeOut(duration: 0.2)) {
@@ -3045,40 +3968,35 @@ struct AICopilotDrawer: View {
 
     // Empty State Greeting (ChatGPT / Gemini style)
     private var emptyStateGreetingView: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Palette.accent.opacity(0.12))
-                    .frame(width: 52, height: 52)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-            }
-            .padding(.top, 16)
+        VStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(Palette.accent)
+                .padding(.top, 18)
 
             VStack(spacing: 4) {
                 Text("How can I help with this chat?")
-                    .font(.system(size: 15, weight: .bold))
-                Text("Full unrestricted access active. I can read all messages, analyze group members & admins, and draft context-aware replies.")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Summarize context, find actions, or draft a reply.")
+                    .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 8)
             }
 
             VStack(spacing: 6) {
-                starterChip("📋 Summarize everything in this chat") {
+                starterChip("Summarize this conversation") {
                     sendQuery("Summarize everything discussed in this conversation in clear executive bullet points.")
                 }
-                starterChip("📌 What are the key action items and deadlines?") {
+                starterChip("Find actions and deadlines") {
                     sendQuery("What are the key action items, commitments, deliverables, or deadlines mentioned?")
                 }
                 if isGroup {
-                    starterChip("👑 Who are the group admins and participants?") {
+                    starterChip("Show participants and roles") {
                         sendQuery("Identify the group admins, participants, and summarize their roles and contact details.")
                     }
                 }
-                starterChip("✍️ Draft a reply in my default \(store.preferences.defaultReplyTone) tone") {
+                starterChip("Draft a \(store.preferences.defaultReplyTone.lowercased()) reply") {
                     sendQuery("Draft a reply to \(contactTitle) in a \(store.preferences.defaultReplyTone) tone addressing the latest message.")
                 }
             }
@@ -3094,14 +4012,13 @@ struct AICopilotDrawer: View {
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.primary)
                 Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hover, lineWidth: 1))
+            .padding(.vertical, 7)
+            .background(Palette.sidebar.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
     }
@@ -3204,9 +4121,8 @@ struct AICopilotDrawer: View {
             }
             .padding(.top, 4)
         }
-        .padding(12)
-        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hover, lineWidth: 1))
+        .padding(.horizontal, 2)
+        .padding(.vertical, 8)
     }
 
     // Live Streaming Assistant Card
@@ -3231,9 +4147,8 @@ struct AICopilotDrawer: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(12)
-        .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+        .padding(.horizontal, 2)
+        .padding(.vertical, 8)
     }
 
     // MARK: - 4. Bottom Input Bar (ChatGPT & Google AI UI)
@@ -3308,9 +4223,14 @@ struct AICopilotDrawer: View {
         let channelType = isGroup ? "Group Chat (\(memberCount) members)" : "Direct 1-on-1 Chat with \(contactTitle)"
 
         let membersList = effectiveMembers.map { m in
-            let phone = (m.phoneNumber?.isEmpty == false) ? " (\(m.phoneNumber!))" : ""
-            let roleStr = m.role.lowercased().contains("admin") ? "👑 \(m.role)" : m.role
-            return "\(m.name)\(phone) - \(roleStr) (\(m.messageCount) messages)"
+            var parts: [String] = []
+            parts.append("Name: \(m.cleanName)")
+            if let p = m.cleanPhone, !p.isEmpty { parts.append("Phone: \(p)") }
+            if let u = m.username, !u.isEmpty { parts.append("Username: @\(u)") }
+            let roleStr = m.normalizedRole == "Group Admin" ? "👑 \(m.normalizedRole)" : m.normalizedRole
+            parts.append("Role: \(roleStr)")
+            parts.append("Messages: \(m.messageCount)")
+            return parts.joined(separator: " | ")
         }.joined(separator: "\n")
 
         let tone = defaultTone
@@ -3333,5 +4253,59 @@ struct AICopilotDrawer: View {
             streamingText = ""
         }
     }
-}
 
+    // MARK: - Export Helpers
+    private func exportMembersCSV(openInFinder: Bool = true) {
+        guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
+            store.showToast("No member details to export")
+            return
+        }
+        let csv = ctx.exportCSV()
+        let fileManager = FileManager.default
+        let downloadsDir = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
+
+        let rawName = isGroup ? (activeContext?.contactName ?? "Group") : contactTitle
+        let safeName = rawName.components(separatedBy: CharacterSet.alphanumerics.inverted).joined(separator: "_").prefix(30)
+        let fileName = "\(safeName.isEmpty ? "Members" : safeName)_Members.csv"
+        var destURL = downloadsDir.appendingPathComponent(fileName)
+        var counter = 1
+        let baseName = destURL.deletingPathExtension().lastPathComponent
+        while fileManager.fileExists(atPath: destURL.path) {
+            destURL = downloadsDir.appendingPathComponent("\(baseName)_\(counter).csv")
+            counter += 1
+        }
+
+        do {
+            try csv.write(to: destURL, atomically: true, encoding: .utf8)
+            store.showToast("Saved to Downloads/\(destURL.lastPathComponent)")
+            if openInFinder {
+                NSWorkspace.shared.activateFileViewerSelecting([destURL])
+            }
+        } catch {
+            store.showToast("Export failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func copyMembersCSV() {
+        guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
+            store.showToast("No member details to copy")
+            return
+        }
+        let csv = ctx.exportCSV()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(csv, forType: .string)
+        store.showToast("Copied \(ctx.effectiveMembers.count) members as CSV")
+    }
+
+    private func copyMembersJSON() {
+        guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
+            store.showToast("No member details to copy")
+            return
+        }
+        let json = ctx.exportJSON()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(json, forType: .string)
+        store.showToast("Copied \(ctx.effectiveMembers.count) members as JSON")
+    }
+}

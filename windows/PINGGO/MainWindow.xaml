@@ -9,8 +9,8 @@
         <!-- Main Application Shell -->
         <Grid>
             <Grid.RowDefinitions>
-                <!-- Standardized 64px Global Header -->
-                <RowDefinition Height="64" />
+                <!-- Compact global header -->
+                <RowDefinition Height="56" />
                 <RowDefinition Height="1" />
                 <!-- Main Workspace Area -->
                 <RowDefinition Height="*" />
@@ -23,7 +23,7 @@
             <!-- Sidebar + Active Workspace -->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="208" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
@@ -50,8 +50,8 @@
         <!-- Toast Notification Pill Overlay -->
         <Border x:Name="ToastContainer" Visibility="Collapsed"
                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                Margin="0,0,0,32" Background="#D91A1D26" BorderBrush="{StaticResource AppBorderBrush}"
-                BorderThickness="1" CornerRadius="20" Padding="16,10">
+                Margin="0,0,0,20" Background="#F012151A" BorderBrush="{StaticResource AppBorderBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="14,9">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <FontIcon Glyph="&#xE73E;" FontSize="13" Foreground="{StaticResource AppSuccessBrush}" />
                 <TextBlock x:Name="ToastText" Text="Notification" FontSize="13" FontWeight="Medium" Foreground="White" />

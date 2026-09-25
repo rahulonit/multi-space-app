@@ -9,9 +9,9 @@ struct ContentView: View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 820 || sidebarCollapsed
             VStack(spacing: 0) {
-                // Standardized 64px Global Header
+                // Compact global chrome leaves more room for conversation content.
                 GlobalHeaderView(windowWidth: geometry.size.width)
-                    .frame(height: 64)
+                    .frame(height: 56)
 
                 Divider()
                     .background(Palette.border)
@@ -36,7 +36,7 @@ struct ContentView: View {
                     Divider()
                         .background(Palette.border)
                     MobileBottomNavView()
-                        .frame(height: 52)
+                        .frame(height: 48)
                 }
             }
         }
@@ -66,10 +66,10 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(.ultraThickMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
-                .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
-                .padding(.bottom, 24)
+                .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border, lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                .padding(.bottom, 18)
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: store.toastMessage)

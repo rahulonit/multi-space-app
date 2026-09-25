@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct SidebarView: View {
     @EnvironmentObject private var store: AppStore
     let compact: Bool
@@ -34,9 +35,8 @@ struct SidebarView: View {
                 .padding(.bottom, 12)
             } else {
                 HStack {
-                    Text("PLATFORMS")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.5)
+                    Text("Platforms")
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Palette.muted)
                     Spacer()
                     Button { showingAddPlatform = true } label: {
@@ -56,9 +56,9 @@ struct SidebarView: View {
                     .help("Collapse sidebar")
                     .padding(.leading, 6)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
             }
 
             ScrollView {
@@ -70,31 +70,27 @@ struct SidebarView: View {
                     }
 
                     if !compact {
-                        Divider()
-                            .background(Palette.border)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 10)
+                        Divider().background(Palette.border)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 8)
 
-                        Text("WORKSPACES")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1.4)
+                        Text("Spaces")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .padding(.horizontal, 8)
                             .padding(.bottom, 4)
 
-                        workspaceRow("Personal Workspace", symbol: "person.fill", count: 14)
-                        workspaceRow("Work Workspace", symbol: "briefcase.fill", count: 58)
+                        workspaceRow("Personal", symbol: "person", count: 14)
+                        workspaceRow("Work", symbol: "briefcase", count: 58)
                         workspaceRow("Projects", symbol: "folder.fill", count: 12)
-                        workspaceRow("Clients", symbol: "person.2.fill", count: 8)
-                        workspaceRow("Team Workspace", symbol: "person.3.fill", count: 6)
 
                         Button {
                             store.showToast("Workspace creation is coming next")
                         } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: "plus.circle")
+                                Image(systemName: "plus")
                                     .font(.system(size: 12))
-                                Text("Create Workspace")
+                                Text("New space")
                                     .font(.system(size: 11.5, weight: .medium))
                                 Spacer()
                             }
@@ -170,9 +166,9 @@ struct SidebarView: View {
                 }
             }
             .padding(14)
-            .background(Palette.card.opacity(0.45))
+            .background(Palette.panel)
         }
-        .frame(width: compact ? 68 : (store.preferences.compactMode ? 190 : 224))
+        .frame(width: compact ? 60 : (store.preferences.compactMode ? 184 : 208))
         .background(Palette.sidebar)
         .confirmationDialog(
             "Delete account?",
@@ -211,9 +207,8 @@ struct SidebarView: View {
                 .foregroundStyle(Palette.muted)
         }
         .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(selected ? Palette.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Palette.accent.opacity(0.22) : Color.clear))
+        .frame(height: 30)
+        .background(selected ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func navButton(_ title: String, symbol: String, destination: AppDestination) -> some View {
@@ -264,10 +259,18 @@ struct SidebarView: View {
                         }
                     }
                 }
-                .foregroundStyle(selected ? .white : Palette.muted)
+                .foregroundStyle(selected ? Palette.text : Palette.muted)
                 .padding(.horizontal, compact ? 16 : 12)
-                .frame(height: compact ? 37 : (store.preferences.compactMode ? 39 : 47))
-                .background(selected ? Palette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 9))
+                .frame(height: compact ? 36 : 40)
+                .background(selected ? Palette.navActiveBg : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(alignment: .leading) {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Palette.accent)
+                            .frame(width: 3, height: 20)
+                            .padding(.leading, 2)
+                    }
+                }
             }
             .buttonStyle(.plain)
             .help(active.map { "\(platform.name) · \($0.name)" } ?? platform.name)
@@ -297,37 +300,6 @@ struct SidebarView: View {
                 }
             }
 
-            if !compact && accounts.count > 1 {
-                HStack(spacing: 5) {
-                    ForEach(accounts) { acc in
-                        let isCurrent = acc.id == active?.id
-                        Button {
-                            store.selectAccount(acc.id)
-                            store.destination = .platform(platform.id)
-                        } label: {
-                            HStack(spacing: 3) {
-                                Circle()
-                                    .fill(isCurrent ? Palette.accent : Palette.muted.opacity(0.4))
-                                    .frame(width: 5, height: 5)
-                                Text(acc.name)
-                                    .font(.system(size: 9.5, weight: isCurrent ? .bold : .medium))
-                                    .foregroundStyle(isCurrent ? Palette.accent : Palette.muted)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2.5)
-                            .background(isCurrent ? Palette.accent.opacity(0.12) : Palette.hover, in: Capsule())
-                            .overlay(Capsule().stroke(isCurrent ? Palette.accent.opacity(0.4) : Color.clear, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Switch to \(acc.name)")
-                    }
-                    Spacer()
-                }
-                .padding(.leading, 32)
-                .padding(.top, 1)
-                .padding(.bottom, 2)
-            }
             if !compact && accounts.count > 1 {
                 ForEach(accounts) { account in
                     HStack(spacing: 4) {

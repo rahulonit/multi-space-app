@@ -3,19 +3,19 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="32">
-        <StackPanel Spacing="24" MaxWidth="760" HorizontalAlignment="Left">
+    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="28,24">
+        <StackPanel Spacing="20" MaxWidth="760" HorizontalAlignment="Left">
             <StackPanel Spacing="4">
-                <TextBlock Text="Settings &amp; Preferences" FontSize="24" FontWeight="Bold" Foreground="White" />
-                <TextBlock Text="Customize AI integration, Windows Hello security, ad blocking, and appearance" FontSize="13" Foreground="{StaticResource AppTextMutedBrush}" />
+                <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
+                <TextBlock Text="AI, security, privacy, and appearance" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
             </StackPanel>
 
             <!-- 1. AI API Keys Card -->
-            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+            <Border Style="{StaticResource MinimalCardStyle}">
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="AI CO-PILOT DIRECT API &amp; LOCAL INFERENCE" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
-                        <TextBlock Text="Configure cloud LLM APIs or run privacy-first local models via Ollama. Preferences stored locally." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock Text="AI provider" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
+                        <TextBlock Text="Connect a cloud API or use a local Ollama model." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
                     </StackPanel>
 
                     <!-- Active AI Engine -->
@@ -101,9 +101,9 @@
             </Border>
 
             <!-- 2. Security & Windows Hello Card -->
-            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+            <Border Style="{StaticResource MinimalCardStyle}">
                 <StackPanel Spacing="16">
-                    <TextBlock Text="SECURITY &amp; WINDOWS HELLO" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppAccentBrush}" />
+                    <TextBlock Text="Security &amp; Windows Hello" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
 
                     <ToggleSwitch x:Name="AppLockToggle" Header="Enable App Lock" Toggled="OnAppLockToggled" />
 
@@ -131,9 +131,9 @@
             </Border>
 
             <!-- 3. AdBlocker Filters Card -->
-            <Border Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="20">
+            <Border Style="{StaticResource MinimalCardStyle}">
                 <StackPanel Spacing="14">
-                    <TextBlock Text="NATIVE WEBVIEW2 ADBLOCKER CATEGORIES" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AppSuccessBrush}" />
+                    <TextBlock Text="Web privacy" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
 
                     <ToggleSwitch x:Name="BlockAdsToggle" Header="Block Banner Ads &amp; Popups" IsOn="True" Toggled="OnSavePreferences" />
                     <ToggleSwitch x:Name="BlockTrackersToggle" Header="Block Telemetry &amp; Trackers" IsOn="True" Toggled="OnSavePreferences" />

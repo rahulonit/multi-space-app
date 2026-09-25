@@ -31,36 +31,39 @@ struct HomeView: View {
 
     // MARK: - Hero Header Banner
     private var heroHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let userName = store.userProfile.isSignedIn ? store.userProfile.displayName : store.me.name
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
-                AppLogo(size: 46, cornerRadius: 11)
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                AppLogo(size: 48, cornerRadius: 12)
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text("\(greetingText) 👋")
-                            .font(.system(size: 24, weight: .bold))
+                        Text("\(greetingText), \(userName) 👋")
+                            .font(.system(size: 23, weight: .bold))
+                            .lineLimit(1)
                         Text("·")
                             .foregroundStyle(Palette.muted)
                         Text(formattedDate)
-                            .font(.system(size: 14))
+                            .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
 
-                    Text("Command center for all your connected social platforms and accounts")
+                    Text("Universal command center for all your connected social platforms and accounts")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                 }
 
                 Spacer()
 
-                // Status Pills
+                // Status & Quick Action Pills
                 HStack(spacing: 8) {
                     if store.totalUnreadCount > 0 {
                         HStack(spacing: 6) {
                             Circle().fill(.red).frame(width: 8, height: 8)
                             Text("\(store.totalUnreadCount) Unread")
                                 .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.red)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -78,6 +81,7 @@ struct HomeView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Palette.panel, in: Capsule())
+                        .overlay(Capsule().stroke(Palette.card, lineWidth: 1))
                     }
 
                     if store.preferences.appLockEnabled {
@@ -86,23 +90,43 @@ struct HomeView: View {
                                 Image(systemName: "lock.shield.fill")
                                     .font(.system(size: 11))
                                     .foregroundStyle(Palette.accent)
-                                Text("Protected")
+                                Text("Locked")
                                     .font(.system(size: 11, weight: .medium))
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(Palette.accent.opacity(0.12), in: Capsule())
+                            .overlay(Capsule().stroke(Palette.accent.opacity(0.3), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
-                        .help("PINGGO is Touch ID locked · Click to lock now")
+                        .help("PINGGO is protected · Click to lock (⌘L)")
                     }
+
+                    Button {
+                        store.destination = .settings
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 28, height: 28)
+                            .background(Palette.panel, in: Circle())
+                            .overlay(Circle().stroke(Palette.card, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Preferences & Settings (⌘,)")
                 }
             }
         }
-        .padding(20)
+        .padding(22)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Palette.panel)
+                .fill(
+                    LinearGradient(
+                        colors: [Palette.panel, Palette.panel.opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
                         .stroke(Palette.card, lineWidth: 1)
@@ -117,10 +141,10 @@ struct HomeView: View {
             statTile(
                 title: "Unread Messages",
                 value: "\(store.totalUnreadCount)",
-                subtitle: store.totalUnreadCount == 0 ? "All caught up" : "Across connected apps",
+                subtitle: store.totalUnreadCount == 0 ? "All inboxes reviewed" : "Pending your attention",
                 symbol: "bubble.left.and.bubble.right.fill",
                 color: store.totalUnreadCount > 0 ? .red : Palette.accent,
-                actionText: nil
+                actionText: store.totalUnreadCount > 0 ? "Review Inboxes" : nil
             )
 
             // Stat 2: Active Accounts
@@ -131,7 +155,7 @@ struct HomeView: View {
                     subtitle: "\(uniquePlatformsCount) social platforms",
                     symbol: "square.stack.3d.up.fill",
                     color: .blue,
-                    actionText: "+ Add Account"
+                    actionText: "+ Add Platform"
                 )
             }
             .buttonStyle(.plain)
@@ -146,7 +170,7 @@ struct HomeView: View {
             } label: {
                 statTile(
                     title: "Memory Saver",
-                    value: hibernateFeedback ? "Saved!" : "\(estimatedRamSavedMB) MB",
+                    value: hibernateFeedback ? "RAM Freed!" : "\(estimatedRamSavedMB) MB",
                     subtitle: "\(store.sleepingSessionCount()) sleeping tabs",
                     symbol: "leaf.fill",
                     color: .green,
@@ -160,10 +184,10 @@ struct HomeView: View {
                 statTile(
                     title: "Workspace Layout",
                     value: store.isSplitView ? "Split 2-Pane" : "Single View",
-                    subtitle: "Shortcut: ⌘\\",
+                    subtitle: "Toggle side-by-side (⌘\\)",
                     symbol: store.isSplitView ? "rectangle.split.2x1.fill" : "macwindow",
                     color: .purple,
-                    actionText: store.isSplitView ? "Close Split" : "Split Screen"
+                    actionText: store.isSplitView ? "Exit Split" : "Split Screen"
                 )
             }
             .buttonStyle(.plain)
@@ -178,10 +202,10 @@ struct HomeView: View {
                     .foregroundStyle(Palette.muted)
                 Spacer()
                 Image(systemName: symbol)
-                    .font(.system(size: 14))
-                    .foregroundStyle(color)
-                    .frame(width: 28, height: 28)
-                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 7))
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -193,16 +217,19 @@ struct HomeView: View {
             }
 
             if let actionText = actionText, !actionText.isEmpty {
-                HStack {
+                HStack(spacing: 4) {
                     Text(actionText)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(color)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(color)
                     Spacer()
                 }
             } else {
                 HStack {
                     Text("Live status")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.muted)
                     Spacer()
                 }
@@ -603,15 +630,15 @@ struct BentoAppCardView: View {
         VStack(alignment: .leading, spacing: 14) {
             // Card Header
             HStack(alignment: .center, spacing: 12) {
-                PlatformLogo(platform: platform, size: 28)
-                    .frame(width: 44, height: 44)
-                    .background(spaceColor(platform.color).opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+                PlatformLogo(platform: platform, size: 26)
+                    .frame(width: 42, height: 42)
+                    .background(spaceColor(platform.color).opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(platform.name)
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                     Text(account.name)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                 }
 
@@ -619,7 +646,7 @@ struct BentoAppCardView: View {
 
                 // Status Indicator Badge
                 if unread > 0 {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Circle().fill(.red).frame(width: 6, height: 6)
                         Text("\(unread) unread")
                             .font(.system(size: 10, weight: .bold))
@@ -628,6 +655,7 @@ struct BentoAppCardView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.red.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(Color.red.opacity(0.3), lineWidth: 1))
                 } else if isHibernated {
                     HStack(spacing: 4) {
                         Image(systemName: "moon.fill").font(.system(size: 8))
@@ -641,7 +669,7 @@ struct BentoAppCardView: View {
                 } else if isCurrent {
                     HStack(spacing: 4) {
                         Circle().fill(.green).frame(width: 6, height: 6)
-                        Text("Live")
+                        Text("Active")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.green)
                     }
@@ -656,24 +684,37 @@ struct BentoAppCardView: View {
                 if let message = snapshot?.messages.first {
                     HStack(spacing: 5) {
                         Image(systemName: "bubble.left.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Palette.muted)
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(Palette.accent)
                         Text(message.sender)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Palette.muted)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if let time = message.time {
+                            Text(time)
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Palette.muted)
+                        }
                     }
                     Text(message.text)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
                         .lineLimit(2)
                 } else {
-                    Text(platform.resolvedWebsiteURL?.host ?? "Connected web portal")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.muted)
+                        Text(platform.resolvedWebsiteURL?.host ?? "Connected web portal")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                    }
                 }
             }
-            .frame(minHeight: 34, alignment: .topLeading)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
 
             Divider()
 
@@ -684,14 +725,14 @@ struct BentoAppCardView: View {
                     store.selectAccount(account.id)
                 } label: {
                     HStack(spacing: 5) {
-                        Text("Open")
+                        Text("Open Portal")
                             .font(.system(size: 11, weight: .semibold))
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 9, weight: .bold))
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .background(Palette.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                    .background(Palette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
                     .foregroundStyle(Palette.accent)
                 }
                 .buttonStyle(.plain)
@@ -702,6 +743,7 @@ struct BentoAppCardView: View {
                 } label: {
                     Image(systemName: "rectangle.split.2x1")
                         .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
                         .frame(width: 28, height: 28)
                         .background(Palette.card, in: RoundedRectangle(cornerRadius: 8))
                 }
@@ -714,7 +756,7 @@ struct BentoAppCardView: View {
                 } label: {
                     Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2")
                         .font(.system(size: 11))
-                        .foregroundStyle(isMuted ? .orange : .primary)
+                        .foregroundStyle(isMuted ? .orange : Palette.muted)
                         .frame(width: 28, height: 28)
                         .background(Palette.card, in: RoundedRectangle(cornerRadius: 8))
                 }

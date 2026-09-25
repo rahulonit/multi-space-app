@@ -904,35 +904,59 @@ final class AIService: ObservableObject {
             }
         }
 
+        let parsed = LocalTranscriptEngine.parse(transcript: messageContext)
+        let lastIncoming = parsed.last(where: { !$0.isFromMe })
+        let lastText = lastIncoming?.text.trimmingCharacters(in: .whitespaces) ?? ""
+        let effectiveName = lastIncoming?.author.components(separatedBy: " ").first ?? firstName
+
         let tonePrefix: String
         let toneSuffix: String
 
         switch tone {
         case .professional:
-            tonePrefix = "Dear \(firstName),\n\nThank you for reaching out. "
+            tonePrefix = "Dear \(effectiveName),\n\nThank you for reaching out. "
             toneSuffix = "\n\nPlease let me know if you have any further questions.\n\nBest regards,"
         case .friendly:
-            tonePrefix = "Hi \(firstName)!\n\nThanks for your message. "
+            tonePrefix = "Hi \(effectiveName)!\n\nThanks for your message. "
             toneSuffix = "\n\nTalk soon!"
         case .concise:
-            tonePrefix = "Hi \(firstName), "
+            tonePrefix = "Hi \(effectiveName), "
             toneSuffix = " Thanks!"
         case .casual:
-            tonePrefix = "Hey \(firstName), "
+            tonePrefix = "Hey \(effectiveName), "
             toneSuffix = " Catch you later!"
         case .politeDecline:
-            tonePrefix = "Hi \(firstName),\n\nThank you for reaching out. Regrettably, "
+            tonePrefix = "Hi \(effectiveName),\n\nThank you for reaching out. Regrettably, "
             toneSuffix = "\n\nI appreciate your understanding."
         case .proposeTime:
-            tonePrefix = "Hi \(firstName),\n\nHappy to connect on this. "
+            tonePrefix = "Hi \(effectiveName),\n\nHappy to connect on this. "
             toneSuffix = "\n\nLet me know which time slot works best for you."
         }
 
         var coreText = cleanPrompt
-        if coreText.lowercased().hasPrefix("tell them ") {
-            coreText = String(coreText.dropFirst(10))
-        } else if coreText.lowercased().hasPrefix("say ") {
-            coreText = String(coreText.dropFirst(4))
+        let lowPrompt = cleanPrompt.lowercased()
+        let lowLast = lastText.lowercased()
+
+        if lowPrompt.hasPrefix("tell them ") {
+            coreText = String(cleanPrompt.dropFirst(10))
+        } else if lowPrompt.hasPrefix("say ") {
+            coreText = String(cleanPrompt.dropFirst(4))
+        } else if lowPrompt.contains("draft a reply") || lowPrompt.contains("reply to this") || lowPrompt.isEmpty || lowPrompt == "draft reply" || lowPrompt == "reply" {
+            if lowLast.contains("?") {
+                if lowLast.contains("when") || lowLast.contains("time") || lowLast.contains("available") || lowLast.contains("meet") {
+                    coreText = "I'm checking my availability and will follow up with proposed time slots shortly."
+                } else if lowLast.contains("send") || lowLast.contains("share") || lowLast.contains("link") || lowLast.contains("file") {
+                    coreText = "I'm getting that prepared right now and will share it over with you shortly."
+                } else {
+                    coreText = "Thanks for following up on this. Looking into the details now and will get back to you with an update."
+                }
+            } else if lowLast.contains("thank") || lowLast.contains("great") || lowLast.contains("awesome") {
+                coreText = "Glad to hear! Happy to help anytime."
+            } else if !lastText.isEmpty {
+                coreText = "Received and acknowledged. Keeping this on my radar and will follow up as needed."
+            } else {
+                coreText = "Thank you for reaching out. Please let me know how I can best support."
+            }
         }
 
         if let first = coreText.first {
@@ -1275,6 +1299,38 @@ final class AIService: ObservableObject {
         return fullText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+struct OllamaModelTag: Codable {
+    let name: String
+    let model: String?
+    let size: Int64?
+    let digest: String?
+}
+
+struct OllamaTagsResponse: Codable {
+    let models: [OllamaModelTag]?
+}
+
+    func fetchOllamaStatus(endpoint: String = "http://localhost:11434") async -> (isOnline: Bool, models: [String], error: String?) {
+        let base = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let cleanBase = base.isEmpty ? "http://localhost:11434" : base
+        guard let url = URL(string: "\(cleanBase)/api/tags") else {
+            return (false, [], "Invalid Ollama endpoint URL.")
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return (false, [], "Ollama server returned HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            }
+            let decoded = try JSONDecoder().decode(OllamaTagsResponse.self, from: data)
+            let modelNames = (decoded.models ?? []).map { $0.name }
+            return (true, modelNames, nil)
+        } catch {
+            return (false, [], error.localizedDescription)
+        }
+    }
+
     func streamOllamaAPI(
         endpoint: String = "http://localhost:11434",
         model: String = "llama3.2",
@@ -1369,11 +1425,17 @@ final class AIService: ObservableObject {
         Default response tone: \(tone.rawValue).
         \(preferences.customAiPrompt.isEmpty ? "" : "User guidelines: " + preferences.customAiPrompt)
 
-        CORE CAPABILITIES & MANDATE:
+        STRICT BOUNDARY & ACCURACY MANDATE:
+        - You operate STRICTLY and SOLELY within the currently SELECTED conversation thread in the messaging platform.
+        - You must NEVER list, reference, invent, or mix in contacts or chats from the platform's sidebar chat list / inbox listing.
+        - If the conversation is a Direct 1-on-1 Chat: explicitly confirm that it is a 1-on-1 chat with that specific contact and You. State that there are no group members or group admins.
+        - If the conversation is a Group Chat: only reference the verified members, participants, and admins of this specific group.
+
+        CORE CAPABILITIES & BEHAVIOR:
         1. Full Conversational & Analytical Intelligence:
            - Answer ANY question about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
            - When asked about group information, member count, or group admins: inspect the verified Group Roster & Admin Information provided below. Clearly identify admins and participants with their roles and contact details.
-           - When asked if this is a group chat or 1-on-1 chat: clearly state the chat type and participants.
+           - When asked to export or download member details or roster data (CSV / table): generate a clean markdown table with columns (Name, Phone Number, Role, Username, Message Count) followed by a formatted CSV code block ready for 1-click copying.
            - Provide thorough, specific answers quoting verified facts from the transcript. Do not give vague or evasive answers.
         2. Direct Answering vs. Reply Drafting:
            - If the user asks a question about the chat (e.g., "Who are the admins?", "What did X say?", "Summarize the discussion"): answer the question directly with deep analysis and clean markdown.
@@ -1434,15 +1496,47 @@ final class AIService: ObservableObject {
             }
         }
 
-        // Local Smart Engine fallback - handle questions, group info, and reply drafting intelligently
+        // Local Smart Engine fallback - handle questions, group info, export, and reply drafting intelligently
         let lowPrompt = cleanPrompt.lowercased()
-        if lowPrompt.contains("admin") || lowPrompt.contains("member") || lowPrompt.contains("group") || lowPrompt.contains("who is in") || lowPrompt.contains("participants") {
+        if lowPrompt.contains("admin") || lowPrompt.contains("member") || lowPrompt.contains("group") || lowPrompt.contains("who is in") || lowPrompt.contains("participants") || lowPrompt.contains("export") || lowPrompt.contains("csv") {
             var answer = ""
+            let isDirect = channelType?.lowercased().contains("direct") == true || channelType?.lowercased().contains("1-on-1") == true
             if let ct = channelType, !ct.isEmpty {
                 answer += "### \(ct)\n\n"
             }
-            if let mi = membersInfo, !mi.isEmpty {
+            if isDirect {
+                answer += "This conversation is a **Direct 1-on-1 Chat**.\n\n"
+                if let mi = membersInfo, !mi.isEmpty {
+                    answer += "**Participant Details:**\n\n\(mi)\n\n"
+                }
+                answer += "There are no group members or group admins in a 1-on-1 chat.\n\n"
+            } else if let mi = membersInfo, !mi.isEmpty {
                 answer += "**Group Roster & Identified Participants:**\n\n\(mi)\n\n"
+                if lowPrompt.contains("export") || lowPrompt.contains("csv") {
+                    answer += "```csv\nName,Phone Number,Role,Username,Message Count\n"
+                    for line in mi.components(separatedBy: "\n") {
+                        if !line.isEmpty {
+                            let parts = line.components(separatedBy: " | ")
+                            var n = ""
+                            var p = ""
+                            var r = "Member"
+                            var u = ""
+                            var c = "0"
+                            for part in parts {
+                                if part.hasPrefix("Name: ") { n = String(part.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
+                                else if part.hasPrefix("Phone: ") { p = String(part.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+                                else if part.hasPrefix("Role: ") { r = String(part.dropFirst(6)).replacingOccurrences(of: "👑 ", with: "").trimmingCharacters(in: .whitespaces) }
+                                else if part.hasPrefix("Username: ") { u = String(part.dropFirst(10)).replacingOccurrences(of: "@", with: "").trimmingCharacters(in: .whitespaces) }
+                                else if part.hasPrefix("Messages: ") { c = String(part.dropFirst(10)).trimmingCharacters(in: .whitespaces) }
+                            }
+                            if !n.isEmpty || !p.isEmpty {
+                                let escN = n.contains(",") ? "\"\(n)\"" : n
+                                answer += "\(escN),\(p),\(r),\(u),\(c)\n"
+                            }
+                        }
+                    }
+                    answer += "```\n\n*Tip: You can also click the **Export** button in the Co-Pilot top toolbar or Summary Header to save this directly as a CSV file to your Downloads.*"
+                }
             } else {
                 answer += "This conversation is currently detected as a direct 1-on-1 thread.\n\n"
             }
@@ -1451,18 +1545,38 @@ final class AIService: ObservableObject {
             return answer
         }
 
-        if lowPrompt.contains("summary") || lowPrompt.contains("summarize") || lowPrompt.contains("overview") {
-            let summary = """
-            ### 📋 Conversation Summary
-
-            • **Channel Context**: \(channelType ?? "Direct Conversation")
-            • **Transcript Overview**: \(cleanContext.isEmpty ? "No messages visible in current thread view." : "Analyzed active conversation thread.")
-            • **Status**: Active thread monitored by PINGGO Co-Pilot.
-
-            *Generated by PINGGO Smart Engine.*
-            """
+        // 1. Real Extractive Transcript Summary
+        if lowPrompt.contains("summary") || lowPrompt.contains("summarize") || lowPrompt.contains("overview") || lowPrompt.contains("recap") || lowPrompt.contains("briefing") || lowPrompt.contains("tl;dr") || lowPrompt.contains("tldr") {
+            let summary = LocalTranscriptEngine.extractSummary(transcript: cleanContext, channelType: channelType, membersInfo: membersInfo)
             onChunk(summary)
             return summary
+        }
+
+        // 2. Action Items, Tasks & Deadlines (using NSDataDetector)
+        if lowPrompt.contains("action item") || lowPrompt.contains("action-item") || lowPrompt.contains("task") || lowPrompt.contains("deadline") || lowPrompt.contains("to-do") || lowPrompt.contains("todo") || lowPrompt.contains("commitment") {
+            let tasks = LocalTranscriptEngine.extractActionItems(transcript: cleanContext)
+            onChunk(tasks)
+            return tasks
+        }
+
+        // 3. Links, Documents & Resources
+        if lowPrompt.contains("link") || lowPrompt.contains("url") || lowPrompt.contains("resource") || lowPrompt.contains("doc") || lowPrompt.contains("attachment") || lowPrompt.contains("figma") || lowPrompt.contains("github") || lowPrompt.contains("zoom") {
+            let links = LocalTranscriptEngine.extractLinks(transcript: cleanContext)
+            onChunk(links)
+            return links
+        }
+
+        // 4. Open Questions & Pending Inquiries
+        if lowPrompt.contains("question") || lowPrompt.contains("inquiry") || lowPrompt.contains("inquiries") || lowPrompt.contains("pending") || lowPrompt.contains("unanswered") {
+            let questions = LocalTranscriptEngine.extractQuestions(transcript: cleanContext)
+            onChunk(questions)
+            return questions
+        }
+
+        // 5. Targeted Participant Queries (e.g. "What did Kalaimani say?")
+        if let participantAnswer = LocalTranscriptEngine.answerParticipantQuery(prompt: cleanPrompt, transcript: cleanContext) {
+            onChunk(participantAnswer)
+            return participantAnswer
         }
 
         let fallbackReply = await draftCustomReply(
@@ -1653,5 +1767,294 @@ final class AIService: ObservableObject {
         }
 
         return queue
+    }
+}
+
+// MARK: - Local On-Device Intelligence Engine
+struct LocalTranscriptEngine {
+    struct ParsedMessage {
+        let index: Int
+        let author: String
+        let time: String
+        let text: String
+        let isFromMe: Bool
+    }
+
+    static func parse(transcript: String) -> [ParsedMessage] {
+        var list: [ParsedMessage] = []
+        let lines = transcript.components(separatedBy: "\n")
+        let regex = try? NSRegularExpression(pattern: #"^\[#(\d+)\s*\|\s*([^\[]+?)\s*\[([^\]]+)\]\]:\s*(.*)$"#)
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            if let regex = regex,
+               let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+               match.numberOfRanges == 5 {
+                let idxStr = (trimmed as NSString).substring(with: match.range(at: 1))
+                let author = (trimmed as NSString).substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespaces)
+                let time = (trimmed as NSString).substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces)
+                let text = (trimmed as NSString).substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespaces)
+                let isMe = author.lowercased() == "you" || author.lowercased() == "me"
+                list.append(ParsedMessage(index: Int(idxStr) ?? (list.count + 1), author: author, time: time, text: text, isFromMe: isMe))
+            } else if trimmed.contains(":") && !trimmed.lowercased().hasPrefix("http") {
+                let parts = trimmed.split(separator: ":", maxSplits: 1).map(String.init)
+                let author = parts[0].trimmingCharacters(in: .whitespaces)
+                let text = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+                let isMe = author.lowercased() == "you" || author.lowercased() == "me"
+                list.append(ParsedMessage(index: list.count + 1, author: author, time: "", text: text, isFromMe: isMe))
+            } else {
+                list.append(ParsedMessage(index: list.count + 1, author: "Context", time: "", text: trimmed, isFromMe: false))
+            }
+        }
+        return list
+    }
+
+    static func extractSummary(transcript: String, channelType: String?, membersInfo: String?) -> String {
+        let msgs = parse(transcript: transcript)
+        guard !msgs.isEmpty else {
+            return """
+            ### 📋 Conversation Summary
+
+            • **Channel Context**: \(channelType ?? "Active Conversation")
+            • **Transcript Overview**: No messages visible in current thread view.
+            • **Status**: Active thread monitored by PINGGO Co-Pilot.
+
+            *Generated by PINGGO Smart Engine (Local On-Device Analysis).*
+            """
+        }
+
+        let nonMeSenders = Set(msgs.filter { !$0.isFromMe }.map { $0.author }).sorted()
+        let participantSummary = nonMeSenders.isEmpty ? "Direct Conversation" : nonMeSenders.joined(separator: ", ")
+
+        // 1. Identify Key Discussion Points (substantial messages)
+        var keyPoints: [String] = []
+        for msg in msgs {
+            let t = msg.text.trimmingCharacters(in: .whitespaces)
+            if t.count > 15 && !t.hasPrefix("http") && !keyPoints.contains(where: { $0.contains(String(t.prefix(30))) }) {
+                keyPoints.append("• **\(msg.author)**: \"\(t)\"")
+                if keyPoints.count >= 5 { break }
+            }
+        }
+
+        // 2. Decisions & Confirmed Milestones
+        var decisions: [String] = []
+        let decisionKeywords = ["agreed", "approved", "confirmed", "finalized", "done", "fixed", "deployed", "scheduled", "resolved", "delivered", "accepted"]
+        for msg in msgs {
+            let lower = msg.text.lowercased()
+            if decisionKeywords.contains(where: { lower.contains($0) }) {
+                decisions.append("• **\(msg.author)** confirmed: \"\(msg.text)\"")
+                if decisions.count >= 3 { break }
+            }
+        }
+
+        // 3. Action Items & Commitments (using keyword + NSDataDetector)
+        var actionItems: [String] = []
+        let actionKeywords = ["will", "need to", "please", "can you", "send", "check", "review", "share", "submit", "prepare", "by "]
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+
+        for msg in msgs {
+            let lower = msg.text.lowercased()
+            if actionKeywords.contains(where: { lower.contains($0) }) {
+                var targetDateStr = ""
+                if let detector = detector {
+                    let matches = detector.matches(in: msg.text, options: [], range: NSRange(msg.text.startIndex..., in: msg.text))
+                    if let firstDate = matches.first?.date {
+                        let formatter = DateFormatter()
+                        formatter.dateStyle = .medium
+                        formatter.timeStyle = .short
+                        targetDateStr = " *(Target: \(formatter.string(from: firstDate)))*"
+                    }
+                }
+                actionItems.append("- [ ] **\(msg.author)**: \(msg.text)\(targetDateStr)")
+                if actionItems.count >= 4 { break }
+            }
+        }
+
+        // 4. Open Inquiries
+        var questions: [String] = []
+        for msg in msgs where !msg.isFromMe {
+            if msg.text.contains("?") {
+                let sentences = msg.text.components(separatedBy: CharacterSet(charactersIn: ".!\n"))
+                if let q = sentences.first(where: { $0.contains("?") })?.trimmingCharacters(in: .whitespaces) {
+                    if q.count > 5 && !questions.contains(where: { $0.contains(q) }) {
+                        questions.append("• **\(msg.author)**: \"\(q)\"")
+                        if questions.count >= 3 { break }
+                    }
+                }
+            }
+        }
+
+        var output = "### 📋 Executive Transcript Summary\n\n"
+        output += "• **Context**: \(channelType ?? "Active Conversation") · \(msgs.count) messages exchanged\n"
+        output += "• **Active Participants**: \(participantSummary)\n\n"
+
+        if !keyPoints.isEmpty {
+            output += "#### 💬 Key Discussion Points\n"
+            output += keyPoints.joined(separator: "\n") + "\n\n"
+        }
+
+        if !decisions.isEmpty {
+            output += "#### 🎯 Decisions & Confirmed Milestones\n"
+            output += decisions.joined(separator: "\n") + "\n\n"
+        }
+
+        if !actionItems.isEmpty {
+            output += "#### ⚡️ Extracted Action Items & Commitments\n"
+            output += actionItems.joined(separator: "\n") + "\n\n"
+        }
+
+        if !questions.isEmpty {
+            output += "#### ❓ Open Questions Pending Reply\n"
+            output += questions.joined(separator: "\n") + "\n\n"
+        }
+
+        output += "*Analyzed locally via PINGGO Smart Engine (On-Device Apple ML).* "
+        return output
+    }
+
+    static func extractActionItems(transcript: String) -> String {
+        let msgs = parse(transcript: transcript)
+        var tasks: [String] = []
+        let actionKeywords = ["will", "need to", "please", "can you", "send", "check", "review", "share", "submit", "prepare", "by "]
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+
+        for msg in msgs {
+            let lower = msg.text.lowercased()
+            if actionKeywords.contains(where: { lower.contains($0) }) {
+                var targetDate = ""
+                if let detector = detector {
+                    let matches = detector.matches(in: msg.text, options: [], range: NSRange(msg.text.startIndex..., in: msg.text))
+                    if let firstDate = matches.first?.date {
+                        let formatter = DateFormatter()
+                        formatter.dateStyle = .medium
+                        formatter.timeStyle = .short
+                        targetDate = " · *Target: \(formatter.string(from: firstDate))*"
+                    }
+                }
+                tasks.append("- [ ] **\(msg.author)**: \(msg.text)\(targetDate)")
+                if tasks.count >= 8 { break }
+            }
+        }
+
+        if tasks.isEmpty {
+            return """
+            ### ⚡️ Extracted Tasks & Action Items
+
+            No explicit pending action items were identified in the recent message history.
+
+            *Generated by PINGGO Smart Engine (Local On-Device Analysis).*
+            """
+        }
+
+        return """
+        ### ⚡️ Extracted Tasks & Deadlines
+
+        \(tasks.joined(separator: "\n"))
+
+        *Identified using on-device Natural Language and Data Detection.*
+        """
+    }
+
+    static func extractLinks(transcript: String) -> String {
+        let msgs = parse(transcript: transcript)
+        var links: [String] = []
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+        for msg in msgs {
+            if let detector = detector {
+                let matches = detector.matches(in: msg.text, options: [], range: NSRange(msg.text.startIndex..., in: msg.text))
+                for m in matches {
+                    if let u = m.url {
+                        let str = u.absoluteString
+                        if !links.contains(where: { $0.contains(str) }) {
+                            links.append("• [\(u.host ?? str)](\(str)) *(shared by \(msg.author))*\n  > \"\(msg.text)\"")
+                        }
+                    }
+                }
+            }
+        }
+
+        if links.isEmpty {
+            return """
+            ### 🔗 Shared Links & Resources
+
+            No URLs, documentation, or links were shared in the recent transcript view.
+
+            *Generated by PINGGO Smart Engine (Local On-Device Analysis).*
+            """
+        }
+
+        return """
+        ### 🔗 Shared Links & Resources
+
+        \(links.joined(separator: "\n\n"))
+
+        *Extracted from active conversation history.*
+        """
+    }
+
+    static func extractQuestions(transcript: String) -> String {
+        let msgs = parse(transcript: transcript)
+        var questions: [String] = []
+
+        for msg in msgs where !msg.isFromMe {
+            if msg.text.contains("?") {
+                let sentences = msg.text.components(separatedBy: CharacterSet(charactersIn: ".!\n"))
+                for s in sentences where s.contains("?") {
+                    let trimmed = s.trimmingCharacters(in: .whitespaces)
+                    if trimmed.count > 5 && !questions.contains(where: { $0.contains(trimmed) }) {
+                        questions.append("• **\(msg.author)**: \"\(trimmed)\"")
+                        if questions.count >= 6 { break }
+                    }
+                }
+            }
+        }
+
+        if questions.isEmpty {
+            return """
+            ### ❓ Open Questions
+
+            No unanswered inquiries were detected in the active thread.
+
+            *Generated by PINGGO Smart Engine (Local On-Device Analysis).*
+            """
+        }
+
+        return """
+        ### ❓ Open Inquiries in Conversation
+
+        \(questions.joined(separator: "\n"))
+
+        *Identified from incoming messages awaiting confirmation.*
+        """
+    }
+
+    static func answerParticipantQuery(prompt: String, transcript: String) -> String? {
+        let msgs = parse(transcript: transcript)
+        let lowPrompt = prompt.lowercased()
+
+        let allAuthors = Set(msgs.map { $0.author })
+        for author in allAuthors {
+            let authorLow = author.lowercased()
+            let firstName = authorLow.components(separatedBy: " ").first ?? authorLow
+            if lowPrompt.contains(authorLow) || (!firstName.isEmpty && firstName.count > 2 && lowPrompt.contains(firstName)) {
+                let authorMsgs = msgs.filter { $0.author.lowercased() == authorLow }
+                guard !authorMsgs.isEmpty else { continue }
+
+                var output = "### 👤 Statements by \(author)\n\n"
+                output += "• **Total Messages**: \(authorMsgs.count) in visible transcript\n"
+                if let last = authorMsgs.last {
+                    output += "• **Latest Message** *(\(last.time.isEmpty ? "Recent" : last.time))*: \"\(last.text)\"\n\n"
+                }
+                output += "**Recent Contributions:**\n"
+                for m in authorMsgs.suffix(5).reversed() {
+                    output += "• [\(m.time.isEmpty ? "#\(m.index)" : m.time)]: \"\(m.text)\"\n"
+                }
+                output += "\n*Extracted from conversation transcript by PINGGO Smart Engine.*"
+                return output
+            }
+        }
+        return nil
     }
 }

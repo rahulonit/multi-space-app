@@ -254,12 +254,82 @@ struct AIChatPhoneNumberItem: Identifiable, Equatable, Hashable, Codable {
 }
 
 struct AIChatMemberItem: Identifiable, Equatable, Hashable, Codable {
-    var id: String { name }
+    var id: String { "\(name)-\(username ?? "")-\(phoneNumber ?? "")" }
     var name: String
     var role: String
     var activity: String
     var messageCount: Int
     var phoneNumber: String? = nil
+    var username: String? = nil
+
+    var isPhoneInName: Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return false }
+        if trimmed.hasPrefix("+") && trimmed.filter(\.isNumber).count >= 7 { return true }
+        if trimmed.filter(\.isNumber).count >= 9 && !trimmed.contains(where: { $0.isLetter }) { return true }
+        return false
+    }
+
+    var cleanPhone: String? {
+        if let p = phoneNumber?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+            return p
+        }
+        if isPhoneInName {
+            return name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
+
+    var cleanName: String {
+        if isPhoneInName {
+            if let u = username?.trimmingCharacters(in: .whitespacesAndNewlines), !u.isEmpty {
+                return u
+            }
+            return ""
+        }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedRole: String {
+        let low = role.lowercased()
+        if low.contains("admin") || low.contains("owner") || low.contains("creator") {
+            return "Group Admin"
+        }
+        return "Member"
+    }
+}
+
+extension Sequence where Element == AIChatMemberItem {
+    func toCSV() -> String {
+        var lines = ["Name,Phone Number,Role,Username,Message Count"]
+        for m in self {
+            let finalName = m.cleanName
+            let escapedName = finalName.contains(",") ? "\"\(finalName)\"" : finalName
+            let phone = m.cleanPhone ?? ""
+            let role = m.normalizedRole
+            let username = m.username ?? ""
+            let count = m.messageCount
+            lines.append("\(escapedName),\(phone),\(role),\(username),\(count)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func toJSONString() -> String {
+        let list = self.map { m in
+            [
+                "name": m.cleanName,
+                "phoneNumber": m.cleanPhone ?? "",
+                "role": m.normalizedRole,
+                "username": m.username ?? "",
+                "messageCount": m.messageCount
+            ] as [String : Any]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "[]"
+    }
 }
 
 enum AIResponseSource: Equatable, Codable {
@@ -538,43 +608,162 @@ struct ActiveThreadContext: Hashable, Codable {
         if let count = groupMemberCount, count > 2 { return true }
         if let sub = groupSubtitle, !sub.isEmpty {
             let low = sub.lowercased()
-            if low.contains("participant") || low.contains("member") || low.contains("subscriber") || low.contains(",") {
+            if low.contains("participant") || low.contains("member") || low.contains("subscriber") {
+                return true
+            }
+            if low.contains(",") && !low.contains("last seen") && !low.contains("typing") && !low.contains("online") {
                 return true
             }
         }
-        if let members = groupMembers, members.count > 1 { return true }
-        let senders = Set(messages.map(\.sender).filter { !$0.isEmpty && $0.lowercased() != "you" && $0.lowercased() != "me" && $0.lowercased() != "contact" })
+        let senders = Set(messages.map(\.sender).filter {
+            let s = $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return !s.isEmpty && s != "you" && s != "me" && s != "contact" && s != contactName.lowercased()
+        })
         return senders.count > 1
     }
 
     var effectiveMembers: [AIChatMemberItem] {
-        var map: [String: AIChatMemberItem] = [:]
-        for m in groupMembers ?? [] {
-            map[m.name.lowercased()] = m
+        if !isGroupChat {
+            let trimmed = contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
+            let count = messages.filter { !$0.isFromMe }.count
+            let isPhone = trimmed.hasPrefix("+") || (trimmed.filter(\.isNumber).count >= 9 && !trimmed.contains(where: { $0.isLetter }))
+            let nameVal = isPhone ? "" : trimmed
+            let phoneVal = isPhone ? trimmed : nil
+            return [AIChatMemberItem(name: nameVal, role: "Contact", activity: "1-on-1 Direct Chat", messageCount: count, phoneNumber: phoneVal)]
         }
-        for msg in messages {
-            let s = msg.sender.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !s.isEmpty && s.lowercased() != "you" && s.lowercased() != "me" && s.lowercased() != "contact" {
-                if let existing = map[s.lowercased()] {
-                    var updated = existing
-                    let count = messages.filter { $0.sender.localizedCaseInsensitiveCompare(s) == .orderedSame }.count
-                    updated.messageCount = max(updated.messageCount, count)
-                    map[s.lowercased()] = updated
-                } else {
-                    let count = messages.filter { $0.sender.localizedCaseInsensitiveCompare(s) == .orderedSame }.count
-                    map[s.lowercased()] = AIChatMemberItem(name: s, role: "Member", activity: "Active in chat", messageCount: count)
+
+        var merged: [AIChatMemberItem] = []
+
+        func findIndex(for item: AIChatMemberItem) -> Int? {
+            let itemPhoneDigits = item.cleanPhone?.filter(\.isNumber) ?? ""
+            let itemName = item.cleanName.lowercased()
+            let itemUsername = item.username?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+
+            for (idx, existing) in merged.enumerated() {
+                let existingPhoneDigits = existing.cleanPhone?.filter(\.isNumber) ?? ""
+                let existingName = existing.cleanName.lowercased()
+                let existingUsername = existing.username?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+
+                if !itemPhoneDigits.isEmpty && !existingPhoneDigits.isEmpty && itemPhoneDigits.count >= 7 && existingPhoneDigits.count >= 7 {
+                    if itemPhoneDigits == existingPhoneDigits || itemPhoneDigits.hasSuffix(existingPhoneDigits) || existingPhoneDigits.hasSuffix(itemPhoneDigits) {
+                        return idx
+                    }
+                }
+
+                if !itemName.isEmpty && !existingName.isEmpty && itemName == existingName {
+                    return idx
+                }
+
+                if !itemUsername.isEmpty && !existingUsername.isEmpty && itemUsername == existingUsername {
+                    return idx
+                }
+                if !itemName.isEmpty && !existingUsername.isEmpty && itemName == existingUsername {
+                    return idx
+                }
+                if !itemUsername.isEmpty && !existingName.isEmpty && itemUsername == existingName {
+                    return idx
+                }
+
+                if item.isPhoneInName && !existingPhoneDigits.isEmpty && item.name.filter(\.isNumber) == existingPhoneDigits {
+                    return idx
+                }
+                if existing.isPhoneInName && !itemPhoneDigits.isEmpty && existing.name.filter(\.isNumber) == itemPhoneDigits {
+                    return idx
                 }
             }
+            return nil
         }
-        return map.values.sorted {
-            if $0.role.lowercased().contains("admin") && !$1.role.lowercased().contains("admin") { return true }
-            if !$0.role.lowercased().contains("admin") && $1.role.lowercased().contains("admin") { return false }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+
+        func mergeItem(_ incoming: AIChatMemberItem) {
+            let cleanN = incoming.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleanN.isEmpty && (incoming.phoneNumber == nil || incoming.phoneNumber!.isEmpty) { return }
+            if cleanN.localizedCaseInsensitiveCompare(contactName) == .orderedSame || cleanN.lowercased() == "you" || cleanN.lowercased() == "me" || cleanN.lowercased() == "contact" {
+                return
+            }
+
+            if let idx = findIndex(for: incoming) {
+                var existing = merged[idx]
+                if (existing.cleanName.isEmpty || existing.isPhoneInName) && !incoming.cleanName.isEmpty {
+                    existing.name = incoming.cleanName
+                }
+                if (existing.phoneNumber == nil || existing.phoneNumber!.isEmpty) && incoming.cleanPhone != nil {
+                    existing.phoneNumber = incoming.cleanPhone
+                }
+                if (existing.username == nil || existing.username!.isEmpty) && incoming.username != nil {
+                    existing.username = incoming.username
+                }
+                if incoming.normalizedRole == "Group Admin" {
+                    existing.role = "Group Admin"
+                }
+                existing.messageCount = max(existing.messageCount, incoming.messageCount)
+                merged[idx] = existing
+            } else {
+                merged.append(incoming)
+            }
+        }
+
+        for gm in groupMembers ?? [] {
+            mergeItem(gm)
+        }
+
+        for msg in messages {
+            let s = msg.sender.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty && s.lowercased() != "you" && s.lowercased() != "me" && s.lowercased() != "contact" && s.localizedCaseInsensitiveCompare(contactName) != .orderedSame {
+                let msgSenderItem = AIChatMemberItem(
+                    name: s,
+                    role: "Member",
+                    activity: "Active in chat",
+                    messageCount: 0
+                )
+                mergeItem(msgSenderItem)
+            }
+        }
+
+        for i in 0..<merged.count {
+            let m = merged[i]
+            let mName = m.cleanName.lowercased()
+            let mPhoneDigits = m.cleanPhone?.filter(\.isNumber) ?? ""
+            let rawNameDigits = m.name.filter(\.isNumber)
+
+            let count = messages.filter { msg in
+                if msg.isFromMe { return false }
+                let s = msg.sender.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !mName.isEmpty && s == mName { return true }
+                let sDigits = s.filter(\.isNumber)
+                if !sDigits.isEmpty && sDigits.count >= 7 {
+                    if !mPhoneDigits.isEmpty && (sDigits == mPhoneDigits || sDigits.hasSuffix(mPhoneDigits) || mPhoneDigits.hasSuffix(sDigits)) {
+                        return true
+                    }
+                    if !rawNameDigits.isEmpty && (sDigits == rawNameDigits || sDigits.hasSuffix(rawNameDigits) || rawNameDigits.hasSuffix(sDigits)) {
+                        return true
+                    }
+                }
+                return false
+            }.count
+
+            merged[i].messageCount = count
+            if count > 0 {
+                merged[i].activity = "Active in thread (\(count) message\(count == 1 ? "" : "s"))"
+            } else if merged[i].activity.lowercased().contains("active in thread") {
+                merged[i].activity = "In group roster"
+            }
+        }
+
+        return merged.sorted {
+            let aAdmin = $0.normalizedRole == "Group Admin"
+            let bAdmin = $1.normalizedRole == "Group Admin"
+            if aAdmin && !bAdmin { return true }
+            if !aAdmin && bAdmin { return false }
+            let aDisplay = $0.cleanName.isEmpty ? ($0.cleanPhone ?? "") : $0.cleanName
+            let bDisplay = $1.cleanName.isEmpty ? ($1.cleanPhone ?? "") : $1.cleanName
+            return aDisplay.localizedCaseInsensitiveCompare(bDisplay) == .orderedAscending
         }
     }
 
     var groupAdmins: [AIChatMemberItem] {
-        effectiveMembers.filter { $0.role.lowercased().contains("admin") || $0.role.lowercased().contains("owner") || $0.role.lowercased().contains("creator") }
+        guard isGroupChat else { return [] }
+        return effectiveMembers.filter { $0.normalizedRole == "Group Admin" }
     }
 
     var fullTranscript: String {
@@ -601,6 +790,14 @@ struct ActiveThreadContext: Hashable, Codable {
             return "\"\(truncated)\""
         }
         return "Conversation with \(contactName) (\(messages.count) messages exchanged)."
+    }
+
+    func exportCSV() -> String {
+        return effectiveMembers.toCSV()
+    }
+
+    func exportJSON() -> String {
+        return effectiveMembers.toJSONString()
     }
 }
 

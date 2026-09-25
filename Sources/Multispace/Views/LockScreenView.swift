@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LockScreenView: View {
     @EnvironmentObject private var store: AppStore
     @State private var isAuthenticating = false

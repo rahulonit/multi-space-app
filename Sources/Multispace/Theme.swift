@@ -8,14 +8,16 @@ enum Palette {
             .flatMap { try? JSONDecoder().decode(AppPreferences.self, from: $0) }?.appearance ?? "Follow System"
         return setting == "Light" || (setting == "Follow System" && NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua)
     }
-    static var background: Color { light ? Color(red: 0.96, green: 0.96, blue: 0.97) : Color(red: 0.055, green: 0.060, blue: 0.085) }
-    static var sidebar: Color { light ? Color(red: 0.91, green: 0.92, blue: 0.94) : Color(red: 0.080, green: 0.084, blue: 0.115) }
-    static var panel: Color { light ? .white : Color(red: 0.105, green: 0.110, blue: 0.145) }
-    static var card: Color { light ? Color(red: 0.88, green: 0.89, blue: 0.92) : Color(red: 0.135, green: 0.140, blue: 0.180) }
-    static var muted: Color { light ? Color(red: 0.42, green: 0.44, blue: 0.49) : Color(red: 0.60, green: 0.62, blue: 0.69) }
-    static var border: Color { light ? Color(white: 0, opacity: 0.08) : Color(white: 1, opacity: 0.08) }
-    static var hover: Color { light ? Color(white: 0, opacity: 0.05) : Color(white: 1, opacity: 0.07) }
-    static var text: Color { light ? Color(red: 0.11, green: 0.12, blue: 0.14) : Color(red: 0.94, green: 0.95, blue: 0.97) }
+    // Quiet, low-chroma surfaces keep dense communication UI readable without
+    // turning every nested panel into a separate visual layer.
+    static var background: Color { light ? Color(red: 0.965, green: 0.970, blue: 0.978) : Color(red: 0.047, green: 0.052, blue: 0.063) }
+    static var sidebar: Color { light ? Color(red: 0.945, green: 0.951, blue: 0.961) : Color(red: 0.059, green: 0.065, blue: 0.078) }
+    static var panel: Color { light ? Color(red: 0.992, green: 0.994, blue: 0.997) : Color(red: 0.071, green: 0.078, blue: 0.092) }
+    static var card: Color { light ? Color(red: 0.972, green: 0.976, blue: 0.983) : Color(red: 0.091, green: 0.099, blue: 0.116) }
+    static var muted: Color { light ? Color(red: 0.39, green: 0.42, blue: 0.47) : Color(red: 0.58, green: 0.61, blue: 0.67) }
+    static var border: Color { light ? Color(white: 0, opacity: 0.075) : Color(white: 1, opacity: 0.075) }
+    static var hover: Color { light ? Color(white: 0, opacity: 0.045) : Color(white: 1, opacity: 0.055) }
+    static var text: Color { light ? Color(red: 0.10, green: 0.11, blue: 0.13) : Color(red: 0.93, green: 0.94, blue: 0.96) }
     static var accent: Color {
         let value = UserDefaults.standard.data(forKey: "appPreferences")
             .flatMap { try? JSONDecoder().decode(AppPreferences.self, from: $0) }?.accent ?? "indigo"
@@ -25,13 +27,13 @@ enum Palette {
         case "orange": return Color(red: 1, green: 0.59, blue: 0.24)
         case "green": return Color(red: 0.20, green: 0.77, blue: 0.40)
         case "pink": return Color(red: 0.82, green: 0.26, blue: 0.94)
-        default: return Color(red: 0.66, green: 0.33, blue: 0.97) // #A855F7 — Pinggo violet
+        default: return Color(red: 0.49, green: 0.36, blue: 0.96) // restrained Pinggo violet
         }
     }
     // Global Header Navigation Tokens
-    static var navActiveBg: Color { Color(red: 184/255.0, green: 121/255.0, blue: 1.0) } // #B879FF
-    static var navActiveText: Color { Color(red: 0.07, green: 0.07, blue: 0.07) } // #111111
-    static var navInactiveText: Color { Color(red: 0.53, green: 0.53, blue: 0.53) } // #888888
+    static var navActiveBg: Color { accent.opacity(light ? 0.12 : 0.18) }
+    static var navActiveText: Color { accent }
+    static var navInactiveText: Color { muted }
 }
 
 @MainActor

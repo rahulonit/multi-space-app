@@ -25,7 +25,7 @@ namespace PINGGO.Views
         private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e)
         {
             var compact = e.NewSize.Width < 1100;
-            BrandColumn.Width = new GridLength(compact ? 56 : 230);
+            BrandColumn.Width = new GridLength(compact ? 44 : 192);
             BrandNameText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             SecurityPill.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
 
@@ -36,25 +36,25 @@ namespace PINGGO.Views
             else
             {
                 SearchBox.Visibility = Visibility.Visible;
-                SearchBox.Width = e.NewSize.Width < 1200 ? 170 : 240;
+                SearchBox.Width = e.NewSize.Width < 1200 ? 164 : 220;
             }
         }
 
         private void UpdateTabHighlight()
         {
-            var activeBg = (SolidColorBrush)Application.Current.Resources["AppAccentBrush"];
+            var activeBg = (SolidColorBrush)Application.Current.Resources["AppSelectedBrush"];
             var inactiveBg = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            var whiteText = new SolidColorBrush(Microsoft.UI.Colors.White);
+            var activeText = (SolidColorBrush)Application.Current.Resources["AppAccentBrush"];
             var mutedText = (SolidColorBrush)Application.Current.Resources["AppTextMutedBrush"];
 
             PlatformTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Platform ? activeBg : inactiveBg;
-            PlatformTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Platform ? whiteText : mutedText;
+            PlatformTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Platform ? activeText : mutedText;
 
             OverviewTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Overview ? activeBg : inactiveBg;
-            OverviewTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Overview ? whiteText : mutedText;
+            OverviewTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Overview ? activeText : mutedText;
 
             BrowserTabBtn.Background = ViewModel.CurrentDestination == NavigationDestination.Browser ? activeBg : inactiveBg;
-            BrowserTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Browser ? whiteText : mutedText;
+            BrowserTabBtn.Foreground = ViewModel.CurrentDestination == NavigationDestination.Browser ? activeText : mutedText;
         }
 
         private void OnBrandClicked(object sender, RoutedEventArgs e) => ViewModel.Navigate(NavigationDestination.Overview);
