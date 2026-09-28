@@ -44,6 +44,37 @@ namespace PINGGO.Views
             BlockAdsToggle.IsOn = prefs.AdBlockBlockAds;
             BlockTrackersToggle.IsOn = prefs.AdBlockBlockTrackers;
             BlockCookiesToggle.IsOn = prefs.AdBlockBlockCookieBanners;
+
+            // Set Appearance index
+            AppearanceCombo.SelectedIndex = prefs.Appearance switch
+            {
+                "Dark" => 1,
+                "Light" => 2,
+                _ => 0
+            };
+        }
+
+        private void OnAppearanceChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (AppearanceCombo.SelectedItem is ComboBoxItem item && item.Tag is string appearance)
+            {
+                DataStoreService.Shared.CurrentData.Preferences.Appearance = appearance;
+                DataStoreService.Shared.Save();
+                ApplyTheme(appearance);
+            }
+        }
+
+        public static void ApplyTheme(string appearance)
+        {
+            if (App.CurrentWindow?.Content is FrameworkElement root)
+            {
+                root.RequestedTheme = appearance switch
+                {
+                    "Dark" => ElementTheme.Dark,
+                    "Light" => ElementTheme.Light,
+                    _ => ElementTheme.Default
+                };
+            }
         }
 
         private void OnAiEngineChanged(object sender, SelectionChangedEventArgs e)
@@ -74,13 +105,15 @@ namespace PINGGO.Views
             var (ok, msg) = await AIService.Shared.TestConnectionAsync("ollama", endpoint, model);
             AiStatusText.Text = msg;
 
+            var prefs = DataStoreService.Shared.CurrentData.Preferences;
+            prefs.OllamaEndpoint = endpoint;
+            prefs.OllamaModel = model;
+            prefs.IsOllamaLoggedIn = ok;
+            DataStoreService.Shared.Save();
+
             if (ok)
             {
-                var prefs = DataStoreService.Shared.CurrentData.Preferences;
-                prefs.OllamaEndpoint = endpoint;
-                prefs.OllamaModel = model;
-                DataStoreService.Shared.Save();
-                MainViewModel.Shared.ShowToast("Ollama configuration saved!");
+                MainViewModel.Shared.ShowToast("Ollama configuration verified and saved!");
             }
         }
 
@@ -97,6 +130,13 @@ namespace PINGGO.Views
             {
                 AICredentialStore.Save("gemini", key);
                 DataStoreService.Shared.CurrentData.Preferences.GeminiApiKey = key;
+                DataStoreService.Shared.CurrentData.Preferences.IsGeminiLoggedIn = true;
+                DataStoreService.Shared.Save();
+                MainViewModel.Shared.ShowToast("Google Gemini verified and connected!");
+            }
+            else
+            {
+                DataStoreService.Shared.CurrentData.Preferences.IsGeminiLoggedIn = false;
                 DataStoreService.Shared.Save();
             }
         }
@@ -114,6 +154,13 @@ namespace PINGGO.Views
             {
                 AICredentialStore.Save("openai", key);
                 DataStoreService.Shared.CurrentData.Preferences.OpenAiApiKey = key;
+                DataStoreService.Shared.CurrentData.Preferences.IsChatGptLoggedIn = true;
+                DataStoreService.Shared.Save();
+                MainViewModel.Shared.ShowToast("OpenAI verified and connected!");
+            }
+            else
+            {
+                DataStoreService.Shared.CurrentData.Preferences.IsChatGptLoggedIn = false;
                 DataStoreService.Shared.Save();
             }
         }

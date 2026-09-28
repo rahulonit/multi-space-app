@@ -137,22 +137,7 @@ struct LockScreenView: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(Palette.card, lineWidth: 1)
                         )
-                        .frame(width: 280)
-
-                        // 1-Click Apple Passwords Fill Action
-                        Button {
-                            autofillFromKeychain()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "key.fill")
-                                    .font(.system(size: 11))
-                                Text("Fill from Apple Passwords")
-                                    .font(.system(size: 11.5, weight: .medium))
-                            }
-                            .foregroundStyle(Palette.accent)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 2)
+                        .frame(width: 290)
                     }
                 } else {
                     // Biometric Unlock Only (When no custom password is set)

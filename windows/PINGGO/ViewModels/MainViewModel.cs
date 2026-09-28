@@ -125,6 +125,15 @@ namespace PINGGO.ViewModels
             Accounts.Clear();
             foreach (var a in data.PlatformAccounts) Accounts.Add(a);
 
+            _selectedAccountIds.Clear();
+            if (data.SelectedAccountIds != null)
+            {
+                foreach (var kvp in data.SelectedAccountIds)
+                {
+                    _selectedAccountIds[kvp.Key] = kvp.Value;
+                }
+            }
+
             if (Platforms.Any() && string.IsNullOrEmpty(ActivePlatformId))
             {
                 ActivePlatformId = Platforms.First().Id;
@@ -171,6 +180,8 @@ namespace PINGGO.ViewModels
             var account = Accounts.FirstOrDefault(item => item.Id == accountId);
             if (account == null) return;
             _selectedAccountIds[account.PlatformID] = account.Id;
+            DataStoreService.Shared.CurrentData.SelectedAccountIds[account.PlatformID] = account.Id;
+            DataStoreService.Shared.Save();
             ActivePlatformId = account.PlatformID;
             ActiveAccountId = account.Id;
             CurrentDestination = NavigationDestination.Platform;
@@ -214,6 +225,7 @@ namespace PINGGO.ViewModels
             if (_selectedAccountIds.TryGetValue(account.PlatformID, out var selectedId) && selectedId == account.Id)
             {
                 _selectedAccountIds.Remove(account.PlatformID);
+                DataStoreService.Shared.CurrentData.SelectedAccountIds.Remove(account.PlatformID);
             }
             if (wasActive)
             {
@@ -287,7 +299,7 @@ namespace PINGGO.ViewModels
                     for (int i = 0; i < snap.Messages.Count; i++)
                     {
                         var msg = snap.Messages[i];
-                        var isUnread = msg.Unread || (accUnread > 0 && i < accUnread);
+                        var isUnread = msg.Unread;
                         var analysis = ConversationSummaryService.Shared.AnalyzeMessage(msg);
                         var priority = analysis.Urgency == "High Priority" ? "Urgent" : (analysis.DetectedIntent.Contains("Meeting") ? "Meeting" : (analysis.DetectedQuestion != null ? "Question" : "Normal"));
                         result.Add(new UnifiedMessageItem
@@ -305,70 +317,8 @@ namespace PINGGO.ViewModels
                         });
                     }
                 }
-                else
-                {
-                    // Seed realistic platform starter messages so inboxes are immediately intelligent & searchable
-                    result.AddRange(GetSampleMessagesForPlatform(platform, acc));
-                }
             }
             return result;
-        }
-
-        private List<UnifiedMessageItem> GetSampleMessagesForPlatform(SocialPlatform platform, PlatformAccount account)
-        {
-            var items = new List<UnifiedMessageItem>();
-            switch (platform.Id.ToLowerInvariant())
-            {
-                case "whatsapp":
-                    items.Add(CreateSampleItem(account, platform, "Project Lead", "Deployment plan updated for Project Alpha. Review meeting scheduled for tomorrow.", "10:45 AM", true, "Meeting"));
-                    items.Add(CreateSampleItem(account, platform, "Design Team", "New file shared: UI_Updates.fig. Ready for team review.", "Yesterday", false, "Normal"));
-                    break;
-                case "linkedin":
-                    items.Add(CreateSampleItem(account, platform, "Operations Team", "Timeline needs confirmation before staging deployment. Can you share the latest compliance sheet?", "11:15 AM", true, "Question"));
-                    items.Add(CreateSampleItem(account, platform, "Client Project", "Review requested for the updated milestone deliverables.", "2d ago", false, "Normal"));
-                    break;
-                case "instagram":
-                    items.Add(CreateSampleItem(account, platform, "Product Team", "New action items added for the upcoming release cycle.", "1:20 PM", true, "Question"));
-                    break;
-                case "telegram":
-                    items.Add(CreateSampleItem(account, platform, "Review Team", "Project Alpha staging build ready. Please verify the deployment log.", "9:30 AM", true, "Urgent"));
-                    items.Add(CreateSampleItem(account, platform, "Operations Team", "Workspace system status: 100% operational.", "8:00 AM", false, "Normal"));
-                    break;
-                case "x":
-                case "twitter":
-                    items.Add(CreateSampleItem(account, platform, "Project Workspace", "What is to do for me today regarding the product launch announcements?", "9:50 AM", true, "Question"));
-                    break;
-                default:
-                    items.Add(CreateSampleItem(account, platform, "Support Team", "Welcome to PINGGO consolidated workspace intelligence inbox!", "Just now", false, "Normal"));
-                    break;
-            }
-            return items;
-        }
-
-        private UnifiedMessageItem CreateSampleItem(PlatformAccount acc, SocialPlatform platform, string sender, string text, string time, bool unread, string priority)
-        {
-            var msg = new PlatformMessagePreview
-            {
-                Id = Guid.NewGuid().ToString(),
-                Sender = sender,
-                Text = text,
-                Time = time,
-                Unread = unread
-            };
-            var analysis = ConversationSummaryService.Shared.AnalyzeMessage(msg);
-            return new UnifiedMessageItem
-            {
-                AccountId = acc.Id,
-                AccountName = acc.AccountName,
-                Platform = platform,
-                Message = msg,
-                SnapshotDate = DateTime.UtcNow,
-                IsUnread = unread,
-                Priority = priority,
-                ActionItem = analysis.ActionItem,
-                DetectedQuestion = analysis.DetectedQuestion,
-                SuggestedReplies = analysis.SuggestedReplies
-            };
         }
 
         public ActiveThreadContext? GetActiveThreadContext(Guid accountId, string? contactName = null)

@@ -576,12 +576,13 @@ private struct PortalBrowser: View {
     @ObservedObject private var downloadManager: VideoDownloadManager = VideoDownloadManager.shared
 
     private var isAuthenticationPage: Bool {
+        if session.activeThread != nil { return false }
         let urlStr = (session.currentURL ?? url).absoluteString.lowercased()
-        return urlStr.contains("login") || urlStr.contains("signin") || urlStr.contains("sign-in") ||
-               urlStr.contains("auth") || urlStr.contains("checkpoint") || urlStr.contains("accounts.google") ||
-               urlStr.contains("appleid.apple") || urlStr.contains("web.whatsapp.com") || urlStr.contains("challenge") ||
-               urlStr.contains("two-factor") || urlStr.contains("2fa") || urlStr.contains("sso") ||
-               urlStr.contains("session") || urlStr.contains("identity")
+        if urlStr.contains("web.whatsapp.com") { return false }
+        return urlStr.contains("/login") || urlStr.contains("/signin") || urlStr.contains("/sign-in") ||
+               urlStr.contains("/auth") || urlStr.contains("/checkpoint") || urlStr.contains("accounts.google.com") ||
+               urlStr.contains("appleid.apple.com") || urlStr.contains("/challenge") ||
+               urlStr.contains("/two-factor") || urlStr.contains("/2fa") || urlStr.contains("/sso")
     }
 
     init(platform: SocialPlatform, account: PlatformAccount, url: URL, onSelectAccount: ((UUID) -> Void)? = nil) {
@@ -787,7 +788,7 @@ private struct PortalBrowser: View {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 11, weight: .bold))
-                        Text("Co-Pilot")
+                        Text("PINGGO AI")
                             .font(.system(size: 11.5, weight: .semibold))
                     }
                     .foregroundStyle(showingAIDrawer ? .white : Palette.accent)
@@ -797,7 +798,7 @@ private struct PortalBrowser: View {
                     .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help("Toggle AI Co-Pilot Chat & Analysis")
+                .help("Toggle PINGGO AI Chat & Analysis")
 
                 toolbarButton("square.and.arrow.up", help: "Open in external browser", enabled: true) {
                     NSWorkspace.shared.open(session.currentURL ?? url)
@@ -867,94 +868,101 @@ private struct PortalBrowser: View {
                 )
             }
 
-            // 3-Pane Layout: Platform WebView on Left, Co-Pilot docked side-by-side as 3rd Pane on Right
-            HStack(spacing: 0) {
-                ZStack {
-                    PortalWebView(session: session)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if let error = session.error {
-                        VStack(spacing: 12) {
-                            Image(systemName: "wifi.exclamationmark")
-                                .font(.system(size: 28))
-                                .foregroundStyle(Palette.accent)
-                            Text("Couldn’t open \(platform.name)")
-                                .font(.system(size: 17, weight: .semibold))
-                            Text(error)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Palette.muted)
-                                .multilineTextAlignment(.center)
-                            HStack {
-                                Button("Try again") { session.load(url) }
-                                Button("Open in browser") { NSWorkspace.shared.open(url) }
+            // 3-Pane Layout: Platform WebView on Left, PINGGO AI docked side-by-side as 3rd Pane on Right
+            GeometryReader { portalGeo in
+                let availableWidth = portalGeo.size.width
+                let maxCopilotWidth = max(260, min(500, availableWidth * 0.45))
+                let effectiveCopilotWidth = min(max(copilotWidth, 260), maxCopilotWidth)
+
+                HStack(spacing: 0) {
+                    ZStack {
+                        PortalWebView(session: session)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if let error = session.error {
+                            VStack(spacing: 12) {
+                                Image(systemName: "wifi.exclamationmark")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(Palette.accent)
+                                Text("Couldn’t open \(platform.name)")
+                                    .font(.system(size: 17, weight: .semibold))
+                                Text(error)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.muted)
+                                    .multilineTextAlignment(.center)
+                                HStack {
+                                    Button("Try again") { session.load(url) }
+                                    Button("Open in browser") { NSWorkspace.shared.open(url) }
+                                }
                             }
+                            .padding(24)
+                            .frame(maxWidth: 390)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
                         }
-                        .padding(24)
-                        .frame(maxWidth: 390)
-                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                        if session.isHibernated {
+                            VStack(spacing: 14) {
+                                Image(systemName: "moon.zzz.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(Palette.accent)
+                                Text("\(platform.name) is sleeping")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("This account was put to sleep while inactive to save RAM and battery life.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.muted)
+                                    .multilineTextAlignment(.center)
+                                Button("Wake Session") {
+                                    session.wake()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Palette.accent)
+                            }
+                            .padding(28)
+                            .frame(maxWidth: 380)
+                            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                        }
                     }
-                    if session.isHibernated {
-                        VStack(spacing: 14) {
-                            Image(systemName: "moon.zzz.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(Palette.accent)
-                            Text("\(platform.name) is sleeping")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("This account was put to sleep while inactive to save RAM and battery life.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Palette.muted)
-                                .multilineTextAlignment(.center)
-                            Button("Wake Session") {
-                                session.wake()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Palette.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if showingAIDrawer {
+                        // Resizable Divider Handle between Platform WebView and PINGGO AI 3rd Pane
+                        HStack(spacing: 0) {
+                            Rectangle()
+                                .fill(Palette.border)
+                                .frame(width: 1)
                         }
-                        .padding(28)
-                        .frame(maxWidth: 380)
-                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                        .frame(width: 6)
+                        .background(Palette.panel)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.resizeLeftRight.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                        .gesture(
+                            DragGesture()
+                                .onChanged { val in
+                                    let newW = effectiveCopilotWidth - val.translation.width
+                                    copilotWidth = min(max(newW, 260), maxCopilotWidth)
+                                }
+                        )
+
+                        AICopilotDrawer(
+                            session: session,
+                            platform: platform,
+                            account: account,
+                            onClose: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                    showingAIDrawer = false
+                                }
+                            }
+                        )
+                        .frame(width: effectiveCopilotWidth)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                if showingAIDrawer {
-                    // Resizable Divider Handle between Platform WebView and Co-Pilot 3rd Pane
-                    HStack(spacing: 0) {
-                        Rectangle()
-                            .fill(Palette.border)
-                            .frame(width: 1)
-                    }
-                    .frame(width: 6)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
-                    .gesture(
-                        DragGesture()
-                            .onChanged { val in
-                                let newW = copilotWidth - val.translation.width
-                                copilotWidth = min(max(newW, 320), 650)
-                            }
-                    )
-
-                    AICopilotDrawer(
-                        session: session,
-                        platform: platform,
-                        account: account,
-                        onClose: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                showingAIDrawer = false
-                            }
-                        }
-                    )
-                    .frame(width: copilotWidth)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+                .background(Palette.panel)
             }
-            .background(.white)
         }
         .overlay(alignment: .top) {
             if session.isLoading {
@@ -962,13 +970,14 @@ private struct PortalBrowser: View {
                     .padding(.top, 78)
             }
         }
-        .onAppear {
+        .onAppear { [store] in
             session.wake()
             session.resume()
             if session.webView.url != url && session.currentURL != url {
                 session.load(url)
             }
-            session.activityHandler = { title, messages, notifications, rawNotifications, activeContact, activeThreadMessages, groupMemberCount, groupSubtitle, groupMembers in
+            session.activityHandler = { [weak store] title, messages, notifications, rawNotifications, activeContact, activeThreadMessages, groupMemberCount, groupSubtitle, groupMembers in
+                guard let store = store, !store.isAppLocked else { return }
                 store.updatePlatformActivity(accountID: account.id, title: title,
                                              messages: messages, notifications: notifications,
                                              rawNotifications: rawNotifications,
@@ -1185,6 +1194,7 @@ private struct PortalWebView: NSViewRepresentable {
 @MainActor
 final class PortalSessionRegistry {
     static let shared = PortalSessionRegistry()
+    var isAppLocked: Bool = false
     private var sessions: [UUID: PortalSession] = [:]
 
     func session(for account: PlatformAccount, url: URL) -> PortalSession {
@@ -1211,7 +1221,8 @@ final class PortalSessionRegistry {
             guard let url = platform.resolvedWebsiteURL else { continue }
             let browser = session(for: account, url: url)
             browser.activityHandler = { [weak store] title, messages, notifications, rawNotifications, activeContact, activeThreadMessages, groupMemberCount, groupSubtitle, groupMembers in
-                store?.updatePlatformActivity(accountID: account.id, title: title,
+                guard let store = store, !store.isAppLocked else { return }
+                store.updatePlatformActivity(accountID: account.id, title: title,
                                                messages: messages, notifications: notifications,
                                                rawNotifications: rawNotifications,
                                                activeContact: activeContact,
@@ -1357,8 +1368,18 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var currentURL: URL?
     @Published var error: String?
     @Published var completedDownload: PortalDownloadedDocument?
-    @Published var activeThread: ActiveThreadContext? = nil
+    @Published var activeThread: ActiveThreadContext? = nil {
+        didSet {
+            let oldKey = conversationKey(for: oldValue)
+            let newKey = conversationKey(for: activeThread)
+            if oldKey != newKey {
+                conversationHistories[oldKey] = copilotHistory
+                copilotHistory = conversationHistories[newKey] ?? []
+            }
+        }
+    }
     @Published var copilotHistory: [CopilotMessage] = []
+    private var conversationHistories: [String: [CopilotMessage]] = [:]
     var lastAccessedAt: Date = .now
     let webView: WKWebView
     let homeURL: URL
@@ -1367,15 +1388,24 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     var activityHandler: ((String, [[String: String]], [String], [[String: String]], String?, [[String: Any]], Int?, String?, [AIChatMemberItem]?) -> Void)?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
 
+    private func conversationKey(for thread: ActiveThreadContext?) -> String {
+        let name = (thread?.contactName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return name.isEmpty ? "__default__" : name
+    }
+
     func appendCopilotMessage(role: String, content: String) {
         copilotHistory.append(CopilotMessage(role: role, content: content))
-        if copilotHistory.count > 10 {
-            copilotHistory.removeFirst(copilotHistory.count - 10)
+        if copilotHistory.count > 20 {
+            copilotHistory.removeFirst(copilotHistory.count - 20)
         }
+        let key = conversationKey(for: activeThread)
+        conversationHistories[key] = copilotHistory
     }
 
     func clearCopilotHistory() {
         copilotHistory.removeAll()
+        let key = conversationKey(for: activeThread)
+        conversationHistories.removeValue(forKey: key)
     }
 
     init(account: PlatformAccount, url: URL) {
@@ -1572,6 +1602,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         }
 
         guard message.name == "pinggoActivity" || message.name == "multispaceActivity" else { return }
+        guard !PortalSessionRegistry.shared.isAppLocked else { return }
         if let currentHost = webView.url?.host?.lowercased(),
            let homeHost = homeURL.host?.lowercased() {
             let baseHome = homeHost.replacingOccurrences(of: "^(www|web)\\.", with: "", options: .regularExpression)
@@ -3231,6 +3262,15 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       window.__pinggoCollect = () => collect(true);
       window.__multispaceCollect = () => collect(true);
 
+      function isSearchOrFilter(el) {
+        if (!el) return true;
+        const label = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '') + ' ' + (el.className || '') + ' ' + (el.id || '')).toLowerCase();
+        if (label.includes('search') || label.includes('find') || label.includes('filter')) return true;
+        if (el.getAttribute('type') === 'search') return true;
+        if (el.closest('[role="search"]') || el.closest('#side') || el.closest('.chatlist-top') || el.closest('[data-testid="chat-list-search"]')) return true;
+        return false;
+      }
+
       window.pinggoInsertText = function(text) {
         if (!text) return false;
         const selectors = [
@@ -3241,31 +3281,32 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
           '.input-message-input[contenteditable="true"]',
           '.ql-editor[contenteditable="true"]',
           '[data-qa="message_input"]',
-          '[role="textbox"][contenteditable="true"]',
-          '[aria-label*="message" i][contenteditable="true"]',
-          '[aria-label*="type a message" i][contenteditable="true"]',
-          '[contenteditable="true"]',
-          'textarea[placeholder*="message" i]',
-          'textarea',
-          'input[type="text"][placeholder*="message" i]'
+          'div[role="textbox"][aria-label*="message" i]',
+          'div[role="textbox"][aria-label*="type" i]',
+          'div[role="textbox"][aria-label*="send" i]',
+          'footer [role="textbox"]',
+          'form [role="textbox"]',
+          'footer textarea',
+          'form textarea'
         ];
 
         let target = null;
-        if (document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
+        if (document.activeElement && !isSearchOrFilter(document.activeElement) &&
+            (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
           target = document.activeElement;
         }
 
         if (!target) {
           for (const sel of selectors) {
             const el = document.querySelector(sel);
-            if (el && el.offsetParent !== null) {
+            if (el && el.offsetParent !== null && !isSearchOrFilter(el)) {
               target = el;
               break;
             }
           }
         }
 
-        if (!target) return false;
+        if (!target || isSearchOrFilter(target)) return false;
 
         target.focus();
 
@@ -3365,6 +3406,16 @@ struct AICopilotDrawer: View {
     @State private var insertedMsgID: UUID? = nil
     @State private var copiedMsgID: UUID? = nil
     @State private var showingGroupRoster: Bool = false
+    @State private var generationTask: Task<Void, Never>? = nil
+
+    private func relativeTimeString(_ date: Date?) -> String {
+        guard let d = date else { return "just now" }
+        let sec = max(1, Int(-d.timeIntervalSinceNow))
+        if sec < 60 { return "\(sec)s ago" }
+        let min = sec / 60
+        if min < 60 { return "\(min)m ago" }
+        return "\(min / 60)h ago"
+    }
 
     private var activeContext: ActiveThreadContext? {
         session.activeThread ?? store.activeThreadContext(for: account.id)
@@ -3402,8 +3453,16 @@ struct AICopilotDrawer: View {
     }
 
     private var urgencyLevel: String {
+        guard let ctx = activeContext, !ctx.contextSnippet.isEmpty else {
+            return ""
+        }
+        let lower = ctx.contextSnippet.lowercased()
+        let urgentKeywords = ["urgent", "asap", "emergency", "critical", "deadline", "immediately", "right now", "needs attention", "important:"]
+        let hasUrgentKeyword = urgentKeywords.contains(where: { lower.contains($0) })
+        if hasUrgentKeyword {
+            return "🚨 Urgent"
+        }
         let score = sentimentResult.score
-        if score <= -0.4 { return "🚨 Urgent" }
         if score >= 0.3 { return "✨ Positive" }
         return "💬 Normal"
     }
@@ -3441,9 +3500,20 @@ struct AICopilotDrawer: View {
 
             minimalInputBar
         }
-        .frame(width: 348)
+        .frame(maxWidth: .infinity)
         .background(Palette.panel)
         .overlay(Rectangle().frame(width: 1).foregroundStyle(Palette.hover), alignment: .leading)
+        .onChange(of: activeContext?.contactName) { _, _ in
+            generationTask?.cancel()
+            generationTask = nil
+            isGenerating = false
+            streamingText = ""
+        }
+        .onDisappear {
+            generationTask?.cancel()
+            generationTask = nil
+            isGenerating = false
+        }
     }
 
     private var minimalToolbar: some View {
@@ -3451,14 +3521,14 @@ struct AICopilotDrawer: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Palette.accent)
-            Text("Pinggo AI")
+            Text("PINGGO AI")
                 .font(.system(size: 13, weight: .semibold))
 
             HStack(spacing: 5) {
-                Circle().fill(providerIndicatorColor).frame(width: 5, height: 5)
+                Circle().fill(providerIndicatorColor).frame(width: 6, height: 6)
                 Text(providerLabel).lineLimit(1)
             }
-            .font(.system(size: 9.5, weight: .medium))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(Palette.muted)
 
             Spacer()
@@ -3479,7 +3549,7 @@ struct AICopilotDrawer: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Palette.muted)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
@@ -3487,12 +3557,12 @@ struct AICopilotDrawer: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Palette.muted)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("Close Pinggo AI")
+            .help("Close PINGGO AI")
         }
         .padding(.horizontal, 12)
         .frame(height: 42)
@@ -3510,19 +3580,31 @@ struct AICopilotDrawer: View {
                     .lineLimit(1)
                 if isGroup {
                     Text("\(activeContext?.groupMemberCount ?? effectiveMembers.count) members")
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 10))
                         .foregroundStyle(Palette.muted)
                 }
                 Spacer()
-                Text(urgencyLevel)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+                if !urgencyLevel.isEmpty {
+                    Text(urgencyLevel)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(urgencyLevel.contains("Urgent") ? Palette.danger : Palette.muted)
+                }
             }
 
-            Text(activeContext?.topicSummary ?? "Open a conversation to give Pinggo AI live context.")
+            Text(activeContext?.topicSummary ?? "Open a conversation to give PINGGO AI live context.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Palette.muted)
                 .lineLimit(2)
+
+            if let ctx = activeContext {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 8.5))
+                    Text("Analyzed \(ctx.messages.count) visible messages · updated \(relativeTimeString(ctx.updatedAt)) · partial history")
+                        .font(.system(size: 9.5))
+                }
+                .foregroundStyle(Palette.muted.opacity(0.85))
+            }
 
             if isGroup {
                 Button {
@@ -3570,16 +3652,33 @@ struct AICopilotDrawer: View {
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border))
                 .onSubmit { sendQuery(customPrompt) }
 
-            Button { sendQuery(customPrompt) } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.accent, in: Circle())
+            if isGenerating {
+                Button {
+                    generationTask?.cancel()
+                    generationTask = nil
+                    isGenerating = false
+                    streamingText = ""
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Palette.danger, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Stop generating response")
+            } else {
+                Button { sendQuery(customPrompt) } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Palette.accent, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
             }
-            .buttonStyle(.plain)
-            .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
-            .opacity(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? 0.45 : 1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -3593,7 +3692,7 @@ struct AICopilotDrawer: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(Palette.accent)
                     .font(.system(size: 13, weight: .bold))
-                Text("Co-Pilot")
+                Text("PINGGO AI")
                     .font(.system(size: 14, weight: .bold))
             }
 
@@ -3636,7 +3735,7 @@ struct AICopilotDrawer: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .help("Clear Co-Pilot dialogue history")
+            .help("Clear PINGGO AI dialogue history")
 
             // Export Member Details Menu
             Menu {
@@ -3672,7 +3771,7 @@ struct AICopilotDrawer: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .help("Close Co-Pilot")
+            .help("Close PINGGO AI")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -3977,7 +4076,7 @@ struct AICopilotDrawer: View {
             VStack(spacing: 4) {
                 Text("How can I help with this chat?")
                     .font(.system(size: 14, weight: .semibold))
-                Text("Summarize context, find actions, or draft a reply.")
+                Text(activeContext != nil ? "Summarize context, find actions, or draft a reply." : "Select or open a chat in \(platform.name) to give PINGGO AI live context.")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
                     .multilineTextAlignment(.center)
@@ -3985,18 +4084,18 @@ struct AICopilotDrawer: View {
             }
 
             VStack(spacing: 6) {
-                starterChip("Summarize this conversation") {
+                starterChip("Summarize this conversation", isEnabled: activeContext != nil) {
                     sendQuery("Summarize everything discussed in this conversation in clear executive bullet points.")
                 }
-                starterChip("Find actions and deadlines") {
+                starterChip("Find actions and deadlines", isEnabled: activeContext != nil) {
                     sendQuery("What are the key action items, commitments, deliverables, or deadlines mentioned?")
                 }
                 if isGroup {
-                    starterChip("Show participants and roles") {
+                    starterChip("Show participants and roles", isEnabled: activeContext != nil) {
                         sendQuery("Identify the group admins, participants, and summarize their roles and contact details.")
                     }
                 }
-                starterChip("Draft a \(store.preferences.defaultReplyTone.lowercased()) reply") {
+                starterChip("Draft a \(store.preferences.defaultReplyTone.lowercased()) reply", isEnabled: activeContext != nil) {
                     sendQuery("Draft a reply to \(contactTitle) in a \(store.preferences.defaultReplyTone) tone addressing the latest message.")
                 }
             }
@@ -4005,22 +4104,23 @@ struct AICopilotDrawer: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func starterChip(_ title: String, action: @escaping () -> Void) -> some View {
+    private func starterChip(_ title: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isEnabled ? Color.primary : Palette.muted)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Palette.sidebar.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+            .padding(.vertical, 8)
+            .background(Palette.sidebar.opacity(isEnabled ? 0.7 : 0.35), in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
     }
 
     // User Message Bubble
@@ -4157,9 +4257,9 @@ struct AICopilotDrawer: View {
             // Status Tag Row: Tone default + Access pill
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: "lock.open.fill")
+                    Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 8))
-                    Text("Full Access Active")
+                    Text("Viewport Context Active")
                         .font(.system(size: 9.5, weight: .semibold))
                 }
                 .foregroundStyle(Color.green)
@@ -4180,7 +4280,7 @@ struct AICopilotDrawer: View {
                 .background(Palette.hover, in: Capsule())
             }
 
-            // Input TextField with Send Button
+            // Input TextField with Send Button / Stop Button
             HStack(spacing: 8) {
                 TextField("Ask anything about this chat, members, or draft a reply...", text: $customPrompt)
                     .textFieldStyle(.plain)
@@ -4193,15 +4293,30 @@ struct AICopilotDrawer: View {
                         sendQuery(customPrompt)
                     }
 
-                Button {
-                    sendQuery(customPrompt)
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating ? Palette.muted : Palette.accent)
+                if isGenerating {
+                    Button {
+                        generationTask?.cancel()
+                        generationTask = nil
+                        isGenerating = false
+                        streamingText = ""
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Palette.danger)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop generating response")
+                } else {
+                    Button {
+                        sendQuery(customPrompt)
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Palette.muted : Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .buttonStyle(.plain)
-                .disabled(customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
             }
         }
         .padding(12)
@@ -4216,6 +4331,7 @@ struct AICopilotDrawer: View {
         isGenerating = true
         streamingText = ""
 
+        let priorHistory = session.copilotHistory
         session.appendCopilotMessage(role: "user", content: clean)
 
         let transcript = activeContext?.fullTranscript ?? ""
@@ -4235,19 +4351,22 @@ struct AICopilotDrawer: View {
 
         let tone = defaultTone
 
-        Task {
+        generationTask?.cancel()
+        generationTask = Task {
             let result = await AIService.shared.streamCoPilotResponse(
                 prompt: clean,
                 context: transcript,
                 tone: tone,
-                history: session.copilotHistory,
+                history: priorHistory,
                 channelType: channelType,
                 membersInfo: membersList,
                 preferences: store.preferences,
                 onChunk: { chunk in
+                    guard !Task.isCancelled else { return }
                     streamingText += chunk
                 }
             )
+            guard !Task.isCancelled else { return }
             session.appendCopilotMessage(role: "assistant", content: result)
             isGenerating = false
             streamingText = ""

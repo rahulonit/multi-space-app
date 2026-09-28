@@ -95,16 +95,7 @@ final class AIProviderResolver {
             let model = rawModel.contains("gemini-3.5") ? "gemini-2.5-flash" : rawModel
             let apiKey = preferences.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !apiKey.isEmpty {
-                return AIProviderResolution(
-                    provider: .gemini,
-                    model: model,
-                    authMode: .directApiKey,
-                    availability: .ready,
-                    capabilities: .fullSuite,
-                    displayBadge: "Google Gemini · \(model)"
-                )
-            } else {
+            if apiKey.isEmpty {
                 return AIProviderResolution(
                     provider: .gemini,
                     model: model,
@@ -113,22 +104,31 @@ final class AIProviderResolver {
                     capabilities: .localHeuristic,
                     displayBadge: "Google Gemini (Unconfigured)"
                 )
+            } else if !preferences.isGeminiLoggedIn {
+                return AIProviderResolution(
+                    provider: .gemini,
+                    model: model,
+                    authMode: .directApiKey,
+                    availability: .authenticationRequired("Google Gemini API Key is unverified. Test connection in Settings > AI."),
+                    capabilities: .localHeuristic,
+                    displayBadge: "Google Gemini (Unverified)"
+                )
+            } else {
+                return AIProviderResolution(
+                    provider: .gemini,
+                    model: model,
+                    authMode: .directApiKey,
+                    availability: .ready,
+                    capabilities: .fullSuite,
+                    displayBadge: "Google Gemini · \(model)"
+                )
             }
 
         case "chatgpt":
             let model = preferences.openAiModelTier.isEmpty ? "gpt-4o-mini" : preferences.openAiModelTier
             let apiKey = preferences.openAiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !apiKey.isEmpty {
-                return AIProviderResolution(
-                    provider: .chatgpt,
-                    model: model,
-                    authMode: .directApiKey,
-                    availability: .ready,
-                    capabilities: .fullSuite,
-                    displayBadge: "OpenAI · \(model)"
-                )
-            } else {
+            if apiKey.isEmpty {
                 return AIProviderResolution(
                     provider: .chatgpt,
                     model: model,
@@ -137,6 +137,24 @@ final class AIProviderResolver {
                     capabilities: .localHeuristic,
                     displayBadge: "OpenAI (Unconfigured)"
                 )
+            } else if !preferences.isChatGptLoggedIn {
+                return AIProviderResolution(
+                    provider: .chatgpt,
+                    model: model,
+                    authMode: .directApiKey,
+                    availability: .authenticationRequired("OpenAI API Key is unverified. Test connection in Settings > AI."),
+                    capabilities: .localHeuristic,
+                    displayBadge: "OpenAI (Unverified)"
+                )
+            } else {
+                return AIProviderResolution(
+                    provider: .chatgpt,
+                    model: model,
+                    authMode: .directApiKey,
+                    availability: .ready,
+                    capabilities: .fullSuite,
+                    displayBadge: "OpenAI · \(model)"
+                )
             }
 
         case "ollama":
@@ -144,16 +162,7 @@ final class AIProviderResolver {
             let endpoint = preferences.ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
             let effectiveModel = model.isEmpty ? "llama3.2" : model
 
-            if !endpoint.isEmpty {
-                return AIProviderResolution(
-                    provider: .ollama,
-                    model: effectiveModel,
-                    authMode: .localServer,
-                    availability: .ready,
-                    capabilities: .fullSuite,
-                    displayBadge: "Ollama · \(effectiveModel)"
-                )
-            } else {
+            if endpoint.isEmpty {
                 return AIProviderResolution(
                     provider: .ollama,
                     model: effectiveModel,
@@ -161,6 +170,24 @@ final class AIProviderResolver {
                     availability: .unconfigured("Ollama endpoint URL is missing. Set to http://localhost:11434 in Settings > AI."),
                     capabilities: .localHeuristic,
                     displayBadge: "Ollama (Unconfigured)"
+                )
+            } else if !preferences.isOllamaLoggedIn {
+                return AIProviderResolution(
+                    provider: .ollama,
+                    model: effectiveModel,
+                    authMode: .localServer,
+                    availability: .authenticationRequired("Ollama connection or model unverified. Test connection in Settings > AI."),
+                    capabilities: .localHeuristic,
+                    displayBadge: "Ollama (Unverified)"
+                )
+            } else {
+                return AIProviderResolution(
+                    provider: .ollama,
+                    model: effectiveModel,
+                    authMode: .localServer,
+                    availability: .ready,
+                    capabilities: .fullSuite,
+                    displayBadge: "Ollama · \(effectiveModel)"
                 )
             }
 

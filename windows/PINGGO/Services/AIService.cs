@@ -104,25 +104,24 @@ namespace PINGGO.Services
             if (!string.IsNullOrEmpty(channelType)) groupContextSection += $"• Channel / Chat Type: {channelType}\n";
             if (!string.IsNullOrEmpty(membersInfo)) groupContextSection += $"• Group Members & Roster Info:\n{membersInfo}\n";
 
-            var systemPrompt = $@"You are PINGGO Co-Pilot, an advanced AI workplace intelligence and communication assistant operating with FULL UNRESTRICTED ACCESS to the active chat thread.
-You behave with the analytical power, depth, and helpfulness of ChatGPT and Google Gemini.
-
+            var systemPrompt = $@"You are PINGGO AI, an advanced workplace intelligence and communication assistant analyzing the active conversation thread.
 {personaInstruction}
 Default response tone: {tone}.
 {(string.IsNullOrEmpty(prefs.CustomAiPrompt) ? "" : "User guidelines: " + prefs.CustomAiPrompt)}
 
-STRICT BOUNDARY & ACCURACY MANDATE:
-- You operate STRICTLY and SOLELY within the currently SELECTED conversation thread in the messaging platform.
-- You must NEVER list, reference, invent, or mix in contacts or chats from the platform's sidebar chat list / inbox listing.
+CONTEXT PROVENANCE & STRICT ACCURACY MANDATE:
+- You operate strictly on the visible messages captured from the active conversation thread viewport.
+- Captured history represents a partial view of visible messages. If older messages or past discussions are not present in this transcript, state clearly that they are not visible in the current viewport rather than guessing or fabricating details.
+- You must NEVER list, reference, invent, or mix in contacts or chats from outside this selected conversation.
 - If the conversation is a Direct 1-on-1 Chat: explicitly confirm that it is a 1-on-1 chat with that specific contact and You. State that there are no group members or group admins.
 - If the conversation is a Group Chat: only reference the verified members, participants, and admins of this specific group.
 
 CORE CAPABILITIES & BEHAVIOR:
 1. Full Conversational & Analytical Intelligence:
-   - Answer ANY question about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
+   - Answer questions about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
    - When asked about group information, member count, or group admins: inspect the verified Group Roster & Admin Information provided below. Clearly identify admins and participants with their roles and contact details.
    - When asked to export or download member details or roster data (CSV / table): generate a clean markdown table with columns (Name, Phone Number, Role, Username, Message Count) followed by a formatted CSV code block ready for 1-click copying.
-   - Provide thorough, specific answers quoting verified facts from the transcript. Do not give vague or evasive answers.
+   - Provide thorough, specific answers quoting verified facts from the transcript.
 2. Direct Answering vs. Reply Drafting:
    - If the user asks a question about the chat: answer directly with deep analysis and clean markdown.
    - If the user asks to draft a reply: craft an articulate, ready-to-send draft in the requested {tone} tone.
@@ -190,8 +189,20 @@ CORE CAPABILITIES & BEHAVIOR:
                             }
                             if (accumulated.Length > 0) return accumulated.ToString();
                         }
+                        else
+                        {
+                            var errBody = await res.Content.ReadAsStringAsync();
+                            var err = $"\n\n⚠️ **Google Gemini API Error ({res.StatusCode}):** {errBody}\n\nPlease check your key and quota in Settings > AI.";
+                            onChunk(err);
+                            return err;
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        var err = $"\n\n⚠️ **Google Gemini Error:** {ex.Message}\n\nPlease verify your API key and connection in Settings > AI.";
+                        onChunk(err);
+                        return err;
+                    }
                 }
                 else if (resolution.Provider == AIProviderType.ChatGpt)
                 {
@@ -254,8 +265,20 @@ CORE CAPABILITIES & BEHAVIOR:
                             }
                             if (accumulated.Length > 0) return accumulated.ToString();
                         }
+                        else
+                        {
+                            var errBody = await res.Content.ReadAsStringAsync();
+                            var err = $"\n\n⚠️ **OpenAI API Error ({res.StatusCode}):** {errBody}\n\nPlease check your key and quota in Settings > AI.";
+                            onChunk(err);
+                            return err;
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        var err = $"\n\n⚠️ **OpenAI ChatGPT Error:** {ex.Message}\n\nPlease verify your API key and connection in Settings > AI.";
+                        onChunk(err);
+                        return err;
+                    }
                 }
                 else if (resolution.Provider == AIProviderType.Ollama)
                 {
@@ -312,12 +335,24 @@ CORE CAPABILITIES & BEHAVIOR:
                             }
                             if (accumulated.Length > 0) return accumulated.ToString();
                         }
+                        else
+                        {
+                            var errBody = await res.Content.ReadAsStringAsync();
+                            var err = $"\n\n⚠️ **Ollama Server Error ({res.StatusCode}):** {errBody}\n\nPlease check your Ollama server in Settings > AI.";
+                            onChunk(err);
+                            return err;
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        var err = $"\n\n⚠️ **Ollama Error:** {ex.Message}\n\nPlease ensure Ollama is running and model is downloaded in Settings > AI.";
+                        onChunk(err);
+                        return err;
+                    }
                 }
             }
 
-            // Fallback: local instant reply without artificial typewriter delay
+            // Fallback for Smart Engine or unconfigured local mode
             var reply = GenerateLocalSmartSummary(prompt);
             onChunk(reply);
             return reply;

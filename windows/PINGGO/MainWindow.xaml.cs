@@ -130,6 +130,9 @@ namespace PINGGO
         {
             SecurityService.Shared.RegisterActivity();
 
+            // Block shortcuts when app is locked
+            if (SecurityService.Shared.IsLocked) return;
+
             var isCtrl = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 

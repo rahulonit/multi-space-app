@@ -782,12 +782,16 @@ struct ActiveThreadContext: Hashable, Codable {
             return "Active conversation with \(contactName). Awaiting incoming messages."
         }
         let incoming = messages.filter { !$0.isFromMe }
-        if let last = incoming.last?.text, !last.isEmpty {
-            let truncated = last.count > 120 ? String(last.prefix(117)) + "..." : last
-            return "\"\(truncated)\""
-        } else if let last = messages.last?.text, !last.isEmpty {
-            let truncated = last.count > 120 ? String(last.prefix(117)) + "..." : last
-            return "\"\(truncated)\""
+        let candidate = incoming.reversed().first(where: {
+            let t = $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !t.isEmpty && !t.hasPrefix("http://") && !t.hasPrefix("https://")
+        }) ?? incoming.last ?? messages.last
+
+        if let msg = candidate, !msg.text.isEmpty {
+            let sender = msg.isFromMe ? "You" : (msg.sender.isEmpty ? contactName : msg.sender)
+            let text = msg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let truncated = text.count > 130 ? String(text.prefix(127)) + "..." : text
+            return "\(sender): \"\(truncated)\""
         }
         return "Conversation with \(contactName) (\(messages.count) messages exchanged)."
     }
@@ -887,6 +891,7 @@ struct AppPreferences: Codable, Equatable {
     var aiModelTier: String = "gemini-2.5-flash"
     var geminiModelTier: String = "gemini-2.5-flash"
     var openAiModelTier: String = "gpt-4o-mini"
+    var isOllamaLoggedIn: Bool = false
     var ollamaModelTier: String = "llama3.2"
     var ollamaEndpoint: String = "http://localhost:11434"
     var ollamaModel: String = "llama3.2"

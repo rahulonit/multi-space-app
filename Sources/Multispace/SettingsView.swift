@@ -1029,6 +1029,9 @@ struct SettingsView: View {
                                 )
                                 testingAiConnection = false
                                 aiTestResult = res
+                                if res.success {
+                                    store.preferences.isOllamaLoggedIn = true
+                                }
                             }
                         }
                         .buttonStyle(.bordered)
@@ -1179,7 +1182,9 @@ struct SettingsView: View {
                         store.preferences.ollamaModel = first
                     }
                 }
+                store.preferences.isOllamaLoggedIn = res.isOnline && !res.models.isEmpty
             } else {
+                store.preferences.isOllamaLoggedIn = false
                 ollamaStatusDetail = "Ollama is not running. Start Ollama or download it from ollama.com to enable offline AI."
             }
         }

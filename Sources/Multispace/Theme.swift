@@ -18,6 +18,7 @@ enum Palette {
     static var border: Color { light ? Color(white: 0, opacity: 0.075) : Color(white: 1, opacity: 0.075) }
     static var hover: Color { light ? Color(white: 0, opacity: 0.045) : Color(white: 1, opacity: 0.055) }
     static var text: Color { light ? Color(red: 0.10, green: 0.11, blue: 0.13) : Color(red: 0.93, green: 0.94, blue: 0.96) }
+    static var danger: Color { Color(red: 0.93, green: 0.27, blue: 0.27) }
     static var accent: Color {
         let value = UserDefaults.standard.data(forKey: "appPreferences")
             .flatMap { try? JSONDecoder().decode(AppPreferences.self, from: $0) }?.accent ?? "indigo"

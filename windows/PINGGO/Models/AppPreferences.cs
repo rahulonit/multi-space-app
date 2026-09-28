@@ -94,6 +94,9 @@ namespace PINGGO.Models
         [JsonPropertyName("ollamaEndpoint")]
         public string OllamaEndpoint { get; set; } = "http://localhost:11434";
 
+        [JsonPropertyName("isOllamaLoggedIn")]
+        public bool IsOllamaLoggedIn { get; set; } = false;
+
         [JsonPropertyName("ollamaModel")]
         public string OllamaModel { get; set; } = "llama3.2";
 

@@ -39,7 +39,11 @@ final class AppStore: ObservableObject {
     @Published var splitDestination: AppDestination? = nil
     @Published var splitAccountIDs: [String: UUID] = [:]
     @Published var showingCommandPalette: Bool = false
-    @Published var isAppLocked: Bool = false
+    @Published var isAppLocked: Bool = false {
+        didSet {
+            PortalSessionRegistry.shared.isAppLocked = isAppLocked
+        }
+    }
     @Published var lastActiveTime: Date = .now
     @Published var toastMessage: String?
     @Published var browserRequestedURL: URL? = nil
@@ -227,10 +231,9 @@ final class AppStore: ObservableObject {
         if let other = all.first(where: { $0.id != primaryID }) {
             splitAccountIDs[platformID] = other.id
         } else {
-            // Only 1 account exists: auto-create a 2nd account for this platform
-            if let newAcc = addAccount(to: platformID, name: "Work", selectAsPrimary: false) {
-                splitAccountIDs[platformID] = newAcc.id
-            }
+            // Only 1 account exists: do not fabricate or create accounts implicitly.
+            // Point the split destination to Browser or keep current destination.
+            splitDestination = .browser
         }
     }
 
@@ -413,6 +416,7 @@ final class AppStore: ObservableObject {
         groupSubtitle: String? = nil,
         groupMembers: [AIChatMemberItem]? = nil
     ) {
+        guard !isAppLocked else { return }
         guard let acc = account(accountID) else { return }
         let unread: Int? = {
             if let match = title.range(of: #"\(\d+\)"#, options: .regularExpression) {
@@ -427,8 +431,7 @@ final class AppStore: ObservableObject {
             let time = (item["time"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let link = (item["link"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let isUnreadExplicit = item["unread"] == "true"
-            let isUnreadByCount = (unread ?? 0) > 0 && index < (unread ?? 0)
-            let unreadFlag = isUnreadExplicit || isUnreadByCount
+            let unreadFlag = isUnreadExplicit
 
             guard !content.isEmpty else { return nil }
             return .init(id: "\(accountID)-\(index)-\(sender)-\(content)",
@@ -646,20 +649,26 @@ final class AppStore: ObservableObject {
 
     func openInSplitView(platformID: String, accountID: UUID? = nil) {
         destination = .platform(platformID)
-        splitDestination = .platform(platformID)
         let all = accounts(for: platformID)
         if let accountID {
-            splitAccountIDs[platformID] = accountID
             if let other = all.first(where: { $0.id != accountID }) {
-                selectedAccountIDs[platformID] = other.id
+                selectedAccountIDs[platformID] = accountID
+                splitAccountIDs[platformID] = other.id
+                splitDestination = .platform(platformID)
             } else {
                 selectedAccountIDs[platformID] = accountID
-                if let newAcc = addAccount(to: platformID, name: "Work", selectAsPrimary: false) {
-                    splitAccountIDs[platformID] = newAcc.id
-                }
+                splitDestination = .browser
+                showToast("Only 1 account configured for \(platformID.capitalized). Opened Browser in second pane.")
             }
         } else {
-            ensureDifferentSplitAccount(for: platformID)
+            let primaryID = selectedAccount(for: platformID)?.id
+            if let other = all.first(where: { $0.id != primaryID }) {
+                splitAccountIDs[platformID] = other.id
+                splitDestination = .platform(platformID)
+            } else {
+                splitDestination = .browser
+                showToast("Only 1 account configured for \(platformID.capitalized). Opened Browser in second pane.")
+            }
         }
         saveAccounts()
         isSplitView = true

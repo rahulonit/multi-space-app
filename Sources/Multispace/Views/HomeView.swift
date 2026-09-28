@@ -25,7 +25,8 @@ struct HomeView: View {
             }
             .padding(.horizontal, store.preferences.compactMode ? 16 : 24)
             .padding(.vertical, 24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: 1360, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 

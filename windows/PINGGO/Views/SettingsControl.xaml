@@ -140,6 +140,20 @@
                     <ToggleSwitch x:Name="BlockCookiesToggle" Header="Suppress Cookie Consent Overlays" IsOn="True" Toggled="OnSavePreferences" />
                 </StackPanel>
             </Border>
+
+            <!-- 4. Appearance & Theme Card -->
+            <Border Style="{StaticResource MinimalCardStyle}">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Appearance &amp; Theme" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
+                    <TextBlock Text="Choose whether PINGGO follows your Windows system theme, or force a dark or light appearance."
+                               FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" TextWrapping="Wrap" />
+                    <ComboBox x:Name="AppearanceCombo" SelectionChanged="OnAppearanceChanged" Width="280" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}">
+                        <ComboBoxItem Content="Follow System" Tag="Follow System" />
+                        <ComboBoxItem Content="Dark" Tag="Dark" />
+                        <ComboBoxItem Content="Light" Tag="Light" />
+                    </ComboBox>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

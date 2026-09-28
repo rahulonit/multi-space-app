@@ -68,19 +68,7 @@ namespace PINGGO.Services
                     var geminiModel = rawGeminiModel.Contains("gemini-3.5") ? "gemini-2.5-flash" : rawGeminiModel;
                     var geminiKey = (preferences.GeminiApiKey ?? string.Empty).Trim();
 
-                    if (!string.IsNullOrEmpty(geminiKey))
-                    {
-                        return new AIProviderResolution
-                        {
-                            Provider = AIProviderType.Gemini,
-                            Model = geminiModel,
-                            AuthMode = AIAuthMode.DirectApiKey,
-                            Status = AIProviderStatus.Ready,
-                            StatusMessage = "Ready",
-                            DisplayBadge = $"Google Gemini · {geminiModel}"
-                        };
-                    }
-                    else
+                    if (string.IsNullOrEmpty(geminiKey))
                     {
                         return new AIProviderResolution
                         {
@@ -92,24 +80,36 @@ namespace PINGGO.Services
                             DisplayBadge = "Google Gemini (Unconfigured)"
                         };
                     }
+                    else if (!preferences.IsGeminiLoggedIn)
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.Gemini,
+                            Model = geminiModel,
+                            AuthMode = AIAuthMode.DirectApiKey,
+                            Status = AIProviderStatus.AuthenticationRequired,
+                            StatusMessage = "Google Gemini API Key is unverified. Test connection in Settings > AI.",
+                            DisplayBadge = "Google Gemini (Unverified)"
+                        };
+                    }
+                    else
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.Gemini,
+                            Model = geminiModel,
+                            AuthMode = AIAuthMode.DirectApiKey,
+                            Status = AIProviderStatus.Ready,
+                            StatusMessage = "Ready",
+                            DisplayBadge = $"Google Gemini · {geminiModel}"
+                        };
+                    }
 
                 case "chatgpt":
                     var openAiModel = string.IsNullOrWhiteSpace(preferences.OpenAiModelTier) ? "gpt-4o-mini" : preferences.OpenAiModelTier;
                     var openAiKey = (preferences.OpenAiApiKey ?? string.Empty).Trim();
 
-                    if (!string.IsNullOrEmpty(openAiKey))
-                    {
-                        return new AIProviderResolution
-                        {
-                            Provider = AIProviderType.ChatGpt,
-                            Model = openAiModel,
-                            AuthMode = AIAuthMode.DirectApiKey,
-                            Status = AIProviderStatus.Ready,
-                            StatusMessage = "Ready",
-                            DisplayBadge = $"OpenAI · {openAiModel}"
-                        };
-                    }
-                    else
+                    if (string.IsNullOrEmpty(openAiKey))
                     {
                         return new AIProviderResolution
                         {
@@ -121,25 +121,37 @@ namespace PINGGO.Services
                             DisplayBadge = "OpenAI (Unconfigured)"
                         };
                     }
+                    else if (!preferences.IsChatGptLoggedIn)
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.ChatGpt,
+                            Model = openAiModel,
+                            AuthMode = AIAuthMode.DirectApiKey,
+                            Status = AIProviderStatus.AuthenticationRequired,
+                            StatusMessage = "OpenAI API Key is unverified. Test connection in Settings > AI.",
+                            DisplayBadge = "OpenAI (Unverified)"
+                        };
+                    }
+                    else
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.ChatGpt,
+                            Model = openAiModel,
+                            AuthMode = AIAuthMode.DirectApiKey,
+                            Status = AIProviderStatus.Ready,
+                            StatusMessage = "Ready",
+                            DisplayBadge = $"OpenAI · {openAiModel}"
+                        };
+                    }
 
                 case "ollama":
                     var ollamaModel = string.IsNullOrWhiteSpace(preferences.OllamaModelTier) ? preferences.OllamaModel : preferences.OllamaModelTier;
                     if (string.IsNullOrWhiteSpace(ollamaModel)) ollamaModel = "llama3.2";
                     var endpoint = (preferences.OllamaEndpoint ?? string.Empty).Trim();
 
-                    if (!string.IsNullOrEmpty(endpoint))
-                    {
-                        return new AIProviderResolution
-                        {
-                            Provider = AIProviderType.Ollama,
-                            Model = ollamaModel,
-                            AuthMode = AIAuthMode.LocalServer,
-                            Status = AIProviderStatus.Ready,
-                            StatusMessage = "Ready",
-                            DisplayBadge = $"Ollama · {ollamaModel}"
-                        };
-                    }
-                    else
+                    if (string.IsNullOrEmpty(endpoint))
                     {
                         return new AIProviderResolution
                         {
@@ -149,6 +161,30 @@ namespace PINGGO.Services
                             Status = AIProviderStatus.Unconfigured,
                             StatusMessage = "Ollama endpoint URL is missing. Set to http://localhost:11434 in Settings > AI.",
                             DisplayBadge = "Ollama (Unconfigured)"
+                        };
+                    }
+                    else if (!preferences.IsOllamaLoggedIn)
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.Ollama,
+                            Model = ollamaModel,
+                            AuthMode = AIAuthMode.LocalServer,
+                            Status = AIProviderStatus.AuthenticationRequired,
+                            StatusMessage = "Ollama connection or model unverified. Test connection in Settings > AI.",
+                            DisplayBadge = "Ollama (Unverified)"
+                        };
+                    }
+                    else
+                    {
+                        return new AIProviderResolution
+                        {
+                            Provider = AIProviderType.Ollama,
+                            Model = ollamaModel,
+                            AuthMode = AIAuthMode.LocalServer,
+                            Status = AIProviderStatus.Ready,
+                            StatusMessage = "Ready",
+                            DisplayBadge = $"Ollama · {ollamaModel}"
                         };
                     }
 

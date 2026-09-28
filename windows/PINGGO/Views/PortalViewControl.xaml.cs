@@ -20,7 +20,32 @@ namespace PINGGO.Views
         private int _loadGeneration;
         private string _activeTone = "Friendly";
         private bool _isGeneratingReply = false;
+        private readonly System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<CopilotMessage>> _conversationHistories = new(StringComparer.OrdinalIgnoreCase);
+        private string _currentConversationKey = "__default__";
         private readonly System.Collections.Generic.List<CopilotMessage> _copilotHistory = new();
+        private System.Threading.CancellationTokenSource? _generationCts;
+
+        public Guid? LoadedAccountId => _loadedAccountId;
+        public string? LoadedPlatformId => _loadedPlatformId;
+
+        private void SwitchConversationHistory(string newKey)
+        {
+            if (_currentConversationKey == newKey) return;
+            _generationCts?.Cancel();
+            _generationCts = null;
+            _isGeneratingReply = false;
+            if (SendCustomPromptBtn != null) SendCustomPromptBtn.IsEnabled = true;
+
+            _conversationHistories[_currentConversationKey] = new System.Collections.Generic.List<CopilotMessage>(_copilotHistory);
+            _currentConversationKey = newKey;
+            _copilotHistory.Clear();
+            if (_conversationHistories.TryGetValue(newKey, out var saved))
+            {
+                _copilotHistory.AddRange(saved);
+            }
+            RenderCopilotHistory();
+            UpdateEmptyStateVisibility();
+        }
 
         public PortalViewControl()
         {
@@ -42,13 +67,13 @@ namespace PINGGO.Views
             };
         }
 
-        public void LoadPlatform(string platformId)
+        public void LoadPlatform(string platformId, Guid? accountId = null)
         {
-            var selectedAccountId = MainViewModel.Shared.GetSelectedAccount(platformId)?.Id;
+            var selectedAccountId = accountId ?? MainViewModel.Shared.GetSelectedAccount(platformId)?.Id;
             if (_loadedPlatformId == platformId && _loadedAccountId == selectedAccountId && _portalWebView != null) return;
             _loadedPlatformId = platformId;
             _loadedAccountId = selectedAccountId;
-            InitWebViewAsync(platformId);
+            InitWebViewAsync(platformId, selectedAccountId);
         }
 
         private async void OnControlLoaded(object sender, RoutedEventArgs e)
@@ -60,7 +85,7 @@ namespace PINGGO.Views
             }
         }
 
-        private async void InitWebViewAsync(string platformId)
+        private async void InitWebViewAsync(string platformId, Guid? explicitAccountId = null)
         {
             var data = DataStoreService.Shared.CurrentData;
             var platform = data.SocialPlatforms.FirstOrDefault(p => p.Id == platformId)
@@ -68,8 +93,16 @@ namespace PINGGO.Views
 
             PlatformTitleText.Text = platform.Name;
 
-            var account = MainViewModel.Shared.GetSelectedAccount(platform.Id)
+            PlatformAccount? account = null;
+            if (explicitAccountId.HasValue)
+            {
+                account = data.Accounts.FirstOrDefault(a => a.Id == explicitAccountId.Value);
+            }
+            if (account == null)
+            {
+                account = MainViewModel.Shared.GetSelectedAccount(platform.Id)
                           ?? new PlatformAccount { Id = Guid.NewGuid(), PlatformID = platform.Id };
+            }
             _loadedAccountId = account.Id;
             AccountNameText.Text = account.AccountName;
             DisposeCurrentWebView();
@@ -363,6 +396,8 @@ namespace PINGGO.Views
 
             var contact = !string.IsNullOrWhiteSpace(ctx?.ContactName) ? ctx.ContactName : (PlatformTitleText.Text ?? "Active Chat");
             CopilotContactName.Text = contact;
+            var convKey = $"{(_loadedAccountId?.ToString() ?? "none")}_{(ctx?.ContactName?.Trim().ToLowerInvariant() ?? "__default__")}";
+            SwitchConversationHistory(convKey);
 
             var prefs = DataStoreService.Shared.CurrentData.Preferences;
             if (prefs.AiProvider == "gemini" && !string.IsNullOrWhiteSpace(prefs.GeminiApiKey))
@@ -395,7 +430,11 @@ namespace PINGGO.Views
             SentimentScoreText.Text = $"{(sentiment.Score >= 0 ? "+" : "")}{sentiment.Score:0.0}";
             SentimentGauge.Value = Math.Clamp((sentiment.Score + 1.0) / 2.0 * 100.0, 5, 100);
 
-            if (sentiment.Score <= -0.4)
+            var snippetLower = textForSentiment.ToLowerInvariant();
+            var urgentKeywords = new[] { "urgent", "asap", "emergency", "critical", "deadline", "immediately", "right now", "needs attention" };
+            var isUrgent = ctx != null && urgentKeywords.Any(k => snippetLower.Contains(k));
+
+            if (isUrgent)
             {
                 UrgencyBadgeText.Text = "Urgent";
                 UrgencyBadgeText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
@@ -417,7 +456,7 @@ namespace PINGGO.Views
                 SentimentScoreText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 59, 130, 246));
             }
 
-            var lastIncoming = ctx?.Messages.LastOrDefault(m => !m.IsFromMe);
+            var lastIncoming = ctx?.Messages.LastOrDefault(m => !m.IsFromMe && !m.Text.StartsWith("http://") && !m.Text.StartsWith("https://")) ?? ctx?.Messages.LastOrDefault(m => !m.IsFromMe);
             if (lastIncoming != null && !string.IsNullOrWhiteSpace(lastIncoming.Text))
             {
                 LatestMessageSnippetContainer.Visibility = Visibility.Visible;
@@ -427,6 +466,15 @@ namespace PINGGO.Views
             {
                 LatestMessageSnippetContainer.Visibility = Visibility.Collapsed;
             }
+
+            if (EmptyStateGuidanceText != null)
+            {
+                EmptyStateGuidanceText.Text = ctx != null
+                    ? "Summarize context, find actions, or draft a reply."
+                    : "Select or open a chat in this app to give PINGGO AI live context.";
+            }
+
+            UpdateEmptyStateVisibility();
         }
 
         private void RenderCopilotHistory()
@@ -435,6 +483,7 @@ namespace PINGGO.Views
             {
                 CopilotHistoryContainer.Visibility = Visibility.Collapsed;
                 CopilotHistoryList.Children.Clear();
+                UpdateEmptyStateVisibility();
                 return;
             }
 
@@ -472,9 +521,65 @@ namespace PINGGO.Views
 
         private void OnResetCopilotHistory(object sender, RoutedEventArgs e)
         {
+            _generationCts?.Cancel();
             _copilotHistory.Clear();
+            _conversationHistories.Remove(_currentConversationKey);
             RenderCopilotHistory();
             MainViewModel.Shared.ShowToast("Conversation memory cleared");
+        }
+
+        private void UpdateToneButtonStyles(string selectedTone)
+        {
+            var buttons = new[] { ToneBtnProfessional, ToneBtnFriendly, ToneBtnConcise, ToneBtnCasual, ToneBtnDecline, ToneBtnSchedule };
+            var accentBrush = Application.Current.Resources["AppAccentBrush"] as Microsoft.UI.Xaml.Media.Brush;
+            var cardBrush = Application.Current.Resources["AppCardBrush"] as Microsoft.UI.Xaml.Media.Brush;
+            var borderBrush = Application.Current.Resources["AppBorderBrush"] as Microsoft.UI.Xaml.Media.Brush;
+            var textBrush = Application.Current.Resources["AppTextBrush"] as Microsoft.UI.Xaml.Media.Brush;
+            var mutedBrush = Application.Current.Resources["AppTextMutedBrush"] as Microsoft.UI.Xaml.Media.Brush;
+            var whiteBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.White);
+
+            foreach (var btn in buttons)
+            {
+                if (btn == null) continue;
+                var isSelected = (string)btn.Tag == selectedTone;
+                btn.Background = isSelected ? accentBrush : cardBrush;
+                btn.BorderBrush = isSelected ? accentBrush : borderBrush;
+                if (btn.Content is TextBlock tb)
+                {
+                    tb.Foreground = isSelected ? whiteBrush : (string.Equals((string)btn.Tag, "Professional", StringComparison.OrdinalIgnoreCase) || string.Equals((string)btn.Tag, "Friendly", StringComparison.OrdinalIgnoreCase) || string.Equals((string)btn.Tag, "Concise", StringComparison.OrdinalIgnoreCase) ? textBrush : mutedBrush);
+                    tb.FontWeight = isSelected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+                }
+            }
+        }
+
+        private void AutoScrollCopilotToEnd()
+        {
+            DispatcherQueue?.TryEnqueue(() =>
+            {
+                CopilotScrollViewer?.ChangeView(null, CopilotScrollViewer.ScrollableHeight, null);
+            });
+        }
+
+        private void UpdateEmptyStateVisibility()
+        {
+            var hasHistory = _copilotHistory.Count > 0;
+            var hasDraft = DraftCard != null && DraftCard.Visibility == Visibility.Visible && !string.IsNullOrWhiteSpace(DraftContentBox?.Text);
+            if (CopilotEmptyState != null)
+            {
+                CopilotEmptyState.Visibility = (!hasHistory && !hasDraft) ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private async void OnSummarizeStarterClicked(object sender, RoutedEventArgs e)
+        {
+            CustomPromptBox.Text = "Summarize everything discussed in this conversation in clear executive bullet points.";
+            await ExecuteCustomPromptAsync();
+        }
+
+        private async void OnActionItemsStarterClicked(object sender, RoutedEventArgs e)
+        {
+            CustomPromptBox.Text = "What are the key action items, commitments, deliverables, or deadlines mentioned?";
+            await ExecuteCustomPromptAsync();
         }
 
         private async void OnSmartToneClicked(object sender, RoutedEventArgs e)
@@ -482,6 +587,7 @@ namespace PINGGO.Views
             if (sender is Button btn && btn.Tag is string tone)
             {
                 _activeTone = tone;
+                UpdateToneButtonStyles(tone);
                 await TriggerGenerateReplyAsync(tone);
             }
         }
@@ -491,19 +597,20 @@ namespace PINGGO.Views
             if (_isGeneratingReply) return;
             _isGeneratingReply = true;
 
+            InsertIntoChatBtn.IsEnabled = false;
+            CopyDraftBtn.IsEnabled = false;
+            SendCustomPromptBtn.IsEnabled = false;
+
             DraftCard.Visibility = Visibility.Visible;
             DraftToneHeader.Text = $"Reply · {tone}";
             DraftGeneratingRing.IsActive = true;
             DraftContentBox.Text = "";
+            UpdateEmptyStateVisibility();
 
             var ctx = _loadedAccountId.HasValue && MainViewModel.Shared.AccountThreadContexts.TryGetValue(_loadedAccountId.Value, out var c) ? c : null;
             var contextSnippet = ctx?.ContextSnippet ?? "";
             var contact = !string.IsNullOrWhiteSpace(ctx?.ContactName) ? ctx.ContactName : (PlatformTitleText.Text ?? "user");
             var prompt = $"Draft a {tone} reply to {contact}.";
-
-            _copilotHistory.Add(new CopilotMessage { Role = "user", Content = prompt });
-            if (_copilotHistory.Count > 10) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 10);
-            RenderCopilotHistory();
 
             try
             {
@@ -512,12 +619,9 @@ namespace PINGGO.Views
                     DispatcherQueue?.TryEnqueue(() =>
                     {
                         DraftContentBox.Text += chunk;
+                        AutoScrollCopilotToEnd();
                     });
                 }, _copilotHistory);
-
-                _copilotHistory.Add(new CopilotMessage { Role = "assistant", Content = fullResponse });
-                if (_copilotHistory.Count > 10) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 10);
-                RenderCopilotHistory();
             }
             catch (Exception ex)
             {
@@ -527,6 +631,11 @@ namespace PINGGO.Views
             {
                 DraftGeneratingRing.IsActive = false;
                 _isGeneratingReply = false;
+                InsertIntoChatBtn.IsEnabled = !string.IsNullOrWhiteSpace(DraftContentBox.Text);
+                CopyDraftBtn.IsEnabled = !string.IsNullOrWhiteSpace(DraftContentBox.Text);
+                SendCustomPromptBtn.IsEnabled = true;
+                UpdateEmptyStateVisibility();
+                AutoScrollCopilotToEnd();
             }
         }
 
@@ -543,7 +652,7 @@ namespace PINGGO.Views
 
             await Task.Delay(2000);
             InsertBtnIcon.Glyph = "\uE896"; // Document/Download
-            InsertBtnText.Text = "Insert into Chat";
+            InsertBtnText.Text = "Insert";
         }
 
         private async void OnCopyDraft(object sender, RoutedEventArgs e)
@@ -589,10 +698,7 @@ namespace PINGGO.Views
 
             CustomPromptBox.Text = "";
             _isGeneratingReply = true;
-            DraftCard.Visibility = Visibility.Visible;
-            DraftToneHeader.Text = "AI response";
-            DraftGeneratingRing.IsActive = true;
-            DraftContentBox.Text = "";
+            SendCustomPromptBtn.IsEnabled = false;
 
             var ctx = _loadedAccountId.HasValue && MainViewModel.Shared.AccountThreadContexts.TryGetValue(_loadedAccountId.Value, out var c) ? c : null;
             var fullTranscript = ctx?.FullTranscript ?? "";
@@ -602,32 +708,47 @@ namespace PINGGO.Views
             var channelType = isGroup ? $"Group Chat ({memberCount} members)" : $"Direct 1-on-1 Chat with {CopilotContactName.Text}";
             var membersInfo = string.Join("\n", members.Select(m => $"{m.Name}{(string.IsNullOrEmpty(m.PhoneNumber) ? "" : $" ({m.PhoneNumber})")} - {(m.Role.ToLowerInvariant().Contains("admin") ? "👑 " + m.Role : m.Role)} ({m.MessageCount} messages)"));
 
+            var priorHistory = new System.Collections.Generic.List<CopilotMessage>(_copilotHistory);
             _copilotHistory.Add(new CopilotMessage { Role = "user", Content = prompt });
             if (_copilotHistory.Count > 30) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 30);
             RenderCopilotHistory();
+            AutoScrollCopilotToEnd();
+
+            _generationCts?.Cancel();
+            _generationCts = new System.Threading.CancellationTokenSource();
+            var token = _generationCts.Token;
 
             try
             {
                 var fullResponse = await AIService.Shared.StreamCoPilotAsync(prompt, fullTranscript, _activeTone, chunk =>
                 {
-                    DispatcherQueue?.TryEnqueue(() =>
-                    {
-                        DraftContentBox.Text += chunk;
-                    });
-                }, _copilotHistory, channelType, membersInfo);
+                }, priorHistory, channelType, membersInfo);
+
+                if (token.IsCancellationRequested) return;
 
                 _copilotHistory.Add(new CopilotMessage { Role = "assistant", Content = fullResponse });
                 if (_copilotHistory.Count > 30) _copilotHistory.RemoveRange(0, _copilotHistory.Count - 30);
+                _conversationHistories[_currentConversationKey] = new System.Collections.Generic.List<CopilotMessage>(_copilotHistory);
                 RenderCopilotHistory();
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
-                DraftContentBox.Text = $"[Error generating response: {ex.Message}]";
+                if (!token.IsCancellationRequested)
+                {
+                    _copilotHistory.Add(new CopilotMessage { Role = "assistant", Content = $"[Error generating response: {ex.Message}]" });
+                    _conversationHistories[_currentConversationKey] = new System.Collections.Generic.List<CopilotMessage>(_copilotHistory);
+                    RenderCopilotHistory();
+                }
             }
             finally
             {
-                DraftGeneratingRing.IsActive = false;
                 _isGeneratingReply = false;
+                SendCustomPromptBtn.IsEnabled = true;
+                UpdateEmptyStateVisibility();
+                AutoScrollCopilotToEnd();
             }
         }
 

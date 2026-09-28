@@ -19,6 +19,9 @@ namespace PINGGO
             CurrentWindow = window;
             window.Activate();
 
+            // Apply saved theme
+            PINGGO.Views.SettingsControl.ApplyTheme(DataStoreService.Shared.CurrentData.Preferences.Appearance);
+
             // Start inactivity lock check timer
             var timer = new System.Timers.Timer(30000); // Check every 30s
             timer.Elapsed += (s, e) =>

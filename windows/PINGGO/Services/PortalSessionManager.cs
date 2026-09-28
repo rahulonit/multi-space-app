@@ -297,6 +297,15 @@ namespace PINGGO.Services
                         finally { waSyncRunning = false; }
                     }
 
+                    function isSearchOrFilter(el) {
+                        if (!el) return true;
+                        const label = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '') + ' ' + (el.className || '') + ' ' + (el.id || '')).toLowerCase();
+                        if (label.includes('search') || label.includes('find') || label.includes('filter')) return true;
+                        if (el.getAttribute('type') === 'search') return true;
+                        if (el.closest('[role="search"]') || el.closest('#side') || el.closest('.chatlist-top') || el.closest('[data-testid="chat-list-search"]')) return true;
+                        return false;
+                    }
+
                     window.pinggoInsertText = function(text) {
                         if (!text) return false;
                         const selectors = [
@@ -307,31 +316,34 @@ namespace PINGGO.Services
                             '.input-message-input[contenteditable="true"]',
                             '.ql-editor[contenteditable="true"]',
                             '[data-qa="message_input"]',
-                            '[role="textbox"][contenteditable="true"]',
-                            '[aria-label*="message" i][contenteditable="true"]',
-                            '[aria-label*="type a message" i][contenteditable="true"]',
-                            '[contenteditable="true"]',
+                            'div[role="textbox"][aria-label*="message" i]',
+                            'div[role="textbox"][aria-label*="type" i]',
+                            'div[role="textbox"][aria-label*="send" i]',
+                            'footer [role="textbox"]',
+                            'form [role="textbox"]',
+                            'footer textarea',
+                            'form textarea',
                             'textarea[placeholder*="message" i]',
-                            'textarea',
                             'input[type="text"][placeholder*="message" i]'
                         ];
 
                         let target = null;
-                        if (document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
+                        if (document.activeElement && !isSearchOrFilter(document.activeElement) &&
+                            (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
                             target = document.activeElement;
                         }
 
                         if (!target) {
                             for (const sel of selectors) {
                                 const el = document.querySelector(sel);
-                                if (el && el.offsetParent !== null) {
+                                if (el && el.offsetParent !== null && !isSearchOrFilter(el)) {
                                     target = el;
                                     break;
                                 }
                             }
                         }
 
-                        if (!target) return false;
+                        if (!target || isSearchOrFilter(target)) return false;
                         target.focus();
 
                         let success = false;
@@ -935,6 +947,7 @@ namespace PINGGO.Services
 
             webView.WebMessageReceived += (s, e) =>
             {
+                if (SecurityService.Shared.IsLocked) return;
                 try
                 {
                     var msg = e.TryGetWebMessageAsString();

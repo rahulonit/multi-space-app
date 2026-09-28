@@ -46,11 +46,48 @@ namespace PINGGO.Views
             _allCommands.Add(new PaletteCommand { Title = "Lock PINGGO Now", Category = "Security", Action = () => SecurityService.Shared.LockApp() });
 
             // AI Assistant Controls
-            _allCommands.Add(new PaletteCommand { Title = "Use Google Gemini for Smart Replies", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "gemini"; vm.ShowToast("Active AI set to Google Gemini"); } });
-            _allCommands.Add(new PaletteCommand { Title = "Use OpenAI ChatGPT for Smart Replies", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "chatgpt"; vm.ShowToast("Active AI set to OpenAI ChatGPT"); } });
-            _allCommands.Add(new PaletteCommand { Title = $"Use Local Ollama ({vm.Preferences.OllamaModel})", Category = "AI Assistant", Action = () => { vm.Preferences.AiProvider = "ollama"; vm.ShowToast($"Active AI set to Local Ollama ({vm.Preferences.OllamaModel})"); } });
-            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Executive & Professional", Category = "AI Assistant", Action = () => { vm.Preferences.PersonaStyle = "Professional"; vm.ShowToast("AI Persona set to Professional"); } });
-            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Friendly & Casual", Category = "AI Assistant", Action = () => { vm.Preferences.PersonaStyle = "Casual"; vm.ShowToast("AI Persona set to Casual"); } });
+            var prefs = DataStoreService.Shared.CurrentData.Preferences;
+            var ollamaModelName = string.IsNullOrWhiteSpace(prefs.OllamaModel) ? prefs.OllamaModelTier : prefs.OllamaModel;
+            _allCommands.Add(new PaletteCommand { Title = "Use Google Gemini for Smart Replies", Category = "AI Assistant", Action = () => {
+                var p = DataStoreService.Shared.CurrentData.Preferences;
+                if (!string.IsNullOrWhiteSpace(p.GeminiApiKey) && p.IsGeminiLoggedIn) {
+                    p.AiProvider = "gemini";
+                    DataStoreService.Shared.Save();
+                    vm.ShowToast("Active AI set to Google Gemini");
+                } else {
+                    vm.ShowToast("Google Gemini is unverified. Please test connection in Settings > AI.");
+                }
+            }});
+            _allCommands.Add(new PaletteCommand { Title = "Use OpenAI ChatGPT for Smart Replies", Category = "AI Assistant", Action = () => {
+                var p = DataStoreService.Shared.CurrentData.Preferences;
+                if (!string.IsNullOrWhiteSpace(p.OpenAiApiKey) && p.IsChatGptLoggedIn) {
+                    p.AiProvider = "chatgpt";
+                    DataStoreService.Shared.Save();
+                    vm.ShowToast("Active AI set to OpenAI ChatGPT");
+                } else {
+                    vm.ShowToast("OpenAI is unverified. Please test connection in Settings > AI.");
+                }
+            }});
+            _allCommands.Add(new PaletteCommand { Title = $"Use Local Ollama ({ollamaModelName})", Category = "AI Assistant", Action = () => {
+                var p = DataStoreService.Shared.CurrentData.Preferences;
+                if (!string.IsNullOrWhiteSpace(p.OllamaEndpoint) && p.IsOllamaLoggedIn) {
+                    p.AiProvider = "ollama";
+                    DataStoreService.Shared.Save();
+                    vm.ShowToast($"Active AI set to Local Ollama ({ollamaModelName})");
+                } else {
+                    vm.ShowToast("Ollama is unverified. Please test connection in Settings > AI.");
+                }
+            }});
+            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Executive & Professional", Category = "AI Assistant", Action = () => {
+                DataStoreService.Shared.CurrentData.Preferences.PersonaStyle = "Professional";
+                DataStoreService.Shared.Save();
+                vm.ShowToast("AI Persona set to Professional");
+            }});
+            _allCommands.Add(new PaletteCommand { Title = "Set Persona: Friendly & Casual", Category = "AI Assistant", Action = () => {
+                DataStoreService.Shared.CurrentData.Preferences.PersonaStyle = "Casual";
+                DataStoreService.Shared.Save();
+                vm.ShowToast("AI Persona set to Casual");
+            }});
 
             // Social platforms
             foreach (var p in vm.Platforms)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Input;
@@ -27,6 +28,8 @@ namespace PINGGO.Views
         private bool _dragging;
         private uint _pointerId;
         private double _ratio = 0.5;
+        private Guid? _primaryAccountId;
+        private Guid? _secondaryAccountId;
 
         public SplitPortalControl()
         {
@@ -53,10 +56,27 @@ namespace PINGGO.Views
 
         private void RefreshPanes()
         {
-            LeftPaneTitle.Text = $"Primary · {ViewModel.ActivePlatformId.ToUpperInvariant()}";
-            RightPaneTitle.Text = $"Secondary · {ViewModel.SplitPlatformId.ToUpperInvariant()}";
-            LeftPortal.LoadPlatform(ViewModel.ActivePlatformId);
-            RightPortal.LoadPlatform(ViewModel.SplitPlatformId);
+            var primaryPlatform = ViewModel.ActivePlatformId;
+            var secondaryPlatform = ViewModel.SplitPlatformId;
+
+            var primaryAcc = ViewModel.GetSelectedAccount(primaryPlatform);
+            _primaryAccountId = primaryAcc?.Id;
+
+            var accountsForSecondary = ViewModel.GetAccounts(secondaryPlatform);
+            if (string.Equals(primaryPlatform, secondaryPlatform, StringComparison.OrdinalIgnoreCase) && accountsForSecondary.Count > 1)
+            {
+                var altAccount = accountsForSecondary.FirstOrDefault(a => a.Id != _primaryAccountId);
+                _secondaryAccountId = altAccount?.Id ?? _primaryAccountId;
+            }
+            else
+            {
+                _secondaryAccountId = ViewModel.GetSelectedAccount(secondaryPlatform)?.Id;
+            }
+
+            LeftPaneTitle.Text = $"Primary · {primaryPlatform.ToUpperInvariant()}";
+            RightPaneTitle.Text = $"Secondary · {secondaryPlatform.ToUpperInvariant()}";
+            LeftPortal.LoadPlatform(primaryPlatform, _primaryAccountId);
+            RightPortal.LoadPlatform(secondaryPlatform, _secondaryAccountId);
         }
 
         private void ApplyLayout()
@@ -144,7 +164,20 @@ namespace PINGGO.Views
             ApplyLayout();
         }
 
-        private void OnSwapClicked(object sender, RoutedEventArgs e) { ViewModel.SwapSplitPanes(); RefreshPanes(); }
+        private void OnSwapClicked(object sender, RoutedEventArgs e)
+        {
+            if (string.Equals(ViewModel.ActivePlatformId, ViewModel.SplitPlatformId, StringComparison.OrdinalIgnoreCase))
+            {
+                var temp = _primaryAccountId;
+                _primaryAccountId = _secondaryAccountId;
+                _secondaryAccountId = temp;
+                LeftPortal.LoadPlatform(ViewModel.ActivePlatformId, _primaryAccountId);
+                RightPortal.LoadPlatform(ViewModel.SplitPlatformId, _secondaryAccountId);
+                return;
+            }
+            ViewModel.SwapSplitPanes();
+            RefreshPanes();
+        }
         private void OnCloseSplitClicked(object sender, RoutedEventArgs e) => ViewModel.ToggleSplitView();
         private void OnSoloClicked(object sender, RoutedEventArgs e) => ToggleSolo();
         private void ToggleSolo() { _soloMode = !_soloMode; ApplyLayout(); }
@@ -152,10 +185,10 @@ namespace PINGGO.Views
         private void OnRatio11Clicked(object sender, RoutedEventArgs e) => SetSplitRatio(0.50);
         private void OnRatio21Clicked(object sender, RoutedEventArgs e) => SetSplitRatio(0.67);
 
-        private void SetSplitRatio(double ratio)
+        private void SetSplitRatio(double ratio, bool persist = true)
         {
             _ratio = Math.Clamp(ratio, 0.2, 0.8);
-            if (_settings != null) _settings.Values[RatioSetting] = _ratio;
+            if (persist && _settings != null) _settings.Values[RatioSetting] = _ratio;
             if (_soloMode) _soloMode = false;
             ApplyLayout();
         }
@@ -187,7 +220,7 @@ namespace PINGGO.Views
             if (!_dragging || e.Pointer.PointerId != _pointerId) return;
             Point point = e.GetCurrentPoint(PaneGrid).Position;
             var total = _isStacked ? PaneGrid.ActualHeight : PaneGrid.ActualWidth;
-            if (total > 0) SetSplitRatio((_isStacked ? point.Y : point.X) / total);
+            if (total > 0) SetSplitRatio((_isStacked ? point.Y : point.X) / total, persist: false);
         }
         private void OnDividerPointerReleased(object sender, PointerRoutedEventArgs e)
         {
@@ -195,23 +228,26 @@ namespace PINGGO.Views
             _dragging = false;
             Divider.ReleasePointerCapture(e.Pointer);
             ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+            if (_settings != null) _settings.Values[RatioSetting] = _ratio;
             e.Handled = true;
         }
         private void OnDividerDoubleTapped(object sender, DoubleTappedRoutedEventArgs e) => SetSplitRatio(0.5);
 
         private async void OnAiBridgeClicked(object sender, RoutedEventArgs e)
         {
-            var primary = ViewModel.GetSelectedAccount(ViewModel.ActivePlatformId);
-            var secondary = ViewModel.GetSelectedAccount(ViewModel.SplitPlatformId);
-            var primaryContext = primary == null ? null : ViewModel.GetActiveThreadContext(primary.Id);
-            var secondaryContext = secondary == null ? null : ViewModel.GetActiveThreadContext(secondary.Id);
+            var primaryId = LeftPortal.LoadedAccountId;
+            var secondaryId = RightPortal.LoadedAccountId;
+            var primaryContext = primaryId == null ? null : ViewModel.GetActiveThreadContext(primaryId.Value);
+            var secondaryContext = secondaryId == null ? null : ViewModel.GetActiveThreadContext(secondaryId.Value);
             if (primaryContext == null && secondaryContext == null)
             {
                 await ShowBridgeDialog("AI Bridge needs an active conversation in at least one pane. Open a chat, then try again.", false);
                 return;
             }
-            var context = $"PRIMARY PANE ({ViewModel.ActivePlatformId}):\n{primaryContext?.ContextSnippet ?? "No active conversation."}\n\n" +
-                          $"SECONDARY PANE ({ViewModel.SplitPlatformId}):\n{secondaryContext?.ContextSnippet ?? "No active conversation."}";
+            var leftPlatform = LeftPortal.LoadedPlatformId ?? ViewModel.ActivePlatformId;
+            var rightPlatform = RightPortal.LoadedPlatformId ?? ViewModel.SplitPlatformId;
+            var context = $"PRIMARY PANE ({leftPlatform}):\n{primaryContext?.ContextSnippet ?? "No active conversation."}\n\n" +
+                          $"SECONDARY PANE ({rightPlatform}):\n{secondaryContext?.ContextSnippet ?? "No active conversation."}";
             try
             {
                 var result = await AIService.Shared.AskCoPilotAsync("Compare these conversations. Summarize the shared topic, conflicts or dependencies, and the three most important next actions. Identify which pane each fact comes from.", context);

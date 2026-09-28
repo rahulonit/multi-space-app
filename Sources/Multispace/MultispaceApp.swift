@@ -54,25 +54,31 @@ struct PinggoApp: App {
                 }
             }
             Divider()
-            Button("Private Browser") {
-                store.destination = .browser
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            Button("Toggle Split View") {
-                store.toggleSplitView()
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            Divider()
-            ForEach(store.socialPlatforms) { platform in
-                let unread = store.accounts(for: platform.id).compactMap { store.platformActivity[$0.id]?.unreadCount }.reduce(0, +)
-                Button("\(platform.name)\(unread > 0 ? " (\(unread))" : "")") {
-                    store.destination = .platform(platform.id)
+            if store.isAppLocked {
+                Text("PINGGO is Locked")
+            } else {
+                Button("Private Browser") {
+                    store.destination = .browser
                     NSApp.activate(ignoringOtherApps: true)
+                }
+                Button("Toggle Split View") {
+                    store.toggleSplitView()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                Divider()
+                ForEach(store.socialPlatforms) { platform in
+                    let unread = store.accounts(for: platform.id).compactMap { store.platformActivity[$0.id]?.unreadCount }.reduce(0, +)
+                    Button("\(platform.name)\(unread > 0 ? " (\(unread))" : "")") {
+                        store.destination = .platform(platform.id)
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                 }
             }
             Divider()
-            Button("Lock PINGGO") {
-                store.lockApp()
+            if !store.isAppLocked {
+                Button("Lock PINGGO") {
+                    store.lockApp()
+                }
             }
             Button("Quit PINGGO") {
                 NSApp.terminate(nil)

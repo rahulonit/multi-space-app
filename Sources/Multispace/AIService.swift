@@ -404,9 +404,9 @@ final class AIService: ObservableObject {
         } else if score >= 0.1 {
             label = "Constructive / Collaborative (\(String(format: "+%.1f", score)))"
         } else if score <= -0.4 {
-            label = "Urgent Concern / Critical (\(String(format: "%.1f", score)))"
+            label = "Critical / Negative Tone (\(String(format: "%.1f", score)))"
         } else if score <= -0.1 {
-            label = "Direct / Needs Resolution (\(String(format: "%.1f", score)))"
+            label = "Direct / Reserved (\(String(format: "%.1f", score)))"
         } else {
             label = "Neutral / Professional"
         }
@@ -1418,27 +1418,26 @@ struct OllamaTagsResponse: Codable {
         }
 
         let sysInstruction = """
-        You are PINGGO Co-Pilot, an advanced AI workplace intelligence and communication assistant operating with FULL UNRESTRICTED ACCESS to the active chat thread.
-        You behave with the analytical power, depth, and helpfulness of ChatGPT and Google Gemini.
-
-        \(personaInstruction)
+        You are PINGGO AI, an advanced workplace intelligence and communication assistant analyzing the active conversation thread.
         Default response tone: \(tone.rawValue).
+        \(personaInstruction)
         \(preferences.customAiPrompt.isEmpty ? "" : "User guidelines: " + preferences.customAiPrompt)
 
-        STRICT BOUNDARY & ACCURACY MANDATE:
-        - You operate STRICTLY and SOLELY within the currently SELECTED conversation thread in the messaging platform.
-        - You must NEVER list, reference, invent, or mix in contacts or chats from the platform's sidebar chat list / inbox listing.
+        CONTEXT PROVENANCE & STRICT ACCURACY MANDATE:
+        - You operate strictly on the visible messages captured from the active conversation thread viewport.
+        - Captured history represents a partial view of visible messages. If older messages or past discussions are not present in this transcript, accurately state that they are not visible in the current viewport rather than guessing or fabricating details.
+        - You must NEVER list, reference, invent, or mix in contacts or chats from outside this selected conversation.
         - If the conversation is a Direct 1-on-1 Chat: explicitly confirm that it is a 1-on-1 chat with that specific contact and You. State that there are no group members or group admins.
         - If the conversation is a Group Chat: only reference the verified members, participants, and admins of this specific group.
 
         CORE CAPABILITIES & BEHAVIOR:
         1. Full Conversational & Analytical Intelligence:
-           - Answer ANY question about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
+           - Answer questions about this conversation: member details, group admins, group composition, who said what, commitments, deadlines, agreements, questions asked, phone numbers, links, and tone.
            - When asked about group information, member count, or group admins: inspect the verified Group Roster & Admin Information provided below. Clearly identify admins and participants with their roles and contact details.
-           - When asked to export or download member details or roster data (CSV / table): generate a clean markdown table with columns (Name, Phone Number, Role, Username, Message Count) followed by a formatted CSV code block ready for 1-click copying.
-           - Provide thorough, specific answers quoting verified facts from the transcript. Do not give vague or evasive answers.
+           - When asked to export or download member details or roster data (CSV / table): generate a clean markdown table followed by a formatted CSV code block ready for 1-click copying.
+           - Provide thorough, specific answers quoting verified facts from the transcript.
         2. Direct Answering vs. Reply Drafting:
-           - If the user asks a question about the chat (e.g., "Who are the admins?", "What did X say?", "Summarize the discussion"): answer the question directly with deep analysis and clean markdown.
+           - If the user asks a question about the chat (e.g., "Who are the admins?", "What did X say?", "Summarize the discussion"): answer directly with deep analysis and clean markdown.
            - If the user asks to draft a reply or response: craft an articulate, ready-to-send draft in the requested \(tone.rawValue) tone.
         3. Presentation:
            - Use clean GitHub markdown formatting (bold headers, bullet points, numbered lists, tables, and blockquotes) matching ChatGPT and Google Gemini presentation standards.
@@ -1456,43 +1455,52 @@ struct OllamaTagsResponse: Codable {
         let resolution = AIProviderResolver.resolve(preferences: preferences)
 
         if resolution.canPerformGenerativeAI {
-            if resolution.provider == .gemini {
-                if let result = try? await streamGeminiAPI(
-                    apiKey: preferences.geminiApiKey,
-                    model: resolution.model,
-                    prompt: userPrompt,
-                    systemInstruction: sysInstruction,
-                    onChunk: { chunk in
-                        Task { @MainActor in onChunk(chunk) }
+            do {
+                if resolution.provider == .gemini {
+                    let result = try await streamGeminiAPI(
+                        apiKey: preferences.geminiApiKey,
+                        model: resolution.model,
+                        prompt: userPrompt,
+                        systemInstruction: sysInstruction,
+                        onChunk: { chunk in
+                            Task { @MainActor in onChunk(chunk) }
+                        }
+                    )
+                    if !result.isEmpty {
+                        return result
                     }
-                ), !result.isEmpty {
-                    return result
-                }
-            } else if resolution.provider == .chatgpt {
-                if let result = try? await streamOpenAIAPI(
-                    apiKey: preferences.openAiApiKey,
-                    model: resolution.model,
-                    prompt: userPrompt,
-                    systemInstruction: sysInstruction,
-                    onChunk: { chunk in
-                        Task { @MainActor in onChunk(chunk) }
+                } else if resolution.provider == .chatgpt {
+                    let result = try await streamOpenAIAPI(
+                        apiKey: preferences.openAiApiKey,
+                        model: resolution.model,
+                        prompt: userPrompt,
+                        systemInstruction: sysInstruction,
+                        onChunk: { chunk in
+                            Task { @MainActor in onChunk(chunk) }
+                        }
+                    )
+                    if !result.isEmpty {
+                        return result
                     }
-                ), !result.isEmpty {
-                    return result
-                }
-            } else if resolution.provider == .ollama {
-                if let result = try? await streamOllamaAPI(
-                    endpoint: preferences.ollamaEndpoint,
-                    model: resolution.model,
-                    prompt: userPrompt,
-                    systemInstruction: sysInstruction,
-                    history: history,
-                    onChunk: { chunk in
-                        Task { @MainActor in onChunk(chunk) }
+                } else if resolution.provider == .ollama {
+                    let result = try await streamOllamaAPI(
+                        endpoint: preferences.ollamaEndpoint,
+                        model: resolution.model,
+                        prompt: userPrompt,
+                        systemInstruction: sysInstruction,
+                        history: history,
+                        onChunk: { chunk in
+                            Task { @MainActor in onChunk(chunk) }
+                        }
+                    )
+                    if !result.isEmpty {
+                        return result
                     }
-                ), !result.isEmpty {
-                    return result
                 }
+            } catch {
+                let errorNotice = "\n\n⚠️ **\(resolution.displayBadge) Error:** \(error.localizedDescription)\n\nPlease verify your API key, network, or server status in Settings > AI."
+                Task { @MainActor in onChunk(errorNotice) }
+                return errorNotice
             }
         }
 

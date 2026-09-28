@@ -19,6 +19,9 @@ namespace PINGGO.Services
         [JsonPropertyName("preferences")]
         public AppPreferences Preferences { get; set; } = new();
 
+        [JsonPropertyName("selectedAccountIds")]
+        public Dictionary<string, Guid> SelectedAccountIds { get; set; } = new();
+
         [JsonPropertyName("bookmarks")]
         public List<BrowserBookmark> Bookmarks { get; set; } = new();
     }

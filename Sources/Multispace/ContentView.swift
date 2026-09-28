@@ -39,6 +39,8 @@ struct ContentView: View {
                         .frame(height: 48)
                 }
             }
+            .accessibilityHidden(store.isAppLocked)
+            .disabled(store.isAppLocked)
         }
         .background(Palette.background)
         .preferredColorScheme(store.preferences.appearance == "Follow System" ? nil : (store.preferences.appearance == "Light" ? .light : .dark))
@@ -47,7 +49,7 @@ struct ContentView: View {
             EditPlatformSheet(platform: platform)
         }
         .overlay {
-            if store.showingCommandPalette {
+            if store.showingCommandPalette && !store.isAppLocked {
                 CommandPaletteView()
             }
         }
@@ -96,6 +98,8 @@ struct ContentView: View {
                 .frame(width: 1, height: 1)
                 .opacity(0.001)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .accessibilityElement(children: .ignore)
         }
     }
 
