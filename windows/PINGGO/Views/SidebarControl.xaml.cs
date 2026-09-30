@@ -99,9 +99,40 @@ namespace PINGGO.Views
             }
         }
 
-        private void OnAddPlatformClicked(object sender, RoutedEventArgs e)
+        private async void OnAddPlatformClicked(object sender, RoutedEventArgs e)
         {
-            ViewModel.ShowToast("Click any platform in Settings to configure custom URLs");
+            var available = SocialPlatform.DefaultPlatforms
+                .Where(preset => !ViewModel.Platforms.Any(item => item.Id == preset.Id))
+                .ToList();
+            if (available.Count == 0)
+            {
+                ViewModel.ShowToast("All available platforms are already added");
+                return;
+            }
+
+            var picker = new ComboBox
+            {
+                ItemsSource = available,
+                DisplayMemberPath = nameof(SocialPlatform.Name),
+                SelectedIndex = 0,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MinWidth = 320,
+                PlaceholderText = "Choose a platform"
+            };
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Add platform",
+                Content = picker,
+                PrimaryButtonText = "Add",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary && picker.SelectedItem is SocialPlatform platform)
+            {
+                ViewModel.AddPlatform(platform);
+                ViewModel.ShowToast($"{platform.Name} added");
+            }
         }
 
         private void OnAccountMenuClicked(object sender, RoutedEventArgs e)

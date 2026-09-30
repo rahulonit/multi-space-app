@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
@@ -27,7 +28,7 @@ namespace PINGGO.Services
 
             var profilePath = DataStoreService.Shared.GetProfileDirectory(account.Id);
             var options = new CoreWebView2EnvironmentOptions();
-            var env = await CoreWebView2Environment.CreateAsync(null, profilePath, options);
+            var env = await CoreWebView2Environment.CreateWithOptionsAsync(null, profilePath, options);
 
             _environments[account.Id] = env;
             return env;
@@ -990,7 +991,7 @@ namespace PINGGO.Services
                             {
                                 msgs.Add(new ActiveChatMessage
                                 {
-                                    Sender = item.TryGetProperty("sender", out var s) ? s.GetString() ?? "" : "",
+                                    Sender = item.TryGetProperty("sender", out var senderElement) ? senderElement.GetString() ?? "" : "",
                                     Text = item.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "",
                                     IsFromMe = item.TryGetProperty("isFromMe", out var m) && m.GetBoolean()
                                 });

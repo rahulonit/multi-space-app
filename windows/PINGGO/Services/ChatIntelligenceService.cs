@@ -554,7 +554,7 @@ Shared Contact Numbers: {(analysis.PhoneNumbers.Count == 0 ? "None" : string.Joi
                 return GenerateDynamicPrompts(scoped, conversationTitle);
             }
 
-            var prefs = preferences ?? AppPreferences.Shared;
+            var prefs = preferences ?? DataStoreService.Shared.CurrentData.Preferences;
             var resolution = AIProviderResolver.Resolve(prefs);
             if (!resolution.CanPerformGenerativeAI)
             {

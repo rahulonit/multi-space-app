@@ -26,7 +26,7 @@ namespace PINGGO.ViewModels
         private NavigationDestination _currentDestination = NavigationDestination.Overview;
 
         [ObservableProperty]
-        private string _activePlatformId = "whatsapp";
+        private string _activePlatformId = string.Empty;
 
         [ObservableProperty]
         private Guid? _activeAccountId;
@@ -210,8 +210,31 @@ namespace PINGGO.ViewModels
             return account;
         }
 
-        public bool CanDeleteAccount(PlatformAccount account) =>
-            GetAccounts(account.PlatformID).Count > 1;
+        public PlatformAccount? AddPlatform(SocialPlatform platform)
+        {
+            if (Platforms.Any(item => item.Id == platform.Id)) return null;
+
+            DataStoreService.Shared.CurrentData.SocialPlatforms.Add(platform);
+            Platforms.Add(platform);
+
+            var account = new PlatformAccount
+            {
+                PlatformID = platform.Id,
+                AccountName = "Personal",
+                Color = platform.Color,
+                Symbol = platform.Symbol,
+                UsesLegacyStore = true
+            };
+            DataStoreService.Shared.CurrentData.PlatformAccounts.Add(account);
+            Accounts.Add(account);
+            DataStoreService.Shared.CurrentData.SelectedAccountIds[platform.Id] = account.Id;
+            _selectedAccountIds[platform.Id] = account.Id;
+            DataStoreService.Shared.Save();
+            SelectAccount(account.Id);
+            return account;
+        }
+
+        public bool CanDeleteAccount(PlatformAccount account) => Accounts.Contains(account);
 
         public bool RemoveAccount(Guid accountId)
         {
@@ -222,6 +245,17 @@ namespace PINGGO.ViewModels
             DataStoreService.Shared.CurrentData.PlatformAccounts.RemoveAll(item => item.Id == account.Id);
             Accounts.Remove(account);
 
+            var platformHasAccounts = Accounts.Any(item => item.PlatformID == account.PlatformID);
+            if (!platformHasAccounts)
+            {
+                var platform = Platforms.FirstOrDefault(item => item.Id == account.PlatformID);
+                if (platform != null)
+                {
+                    Platforms.Remove(platform);
+                    DataStoreService.Shared.CurrentData.SocialPlatforms.RemoveAll(item => item.Id == platform.Id);
+                }
+            }
+
             if (_selectedAccountIds.TryGetValue(account.PlatformID, out var selectedId) && selectedId == account.Id)
             {
                 _selectedAccountIds.Remove(account.PlatformID);
@@ -230,6 +264,11 @@ namespace PINGGO.ViewModels
             if (wasActive)
             {
                 ActiveAccountId = GetSelectedAccount(account.PlatformID)?.Id;
+                if (ActiveAccountId == null)
+                {
+                    ActivePlatformId = Platforms.FirstOrDefault()?.Id ?? string.Empty;
+                    CurrentDestination = NavigationDestination.Overview;
+                }
             }
             PortalSessionManager.Shared.ForgetSession(account.Id);
             DataStoreService.Shared.Save();

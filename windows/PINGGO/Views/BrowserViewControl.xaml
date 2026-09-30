@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:PINGGO.Models">
 
-    <Grid Background="{StaticResource AppBackgroundBrush}">
+    <Grid Background="{ThemeResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
             <!-- Tab Bar (36px) -->
             <RowDefinition Height="36" />
@@ -32,8 +32,8 @@
                         <DataTemplate x:DataType="models:BrowserTabItem">
                             <Button Click="OnTabSelected" Tag="{x:Bind Id}" Background="{StaticResource AppCardBrush}" CornerRadius="8" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" Padding="8,4">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Source="{x:Bind FaviconUrl}" Width="14" Height="14" />
-                                    <TextBlock Text="{x:Bind Title}" FontSize="11" FontWeight="Medium" Foreground="White" MaxWidth="130" TextTrimming="CharacterEllipsis" />
+                                    <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                                    <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="11" FontWeight="Medium" Foreground="{ThemeResource AppTextBrush}" MaxWidth="130" TextTrimming="CharacterEllipsis" />
                                     <Button Click="OnCloseTabClicked" Tag="{x:Bind Id}" Background="Transparent" BorderThickness="0" Padding="2" Width="18" Height="18" ToolTipService.ToolTip="Close Tab">
                                         <FontIcon Glyph="&#xE711;" FontSize="9" Foreground="{StaticResource AppTextMutedBrush}" />
                                     </Button>
@@ -80,7 +80,7 @@
             <Grid Grid.Column="1" Margin="14,0" Height="36" VerticalAlignment="Center">
                 <Border Background="{StaticResource AppBackgroundBrush}" CornerRadius="8" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" />
                 <TextBox x:Name="OmnibarBox" PlaceholderText="Search with DuckDuckGo or enter URL…"
-                         Background="Transparent" BorderThickness="0" Padding="12,7" FontSize="13" Foreground="White"
+                         Background="Transparent" BorderThickness="0" Padding="12,7" FontSize="13" Foreground="{ThemeResource AppTextBrush}"
                          KeyDown="OnOmnibarKeyDown" VerticalAlignment="Center" />
 
                 <!-- Star Bookmark & Reader Mode icons on right inside Omnibar -->
@@ -103,7 +103,7 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <FontIcon Glyph="&#xE72E;" FontSize="18" Foreground="{StaticResource AppSuccessBrush}" />
                                     <StackPanel>
-                                        <TextBlock Text="PINGGO AdBlock Shield" FontSize="13" FontWeight="Bold" Foreground="White" />
+                                        <TextBlock Text="PINGGO AdBlock Shield" FontSize="13" FontWeight="Bold" Foreground="{ThemeResource AppTextBrush}" />
                                         <TextBlock Text="Local request &amp; cosmetic filtering" FontSize="10" Foreground="{StaticResource AppTextMutedBrush}" />
                                     </StackPanel>
                                 </StackPanel>
@@ -111,9 +111,9 @@
                                     <StackPanel Spacing="6">
                                         <Grid>
                                             <TextBlock Text="Current Site" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
-                                            <TextBlock x:Name="CurrentHostText" HorizontalAlignment="Right" Text="{x:Bind ViewModel.CurrentHost, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                                            <TextBlock x:Name="CurrentHostText" HorizontalAlignment="Right" Text="{x:Bind ViewModel.CurrentHost, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource AppTextBrush}" />
                                         </Grid>
-                                        <ToggleSwitch x:Name="WhitelistSwitch" Header="Pause AdBlock on this site" IsOn="{x:Bind ViewModel.IsCurrentDomainWhitelisted, Mode=TwoWay}" Toggled="OnWhitelistToggled" FontSize="11" />
+                                        <ToggleSwitch x:Name="WhitelistSwitch" Header="Pause AdBlock on this site" IsOn="{Binding IsCurrentDomainWhitelisted, Mode=TwoWay}" Toggled="OnWhitelistToggled" FontSize="11" />
                                     </StackPanel>
                                 </Border>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -152,7 +152,7 @@
                         <FontIcon Glyph="&#xE774;" FontSize="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel Spacing="6" HorizontalAlignment="Center">
-                        <TextBlock Text="PINGGO Private Browser" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" Foreground="White" />
+                        <TextBlock Text="PINGGO Private Browser" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{ThemeResource AppTextBrush}" />
                         <TextBlock Text="Native WebView2 AdBlocker Active · Zero Telemetry · Profile Sandboxed" FontSize="12" HorizontalAlignment="Center" Foreground="{StaticResource AppTextMutedBrush}" />
                     </StackPanel>
 
@@ -162,8 +162,17 @@
                     <!-- Quick Favorites Grid -->
                     <StackPanel Spacing="14">
                         <TextBlock Text="TOP FAVORITES &amp; QUICK LAUNCH" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AppTextMutedBrush}" />
-                        <GridView x:Name="FavoritesGridView" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnFavoriteItemClicked">
-                            <!-- Populated in code-behind -->
+                        <GridView x:Name="FavoritesGridView" ItemsSource="{x:Bind ViewModel.Bookmarks}" ItemContainerStyle="{StaticResource CardGridViewItemStyle}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnFavoriteItemClicked">
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="models:BrowserBookmark">
+                                    <Border Width="132" Height="76" Margin="4" Padding="12" CornerRadius="10" Background="{StaticResource AppCardBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1">
+                                        <StackPanel Spacing="7">
+                                            <FontIcon Glyph="&#xE774;" FontSize="17" HorizontalAlignment="Left" Foreground="{StaticResource AppAccentBrush}" />
+                                            <TextBlock Text="{x:Bind Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
                         </GridView>
                     </StackPanel>
                 </StackPanel>

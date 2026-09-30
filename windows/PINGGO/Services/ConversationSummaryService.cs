@@ -352,7 +352,7 @@ namespace PINGGO.Services
             }
             else if (isMemberQuery)
             {
-                var visibleParticipants = matchingMessages
+                var visibleParticipants = matchingItems
                     .Select(item => item.Message.Sender)
                     .Where(sender => !string.IsNullOrWhiteSpace(sender))
                     .Distinct(StringComparer.OrdinalIgnoreCase)

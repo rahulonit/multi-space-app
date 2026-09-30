@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "/Users/nikitajangid/develop/Projects/Multi-Space App/windows/PINGGO/PINGGO.csproj": {}
+    "C:\\github\\multi-space-app\\windows\\PINGGO\\PINGGO.csproj": {}
   },
   "projects": {
-    "/Users/nikitajangid/develop/Projects/Multi-Space App/windows/PINGGO/PINGGO.csproj": {
+    "C:\\github\\multi-space-app\\windows\\PINGGO\\PINGGO.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/Users/nikitajangid/develop/Projects/Multi-Space App/windows/PINGGO/PINGGO.csproj",
+        "projectUniqueName": "C:\\github\\multi-space-app\\windows\\PINGGO\\PINGGO.csproj",
         "projectName": "PINGGO",
-        "projectPath": "/Users/nikitajangid/develop/Projects/Multi-Space App/windows/PINGGO/PINGGO.csproj",
-        "packagesPath": "/Users/nikitajangid/.nuget/packages/",
-        "outputPath": "/Users/nikitajangid/develop/Projects/Multi-Space App/windows/PINGGO/obj/",
+        "projectPath": "C:\\github\\multi-space-app\\windows\\PINGGO\\PINGGO.csproj",
+        "packagesPath": "C:\\Users\\hp\\.nuget\\packages\\",
+        "outputPath": "C:\\github\\multi-space-app\\windows\\PINGGO\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/Users/nikitajangid/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\hp\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0-windows10.0.19041.0"
@@ -49,15 +49,15 @@
             },
             "Microsoft.Web.WebView2": {
               "target": "Package",
-              "version": "[1.0.2592.51, )"
+              "version": "[1.0.3719.77, )"
             },
             "Microsoft.Windows.SDK.BuildTools": {
               "target": "Package",
-              "version": "[10.0.22621.3233, )"
+              "version": "[10.0.26100.4654, )"
             },
             "Microsoft.WindowsAppSDK": {
               "target": "Package",
-              "version": "[1.5.240311000, )"
+              "version": "[1.8.260804001, )"
             }
           },
           "imports": [
@@ -85,18 +85,6 @@
               "version": "[8.0.31, 8.0.31]"
             },
             {
-              "name": "Microsoft.NETCore.App.Host.win-arm64",
-              "version": "[8.0.31, 8.0.31]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Host.win-x64",
-              "version": "[8.0.31, 8.0.31]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Host.win-x86",
-              "version": "[8.0.31, 8.0.31]"
-            },
-            {
               "name": "Microsoft.NETCore.App.Runtime.win-arm64",
               "version": "[8.0.31, 8.0.31]"
             },
@@ -111,10 +99,6 @@
             {
               "name": "Microsoft.Windows.SDK.NET.Ref",
               "version": "[10.0.19041.56, 10.0.19041.56]"
-            },
-            {
-              "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[8.0.31, 8.0.31]"
             },
             {
               "name": "Microsoft.WindowsDesktop.App.Runtime.win-arm64",
@@ -137,7 +121,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/private/tmp/pinggo-dotnet/sdk/8.0.425/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.425/PortableRuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {

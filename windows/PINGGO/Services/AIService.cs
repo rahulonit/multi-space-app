@@ -17,10 +17,11 @@ namespace PINGGO.Services
 
         private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-        public async Task<string> AskCoPilotAsync(string prompt, string context = "")
+        public async Task<string> AskCoPilotAsync(string prompt, string? context = "", string? tone = null)
         {
             var prefs = DataStoreService.Shared.CurrentData.Preferences;
-            var systemPrompt = "You are PINGGO Copilot, a privacy-focused executive assistant. Provide concise, helpful answers.";
+            var systemPrompt = "You are PINGGO Copilot, a privacy-focused executive assistant. Provide concise, helpful answers."
+                + (string.IsNullOrWhiteSpace(tone) ? "" : $" Use a {tone} tone.");
             var fullPrompt = string.IsNullOrWhiteSpace(context) ? prompt : $"Context:\n{context}\n\nUser Question:\n{prompt}";
 
             var resolution = AIProviderResolver.Resolve(prefs);

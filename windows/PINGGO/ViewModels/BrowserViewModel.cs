@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PINGGO.Models;
+using PINGGO.Services;
 
 namespace PINGGO.ViewModels
 {
@@ -35,6 +37,7 @@ namespace PINGGO.ViewModels
         }
 
         public ObservableCollection<BrowserTabItem> Tabs { get; } = new();
+        public ObservableCollection<BrowserBookmark> Bookmarks { get; } = new();
 
         [ObservableProperty]
         private Guid _activeTabId;
@@ -85,6 +88,10 @@ namespace PINGGO.ViewModels
             _whitelistFilePath = Path.Combine(appData, "PINGGO", "whitelisted_domains.json");
 
             RestoreWhitelist();
+            foreach (var bookmark in DataStoreService.Shared.CurrentData.Bookmarks)
+            {
+                Bookmarks.Add(bookmark);
+            }
             RestoreSessionOrInitDefault();
         }
 

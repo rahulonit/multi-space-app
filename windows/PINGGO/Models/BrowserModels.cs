@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace PINGGO.Models
 {
@@ -19,11 +20,14 @@ namespace PINGGO.Models
         public string Symbol { get; set; } = "globe";
     }
 
-    public class BrowserTabItem
+    public partial class BrowserTabItem : ObservableObject
     {
         public Guid Id { get; set; } = Guid.NewGuid();
-        public string Title { get; set; } = "New Tab";
-        public string UrlString { get; set; } = string.Empty;
+        [ObservableProperty]
+        private string _title = "New Tab";
+
+        [ObservableProperty]
+        private string _urlString = string.Empty;
         public string PageTitle { get; set; } = string.Empty;
         public bool IsLoading { get; set; } = false;
         public double EstimatedProgress { get; set; } = 0.0;
@@ -32,7 +36,8 @@ namespace PINGGO.Models
         public int BlockedAdsCount { get; set; } = 0;
         public bool IsReaderModeActive { get; set; } = false;
         public string? ReaderContent { get; set; }
-        public string? FaviconUrl { get; set; }
+        [ObservableProperty]
+        private string? _faviconUrl;
     }
 
     public class SavedBrowserTab

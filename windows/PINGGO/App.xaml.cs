@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.UI.Xaml;
 using PINGGO.Services;
 
@@ -10,17 +11,28 @@ namespace PINGGO
 
         public App()
         {
+            UnhandledException += (_, e) =>
+            {
+                try
+                {
+                    var logDirectory = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PINGGO");
+                    Directory.CreateDirectory(logDirectory);
+                    File.AppendAllText(Path.Combine(logDirectory, "crash.log"),
+                        $"[{DateTimeOffset.Now:O}] {e.Exception}\n");
+                }
+                catch { }
+            };
             this.InitializeComponent();
         }
 
         protected override void OnLaunched(LaunchActivatedEventArgs args)
         {
+            var appearance = DataStoreService.Shared.CurrentData.Preferences.Appearance;
             var window = new MainWindow();
             CurrentWindow = window;
+            PINGGO.Views.SettingsControl.ApplyTheme(appearance);
             window.Activate();
-
-            // Apply saved theme
-            PINGGO.Views.SettingsControl.ApplyTheme(DataStoreService.Shared.CurrentData.Preferences.Appearance);
 
             // Start inactivity lock check timer
             var timer = new System.Timers.Timer(30000); // Check every 30s

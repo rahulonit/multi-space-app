@@ -4,12 +4,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:PINGGO.Models">
 
-    <ScrollViewer Background="{StaticResource AppBackgroundBrush}" Padding="28,24">
-        <StackPanel Spacing="22" MaxWidth="960" HorizontalAlignment="Left">
+    <ScrollViewer Background="{ThemeResource AppBackgroundBrush}" Padding="40,32,40,48">
+        <StackPanel Spacing="32" MaxWidth="1120" HorizontalAlignment="Left">
             <!-- Welcome Banner -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="Overview" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
-                <TextBlock Text="Messages, platforms, and AI in one place" FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+            <StackPanel Spacing="8">
+                <TextBlock Text="Overview" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="Messages, platforms, and AI in one calm workspace." FontSize="14" Foreground="{ThemeResource AppTextMutedBrush}" />
             </StackPanel>
 
             <!-- Metrics Cards Row -->
@@ -24,8 +24,8 @@
                 <Border Grid.Column="0" Style="{StaticResource MinimalCardStyle}" Margin="0,0,8,0">
                     <StackPanel Spacing="6">
                         <TextBlock Text="Connected platforms" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
-                        <TextBlock Text="16 services" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" />
-                        <TextBlock Text="WhatsApp, Telegram, Discord, Slack..." FontSize="12" Foreground="{StaticResource AppTextMutedBrush}" />
+                        <TextBlock x:Name="ConnectedPlatformsText" Text="No platforms yet" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource AppTextBrush}" />
+                        <TextBlock Text="Add only the services you want to use" FontSize="12" Foreground="{ThemeResource AppTextMutedBrush}" />
                     </StackPanel>
                 </Border>
 
@@ -51,7 +51,13 @@
             <!-- Quick Launch Platform Grid -->
             <StackPanel Spacing="14">
                 <TextBlock Text="Active platforms" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppTextMutedBrush}" />
-                <GridView x:Name="PlatformsGrid" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnPlatformCardClicked">
+                <Border x:Name="EmptyPlatformsPanel" Style="{StaticResource MinimalCardStyle}" MaxWidth="560" HorizontalAlignment="Left">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Your workspace is empty" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="Use Add platform in the sidebar to choose your first service. PINGGO will create its isolated Personal account when you add it." FontSize="14" Foreground="{ThemeResource AppTextMutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <GridView x:Name="PlatformsGrid" ItemContainerStyle="{StaticResource CardGridViewItemStyle}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnPlatformCardClicked">
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="models:SocialPlatform">
                             <Border Style="{StaticResource MinimalCardStyle}" Width="210" Height="88" Margin="0,0,10,10">

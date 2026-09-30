@@ -77,8 +77,7 @@ namespace PINGGO.Services
                         catch { }
 
                         HydrateAICredentials(data, legacyGeminiKey, legacyOpenAiKey);
-                        EnsureDefaultPlatforms(data);
-                        EnsurePrimaryAccounts(data);
+                        NormalizeCollections(data);
                         SaveData(data);
                         return data;
                     }
@@ -92,7 +91,7 @@ namespace PINGGO.Services
             // Create initial default data
             var defaultData = new AppData
             {
-                SocialPlatforms = SocialPlatform.DefaultPlatforms,
+                SocialPlatforms = new List<SocialPlatform>(),
                 Preferences = new AppPreferences(),
                 Bookmarks = new List<BrowserBookmark>
                 {
@@ -107,69 +106,17 @@ namespace PINGGO.Services
                 }
             };
 
-            // Seed initial accounts for primary platforms
-            foreach (var platform in defaultData.SocialPlatforms.Take(4))
-            {
-                defaultData.PlatformAccounts.Add(new PlatformAccount
-                {
-                    Id = Guid.NewGuid(),
-                    PlatformID = platform.Id,
-                    AccountName = "Personal",
-                    Color = platform.Color,
-                    Symbol = platform.Symbol,
-                    UsesLegacyStore = true
-                });
-            }
-
-            EnsurePrimaryAccounts(defaultData);
             HydrateAICredentials(defaultData, string.Empty, string.Empty);
             SaveData(defaultData);
             return defaultData;
         }
 
-        private void EnsureDefaultPlatforms(AppData data)
+        private static void NormalizeCollections(AppData data)
         {
-            if (data.SocialPlatforms == null || data.SocialPlatforms.Count == 0)
-            {
-                data.SocialPlatforms = SocialPlatform.DefaultPlatforms;
-                return;
-            }
-
-            // Add any newly introduced platforms from presets
-            var existingIds = new HashSet<string>(data.SocialPlatforms.Select(p => p.Id));
-            foreach (var preset in SocialPlatform.DefaultPlatforms)
-            {
-                if (!existingIds.Contains(preset.Id))
-                {
-                    data.SocialPlatforms.Add(preset);
-                }
-            }
-        }
-
-        private static void EnsurePrimaryAccounts(AppData data)
-        {
+            data.SocialPlatforms ??= new List<SocialPlatform>();
             data.PlatformAccounts ??= new List<PlatformAccount>();
-            foreach (var platform in data.SocialPlatforms)
-            {
-                if (!data.PlatformAccounts.Any(account => account.PlatformID == platform.Id))
-                {
-                    data.PlatformAccounts.Add(new PlatformAccount
-                    {
-                        PlatformID = platform.Id,
-                        AccountName = "Personal",
-                        Color = platform.Color,
-                        Symbol = platform.Symbol,
-                        UsesLegacyStore = true
-                    });
-                }
-            }
-            foreach (var accounts in data.PlatformAccounts.GroupBy(account => account.PlatformID))
-            {
-                if (!accounts.Any(account => account.UsesLegacyStore))
-                {
-                    accounts.First().UsesLegacyStore = true;
-                }
-            }
+            data.SelectedAccountIds ??= new Dictionary<string, Guid>();
+            data.Bookmarks ??= new List<BrowserBookmark>();
         }
 
         public bool DeleteProfileDirectory(Guid accountId)

@@ -96,7 +96,7 @@ namespace PINGGO.Views
             PlatformAccount? account = null;
             if (explicitAccountId.HasValue)
             {
-                account = data.Accounts.FirstOrDefault(a => a.Id == explicitAccountId.Value);
+                account = data.PlatformAccounts.FirstOrDefault(a => a.Id == explicitAccountId.Value);
             }
             if (account == null)
             {
@@ -498,7 +498,7 @@ namespace PINGGO.Views
                 {
                     Background = isUser
                         ? (Application.Current.Resources["AppAccentBrush"] as Microsoft.UI.Xaml.Media.Brush ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 99, 102, 241)))
-                        : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.Transparent),
+                        : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     BorderThickness = new Thickness(0),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(isUser ? 10 : 0, isUser ? 6 : 4, isUser ? 10 : 0, isUser ? 6 : 4),
@@ -511,7 +511,7 @@ namespace PINGGO.Views
                     Text = msg.Content,
                     FontSize = 11,
                     Foreground = Application.Current.Resources["AppTextBrush"] as Microsoft.UI.Xaml.Media.Brush
-                        ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.White),
+                        ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
                     TextWrapping = TextWrapping.Wrap
                 };
                 border.Child = text;
@@ -536,7 +536,7 @@ namespace PINGGO.Views
             var borderBrush = Application.Current.Resources["AppBorderBrush"] as Microsoft.UI.Xaml.Media.Brush;
             var textBrush = Application.Current.Resources["AppTextBrush"] as Microsoft.UI.Xaml.Media.Brush;
             var mutedBrush = Application.Current.Resources["AppTextMutedBrush"] as Microsoft.UI.Xaml.Media.Brush;
-            var whiteBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.White);
+            var whiteBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
             foreach (var btn in buttons)
             {

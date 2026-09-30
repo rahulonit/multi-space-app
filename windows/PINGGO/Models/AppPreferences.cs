@@ -8,7 +8,7 @@ namespace PINGGO.Models
         public string Language { get; set; } = "Follow System";
 
         [JsonPropertyName("appearance")]
-        public string Appearance { get; set; } = "Follow System"; // "Dark", "Light", "Follow System"
+        public string Appearance { get; set; } = "Dark"; // "Dark", "Light", "Follow System"
 
         [JsonPropertyName("accent")]
         public string Accent { get; set; } = "indigo";

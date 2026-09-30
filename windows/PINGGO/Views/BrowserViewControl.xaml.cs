@@ -12,10 +12,13 @@ namespace PINGGO.Views
     public sealed partial class BrowserViewControl : UserControl
     {
         public BrowserViewModel ViewModel => BrowserViewModel.Shared;
+        private bool _isWebViewInitialized;
+        private bool _isWebViewInitializing;
 
         public BrowserViewControl()
         {
             this.InitializeComponent();
+            DataContext = ViewModel;
             this.Loaded += OnControlLoaded;
 
             ViewModel.PropertyChanged += (s, e) =>
@@ -33,7 +36,14 @@ namespace PINGGO.Views
 
             ViewModel.OnNavigateRequested += (url) =>
             {
-                BrowserWebView.CoreWebView2?.Navigate(url);
+                if (BrowserWebView.CoreWebView2 != null)
+                {
+                    BrowserWebView.CoreWebView2.Navigate(url);
+                }
+                else
+                {
+                    _ = InitializeWebViewAsync();
+                }
                 UpdateStartPageVisibility();
             };
 
@@ -45,49 +55,69 @@ namespace PINGGO.Views
 
         private async void OnControlLoaded(object sender, RoutedEventArgs e)
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var browserProfilePath = Path.Combine(appData, "PINGGO", "BrowserProfile");
-            Directory.CreateDirectory(browserProfilePath);
+            await InitializeWebViewAsync();
+        }
 
-            var env = await CoreWebView2Environment.CreateAsync(null, browserProfilePath);
-            await BrowserWebView.EnsureCoreWebView2Async(env);
+        private async System.Threading.Tasks.Task InitializeWebViewAsync()
+        {
+            if (_isWebViewInitialized || _isWebViewInitializing) return;
+            _isWebViewInitializing = true;
 
-            AdBlockEngine.IsDomainWhitelisted = (domain) => ViewModel.WhitelistedDomains.Contains(domain);
-
-            AdBlockEngine.AttachToWebView(BrowserWebView.CoreWebView2, (count) =>
+            try
             {
-                App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                var browserProfilePath = Path.Combine(appData, "PINGGO", "BrowserProfile");
+                Directory.CreateDirectory(browserProfilePath);
+
+                var env = await CoreWebView2Environment.CreateWithOptionsAsync(null, browserProfilePath, null);
+                await BrowserWebView.EnsureCoreWebView2Async(env);
+
+                AdBlockEngine.IsDomainWhitelisted = (domain) => ViewModel.WhitelistedDomains.Contains(domain);
+
+                AdBlockEngine.AttachToWebView(BrowserWebView.CoreWebView2, (count) =>
                 {
-                    ViewModel.BlockedAdsCount = Math.Max(ViewModel.BlockedAdsCount, count);
-                    if (ViewModel.ActiveTab != null)
+                    App.CurrentWindow?.DispatcherQueue.TryEnqueue(() =>
                     {
-                        ViewModel.ActiveTab.BlockedAdsCount = ViewModel.BlockedAdsCount;
-                    }
+                        ViewModel.BlockedAdsCount = Math.Max(ViewModel.BlockedAdsCount, count);
+                        if (ViewModel.ActiveTab != null)
+                        {
+                            ViewModel.ActiveTab.BlockedAdsCount = ViewModel.BlockedAdsCount;
+                        }
+                    });
                 });
-            });
 
-            BrowserWebView.CoreWebView2.SourceChanged += (s, args) =>
-            {
-                var uri = BrowserWebView.Source;
-                if (uri != null && uri.AbsoluteUri != "about:blank")
+                BrowserWebView.CoreWebView2.SourceChanged += (s, args) =>
                 {
-                    ViewModel.UrlInput = uri.AbsoluteUri;
-                    if (ViewModel.ActiveTab != null)
+                    var uri = BrowserWebView.Source;
+                    if (uri != null && uri.AbsoluteUri != "about:blank")
                     {
-                        ViewModel.ActiveTab.UrlString = uri.AbsoluteUri;
-                        ViewModel.ActiveTab.Title = uri.Host;
-                        ViewModel.ActiveTab.FaviconUrl = $"https://www.google.com/s2/favicons?domain={uri.Host}&sz=64";
+                        ViewModel.UrlInput = uri.AbsoluteUri;
+                        if (ViewModel.ActiveTab != null)
+                        {
+                            ViewModel.ActiveTab.UrlString = uri.AbsoluteUri;
+                            ViewModel.ActiveTab.Title = string.IsNullOrWhiteSpace(uri.Host) ? "Browser" : uri.Host;
+                        }
+                        ViewModel.UpdateCurrentWhitelistedState();
+                        ViewModel.SaveSession();
                     }
-                    ViewModel.UpdateCurrentWhitelistedState();
-                    ViewModel.SaveSession();
+                };
+
+                _isWebViewInitialized = true;
+                UpdateStartPageVisibility();
+
+                if (!string.IsNullOrEmpty(ViewModel.UrlInput))
+                {
+                    BrowserWebView.CoreWebView2.Navigate(ViewModel.UrlInput);
                 }
-            };
-
-            UpdateStartPageVisibility();
-
-            if (!string.IsNullOrEmpty(ViewModel.UrlInput))
+            }
+            catch (Exception ex)
             {
-                BrowserWebView.CoreWebView2.Navigate(ViewModel.UrlInput);
+                MainViewModel.Shared.ShowToast("Browser could not start. Check the WebView2 Runtime.");
+                System.Diagnostics.Debug.WriteLine($"[BrowserViewControl] WebView initialization failed: {ex}");
+            }
+            finally
+            {
+                _isWebViewInitializing = false;
             }
         }
 

@@ -75,6 +75,10 @@ namespace PINGGO.Views
                     _ => ElementTheme.Default
                 };
             }
+            if (App.CurrentWindow is MainWindow mainWindow)
+            {
+                mainWindow.ApplyWindowTheme(appearance);
+            }
         }
 
         private void OnAiEngineChanged(object sender, SelectionChangedEventArgs e)

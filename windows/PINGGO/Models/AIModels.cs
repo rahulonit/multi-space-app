@@ -21,6 +21,9 @@ namespace PINGGO.Models
         [JsonPropertyName("rawNotifications")]
         public string RawNotifications { get; set; } = string.Empty;
 
+        [JsonPropertyName("messages")]
+        public List<PlatformMessagePreview> Messages { get; set; } = new();
+
         [JsonPropertyName("timestamp")]
         public DateTime Timestamp { get; set; } = DateTime.Now;
     }

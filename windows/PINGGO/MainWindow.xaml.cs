@@ -3,6 +3,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using PINGGO.Services;
 using PINGGO.ViewModels;
 using Windows.System;
@@ -18,6 +19,7 @@ namespace PINGGO
         public MainWindow()
         {
             this.InitializeComponent();
+            SystemBackdrop = new MicaBackdrop();
             SetupAppWindow();
 
             ViewModel.PropertyChanged += (s, e) =>
@@ -62,16 +64,26 @@ namespace PINGGO
                 _appWindow.Title = "PINGGO - Multi-Space App";
                 _appWindow.Resize(new Windows.Graphics.SizeInt32(1280, 840));
 
-                // Customize titlebar colors
-                if (AppWindowTitleBar.IsCustomizationSupported())
-                {
-                    var titleBar = _appWindow.TitleBar;
-                    titleBar.BackgroundColor = ColorHelper.FromArgb(255, 18, 21, 26);
-                    titleBar.ButtonBackgroundColor = ColorHelper.FromArgb(255, 18, 21, 26);
-                    titleBar.ButtonForegroundColor = Colors.White;
-                    titleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(255, 28, 33, 41);
-                }
+                ApplyWindowTheme(DataStoreService.Shared.CurrentData.Preferences.Appearance);
             }
+        }
+
+        public void ApplyWindowTheme(string appearance)
+        {
+            if (_appWindow == null || !AppWindowTitleBar.IsCustomizationSupported()) return;
+
+            var isLight = appearance == "Light" ||
+                (appearance == "Follow System" && Application.Current.RequestedTheme == ApplicationTheme.Light);
+            var background = isLight ? ColorHelper.FromArgb(255, 246, 248, 250) : ColorHelper.FromArgb(255, 18, 21, 26);
+            var foreground = isLight ? Colors.Black : Colors.White;
+            var hover = isLight ? ColorHelper.FromArgb(255, 234, 239, 244) : ColorHelper.FromArgb(255, 28, 33, 41);
+
+            _appWindow.TitleBar.BackgroundColor = background;
+            _appWindow.TitleBar.ButtonBackgroundColor = background;
+            _appWindow.TitleBar.ButtonForegroundColor = foreground;
+            _appWindow.TitleBar.ButtonHoverBackgroundColor = hover;
+            _appWindow.TitleBar.ButtonHoverForegroundColor = foreground;
+            _appWindow.TitleBar.IconShowOptions = IconShowOptions.ShowIconAndSystemMenu;
         }
 
         public void BringToFront()
