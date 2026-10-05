@@ -47,6 +47,23 @@ final class AppStore: ObservableObject {
     @Published var lastActiveTime: Date = .now
     @Published var toastMessage: String?
     @Published var browserRequestedURL: URL? = nil
+    @Published var showingUpgradeSheet: Bool = false
+    @Published var upgradeSheetReason: String = "Unlock all powerful workspace features"
+    @Published var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+
+    var isPro: Bool {
+        LicenseService.shared.isPro
+    }
+
+    func triggerUpgrade(reason: String) {
+        upgradeSheetReason = reason
+        showingUpgradeSheet = true
+    }
+
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+    }
 
     private var cancellables = Set<AnyCancellable>()
     private let fileURL: URL
@@ -124,6 +141,17 @@ final class AppStore: ObservableObject {
         }
         loadPlatformActivity()
         refreshSummaries()
+
+        NotificationService.shared.requestAuthorization()
+        DOMSelectorService.shared.fetchLatestRemoteSelectors()
+
+        NotificationCenter.default.addObserver(forName: Notification.Name("NavigateToPlatform"), object: nil, queue: .main) { [weak self] notif in
+            if let id = notif.object as? String {
+                Task { @MainActor [weak self] in
+                    self?.destination = .platform(id)
+                }
+            }
+        }
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: DispatchQueue.main)
@@ -261,6 +289,10 @@ final class AppStore: ObservableObject {
     @discardableResult
     func addAccount(to platformID: String, name: String, selectAsPrimary: Bool = true) -> PlatformAccount? {
         guard platform(platformID) != nil else { return nil }
+        if !isPro && platformAccounts.count >= 3 {
+            triggerUpgrade(reason: "Free tier allows up to 3 platform accounts. Upgrade to PINGGO Pro for unlimited accounts.")
+            return nil
+        }
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = accounts(for: platformID).count + 1
         let defaultName = count == 2 ? "Work" : "Account \(count)"
@@ -632,6 +664,10 @@ final class AppStore: ObservableObject {
         if isSplitView {
             isSplitView = false
         } else {
+            guard isPro else {
+                triggerUpgrade(reason: "Split-View multitasking and AI Cross-Bridge are PINGGO Pro features. Upgrade to work side-by-side.")
+                return
+            }
             let targetPlatformID: String? = {
                 if case .platform(let id) = destination { return id }
                 return socialPlatforms.first?.id
@@ -648,6 +684,10 @@ final class AppStore: ObservableObject {
     }
 
     func openInSplitView(platformID: String, accountID: UUID? = nil) {
+        guard isPro else {
+            triggerUpgrade(reason: "Split-View multitasking and AI Cross-Bridge are PINGGO Pro features. Upgrade to work side-by-side.")
+            return
+        }
         destination = .platform(platformID)
         let all = accounts(for: platformID)
         if let accountID {

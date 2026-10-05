@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PINGGO — The Native Multi-Space Workspace & AI Co-Pilot</title>
+  <meta name="description" content="Unify WhatsApp, Telegram, Slack, Discord, and more into isolated workspaces. Supercharged with in-context AI reading, Split View, and biometric privacy lock.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            darkBg: '#0B0F19',
+            cardBg: '#131B2E',
+            panelBg: '#1E293B',
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .glass { background: rgba(19, 27, 46, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glow-accent { box-shadow: 0 0 60px -15px rgba(99, 102, 241, 0.3); }
+  </style>
+</head>
+<body class="bg-darkBg text-slate-100 antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Navigation -->
+  <header class="fixed top-0 inset-x-0 z-50 glass border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-6 h-18 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-brand-500/20 font-extrabold text-xl text-white tracking-wider">
+          P
+        </div>
+        <span class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">PINGGO</span>
+      </div>
+
+      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+        <a href="#features" class="hover:text-white transition">Features</a>
+        <a href="#ai-copilot" class="hover:text-white transition">PINGGO AI</a>
+        <a href="#split-view" class="hover:text-white transition">Split View</a>
+        <a href="#pricing" class="hover:text-white transition">Pricing</a>
+        <a href="#faq" class="hover:text-white transition">FAQ</a>
+      </nav>
+
+      <div class="flex items-center gap-3">
+        <a href="#pricing" class="hidden sm:inline-flex text-sm font-semibold text-slate-300 hover:text-white px-4 py-2">Sign In</a>
+        <a href="#download" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow-md shadow-brand-500/25 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Download Free
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="pt-36 pb-20 px-6 relative overflow-hidden">
+    <div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-brand-600/15 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+    
+    <div class="max-w-5xl mx-auto text-center space-y-8">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass text-brand-300 border border-brand-500/30">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Native macOS & Windows • Zero Electron Bloat
+      </div>
+
+      <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.15] text-white">
+        The All-In-One Workspace for <br/>
+        <span class="bg-gradient-to-r from-indigo-400 via-brand-500 to-purple-400 bg-clip-text text-transparent">Modern Messaging & Productivity.</span>
+      </h1>
+
+      <p class="text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed">
+        Run multiple WhatsApp, Telegram, Slack, and Discord profiles simultaneously with strict session isolation. Supercharged with real-time in-chat AI reading, Split View, and Touch ID biometric privacy.
+      </p>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4" id="download">
+        <a href="dist/PINGGO.dmg" download class="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-white text-slate-900 hover:bg-slate-100 font-bold px-7 py-3.5 rounded-xl shadow-lg transition">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.47c.63-.78 1.05-1.87.93-2.97-.9.04-1.99.6-2.63 1.37-.57.67-.98 1.76-.85 2.83.99.08 1.93-.49 2.55-1.23z"/></svg>
+          Download for Mac (.dmg)
+        </a>
+
+        <a href="dist/windows/PINGGO.exe" download class="w-full sm:w-auto inline-flex items-center justify-center gap-3 glass hover:bg-white/10 text-white font-bold px-7 py-3.5 rounded-xl border border-white/10 transition">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.802"/></svg>
+          Download for Windows (.exe)
+        </a>
+      </div>
+
+      <div class="flex items-center justify-center gap-6 text-xs text-slate-400 pt-2">
+        <span>✓ macOS 14+ (Apple Silicon & Intel)</span>
+        <span>•</span>
+        <span>✓ Windows 10 & 11 (64-bit)</span>
+        <span>•</span>
+        <span>✓ Free 3-Account Tier</span>
+      </div>
+    </div>
+
+    <!-- UI Mockup Preview -->
+    <div class="max-w-6xl mx-auto mt-16 rounded-2xl glass p-3 border border-white/10 shadow-2xl glow-accent">
+      <div class="bg-darkBg rounded-xl overflow-hidden border border-white/5">
+        <div class="h-10 bg-slate-900/80 px-4 flex items-center justify-between border-b border-white/5">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+          </div>
+          <div class="text-xs font-medium text-slate-400 bg-slate-800/60 px-4 py-1 rounded-md">
+            web.whatsapp.com · Shivam Rajput NIC
+          </div>
+          <div class="flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
+            <span>●</span> PINGGO AI Active
+          </div>
+        </div>
+        <div class="grid grid-cols-12 min-h-[440px]">
+          <!-- Sidebar -->
+          <div class="col-span-1 bg-slate-950 p-3 flex flex-col items-center gap-4 border-r border-white/5">
+            <div class="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">W</div>
+            <div class="w-9 h-9 rounded-lg bg-sky-500 flex items-center justify-center text-white font-bold text-sm">T</div>
+            <div class="w-9 h-9 rounded-lg bg-purple-600 flex items-center justify-center text-white font-bold text-sm">S</div>
+            <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">D</div>
+            <div class="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 font-bold text-sm">+</div>
+          </div>
+          <!-- Chat Window -->
+          <div class="col-span-7 bg-slate-900/50 p-6 flex flex-col justify-between border-r border-white/5">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-white/5">
+                <div>
+                  <h4 class="font-bold text-sm text-white">Shivam Rajput NIC</h4>
+                  <p class="text-xs text-slate-400">+91 98112 52690 · Online</p>
+                </div>
+                <span class="text-xs text-slate-400">1-on-1 Direct Chat</span>
+              </div>
+              <div class="space-y-3 pt-2">
+                <div class="bg-slate-800 text-slate-200 text-xs p-3 rounded-xl max-w-md">
+                  📄 <strong>2.CPPP Tender Statistical Report - September 2026.pdf</strong><br/>
+                  <span class="text-slate-400 text-[10px]">20 pages · PDF · 1 MB</span>
+                </div>
+                <div class="bg-brand-600 text-white text-xs p-3 rounded-xl max-w-md ml-auto">
+                  Received! Analyzing the eProcurement metrics with PINGGO AI now.
+                </div>
+              </div>
+            </div>
+            <div class="bg-slate-800/80 rounded-lg p-2.5 flex items-center gap-2 text-xs text-slate-400">
+              <span>Type a message...</span>
+            </div>
+          </div>
+          <!-- PINGGO AI Drawer -->
+          <div class="col-span-4 bg-slate-950 p-5 flex flex-col justify-between">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-purple-400">PINGGO AI Co-Pilot</span>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full font-semibold">Gemini 2.5 Flash</span>
+              </div>
+              <div class="bg-slate-900 p-3 rounded-lg border border-white/5 text-xs text-slate-300 space-y-2">
+                <p class="font-semibold text-white">⚡ Instant Document Summary:</p>
+                <p class="text-slate-400 text-[11px] leading-relaxed">The attached CPPP Tender report shows a 14% increase in eProcurement value for September. Action items: confirm tender bid deadlines by Thursday.</p>
+              </div>
+              <div class="space-y-1.5 pt-1">
+                <span class="text-[11px] text-slate-400 font-medium">1-Click Smart Replies:</span>
+                <div class="flex flex-col gap-1.5">
+                  <button class="text-left text-[11px] bg-slate-900 hover:bg-slate-800 text-slate-300 p-2 rounded border border-white/5 transition">"Thanks Shivam, reviewing the tender statistics now."</button>
+                  <button class="text-left text-[11px] bg-slate-900 hover:bg-slate-800 text-slate-300 p-2 rounded border border-white/5 transition">"Can you share the deadline table from page 4?"</button>
+                </div>
+              </div>
+            </div>
+            <button class="w-full bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 rounded-lg transition">
+              Export Roster to CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section id="features" class="py-24 px-6 border-t border-white/5 bg-slate-950/50">
+    <div class="max-w-7xl mx-auto space-y-16">
+      <div class="text-center space-y-3 max-w-3xl mx-auto">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-brand-400">Architected for Power Users</h2>
+        <h3 class="text-3xl sm:text-4xl font-extrabold text-white">Everything You Need to Master Your Workspaces.</h3>
+        <p class="text-slate-400 text-base">Say goodbye to dozens of open browser tabs and heavy Electron apps hogging 8 GB of RAM.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Feature 1 -->
+        <div class="glass p-8 rounded-2xl space-y-4">
+          <div class="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center font-bold text-xl">
+            🔒
+          </div>
+          <h4 class="text-xl font-bold text-white">Multi-Account Isolation</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Run Work WhatsApp and Personal WhatsApp side-by-side. Each account uses an isolated WebKit container partition with zero cookie or session collision.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="glass p-8 rounded-2xl space-y-4" id="ai-copilot">
+          <div class="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xl">
+            ✨
+          </div>
+          <h4 class="text-xl font-bold text-white">In-Context PINGGO AI</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            PINGGO reads the active chat transcript in real-time. Summarize long threads, identify urgencies, draft replies, and extract group admins with 1-click.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="glass p-8 rounded-2xl space-y-4" id="split-view">
+          <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold text-xl">
+            ⚡
+          </div>
+          <h4 class="text-xl font-bold text-white">Split-View & AI Bridge</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Work in two platforms simultaneously with resizable split panes (<kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-xs">⌘\</kbd>). Use the AI Bridge to cross-analyze agreements and conflicts between both panes.
+          </p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="glass p-8 rounded-2xl space-y-4">
+          <div class="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl">
+            🛡️
+          </div>
+          <h4 class="text-xl font-bold text-white">Biometric Privacy Lock</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            One-click lock (<kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-xs">⌘L</kbd>) with Touch ID or PIN. When locked, background observers and OS accessibility trees are completely suspended.
+          </p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="glass p-8 rounded-2xl space-y-4">
+          <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xl">
+            📊
+          </div>
+          <h4 class="text-xl font-bold text-white">Group Member Roster Export</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Instantly export group participant names, phone numbers, usernames, and admin roles into clean, formatted CSV and JSON spreadsheets for CRM syncing.
+          </p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="glass p-8 rounded-2xl space-y-4">
+          <div class="w-12 h-12 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-xl">
+            🌐
+          </div>
+          <h4 class="text-xl font-bold text-white">Private Browser & AdBlock</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Built-in multi-tab private browser with network-level tracker and ad blocking. Keep research tabs right next to your chat channels.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="py-24 px-6 border-t border-white/5">
+    <div class="max-w-5xl mx-auto space-y-16">
+      <div class="text-center space-y-3">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-brand-400">Simple, Transparent Pricing</h2>
+        <h3 class="text-3xl sm:text-4xl font-extrabold text-white">Invest in Your Productivity.</h3>
+        <p class="text-slate-400 text-base">Start free. Upgrade to Pro when you need unlimited power.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        <!-- Free Tier -->
+        <div class="glass p-8 rounded-3xl flex flex-col justify-between border border-white/10">
+          <div class="space-y-6">
+            <div>
+              <span class="text-sm font-bold text-slate-400 uppercase tracking-wider">Free Starter</span>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="text-4xl font-extrabold text-white">$0</span>
+                <span class="text-slate-400 text-sm">forever</span>
+              </div>
+              <p class="text-slate-400 text-sm mt-2">Essential chat aggregation for casual personal use.</p>
+            </div>
+
+            <ul class="space-y-3 text-sm text-slate-300">
+              <li class="flex items-center gap-2">✓ Up to 3 platform accounts</li>
+              <li class="flex items-center gap-2">✓ Single workspace layout</li>
+              <li class="flex items-center gap-2">✓ Built-in Local Smart Heuristic AI</li>
+              <li class="flex items-center gap-2">✓ Touch ID / PIN Privacy Lock</li>
+              <li class="flex items-center gap-2">✓ Private Browser with AdBlock</li>
+            </ul>
+          </div>
+
+          <a href="#download" class="mt-8 block text-center bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-xl transition">
+            Download Free
+          </a>
+        </div>
+
+        <!-- Pro Tier -->
+        <div class="glass p-8 rounded-3xl flex flex-col justify-between border-2 border-brand-500 relative shadow-2xl shadow-brand-500/20">
+          <div class="absolute -top-3.5 right-6 bg-gradient-to-r from-brand-600 to-indigo-500 text-white text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow">
+            Most Popular
+          </div>
+
+          <div class="space-y-6">
+            <div>
+              <span class="text-sm font-bold text-brand-400 uppercase tracking-wider">PINGGO Pro</span>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="text-4xl font-extrabold text-white">$79</span>
+                <span class="text-slate-400 text-sm">/ year ($6.58/mo)</span>
+              </div>
+              <p class="text-slate-400 text-sm mt-2">or $9.99 billed monthly. Cancel anytime.</p>
+            </div>
+
+            <ul class="space-y-3 text-sm text-slate-300">
+              <li class="flex items-center gap-2"><strong class="text-white">✓ Unlimited</strong> connected social accounts</li>
+              <li class="flex items-center gap-2"><strong class="text-white">✓ Split-View</strong> horizontal & vertical multitasking</li>
+              <li class="flex items-center gap-2"><strong class="text-white">✓ Cross-Pane AI Bridge</strong> conversation synthesis</li>
+              <li class="flex items-center gap-2"><strong class="text-white">✓ 1-Click Roster CSV/JSON</strong> member data export</li>
+              <li class="flex items-center gap-2">✓ Full Network Ad & Tracker Blocking</li>
+              <li class="flex items-center gap-2">✓ Priority Email & Chat Support</li>
+            </ul>
+          </div>
+
+          <a href="https://pinggo.lemonsqueezy.com/buy" target="_blank" class="mt-8 block text-center bg-brand-600 hover:bg-brand-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-500/25 transition">
+            Get PINGGO Pro License
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="py-24 px-6 border-t border-white/5 bg-slate-950/50">
+    <div class="max-w-4xl mx-auto space-y-12">
+      <div class="text-center space-y-2">
+        <h3 class="text-3xl font-extrabold text-white">Frequently Asked Questions</h3>
+        <p class="text-slate-400">Everything you need to know about safety, privacy, and performance.</p>
+      </div>
+
+      <div class="space-y-6">
+        <div class="glass p-6 rounded-xl space-y-2">
+          <h4 class="font-bold text-white text-base">Is PINGGO safe for my WhatsApp and Telegram accounts?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Yes, 100%. PINGGO loads the official web clients (web.whatsapp.com, web.telegram.org) inside standard native WebKit/WebView2 browser partitions. It does not use unauthorized reverse-engineered APIs, so your phone number is never at risk of being flagged or banned.
+          </p>
+        </div>
+
+        <div class="glass p-6 rounded-xl space-y-2">
+          <h4 class="font-bold text-white text-base">Does PINGGO send my chat messages to third-party servers?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            No. PINGGO operates strictly on-device. When using PINGGO AI, transcripts are only sent directly to your selected provider (Google Gemini, OpenAI, or your own local Ollama instance). If you use the built-in offline smart engine, zero data leaves your Mac or PC.
+          </p>
+        </div>
+
+        <div class="glass p-6 rounded-xl space-y-2">
+          <h4 class="font-bold text-white text-base">Why is PINGGO faster and lighter than Franz, Ferdi, or Rambox?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Legacy apps bundle an entire Electron and Chromium runtime for every single window. PINGGO is written natively in Swift (macOS) and C# WinUI 3 (Windows), tapping directly into the operating system's built-in web engine for 4x lower RAM consumption.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-12 px-6 border-t border-white/5 text-center text-xs text-slate-500 space-y-4">
+    <p>© 2026 PINGGO Technologies. All rights reserved.</p>
+    <div class="flex items-center justify-center gap-6">
+      <a href="#features" class="hover:text-slate-400 transition">Features</a>
+      <a href="#pricing" class="hover:text-slate-400 transition">Pricing</a>
+      <a href="#download" class="hover:text-slate-400 transition">Download</a>
+      <a href="https://github.com/rahulonit/multi-space-app" target="_blank" class="hover:text-slate-400 transition">GitHub</a>
+    </div>
+  </footer>
+
+</body>
+</html>

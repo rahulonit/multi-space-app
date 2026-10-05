@@ -48,6 +48,16 @@ struct ContentView: View {
         .sheet(item: $store.editingPlatform) { platform in
             EditPlatformSheet(platform: platform)
         }
+        .sheet(isPresented: $store.showingUpgradeSheet) {
+            UpgradeProSheet(featureReason: store.upgradeSheetReason)
+        }
+        .sheet(isPresented: Binding(
+            get: { !store.hasCompletedOnboarding },
+            set: { _ in }
+        )) {
+            OnboardingView()
+                .environmentObject(store)
+        }
         .overlay {
             if store.showingCommandPalette && !store.isAppLocked {
                 CommandPaletteView()

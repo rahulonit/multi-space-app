@@ -880,6 +880,19 @@ private struct PortalBrowser: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         if let error = session.error {
                             VStack(spacing: 12) {
+                                HStack {
+                                    Spacer()
+                                    Button {
+                                        session.error = nil
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(Palette.muted)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.bottom, -6)
+
                                 Image(systemName: "wifi.exclamationmark")
                                     .font(.system(size: 28))
                                     .foregroundStyle(Palette.accent)
@@ -1416,6 +1429,12 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let selectorScript = DOMSelectorService.shared.generateInjectionScript()
+        if !selectorScript.isEmpty {
+            configuration.userContentController.addUserScript(WKUserScript(source: selectorScript,
+                                                                           injectionTime: .atDocumentStart,
+                                                                           forMainFrameOnly: false))
+        }
         configuration.userContentController.addUserScript(WKUserScript(source: Self.passkeyScript,
                                                                        injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
@@ -2058,7 +2077,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
-        report(error)
+        print("[PortalSession] Download failed: \(error.localizedDescription)")
     }
 
     private func isExternalURL(_ url: URL) -> Bool {
@@ -2112,7 +2131,41 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     }
 
     private func report(_ failure: Error) {
-        if (failure as NSError).code == NSURLErrorCancelled { return }
+        let nsError = failure as NSError
+
+        // 1. Ignore user or system cancellation (-999 in NSURLErrorDomain)
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return
+        }
+
+        // 2. Ignore WebKit policy decisions and frame load interruptions.
+        // When WebKit delegates a link to an external browser, or converts a file navigation
+        // (PDF, docx, xlsx, pptx, zip, etc.) into a download via decisionHandler(.download),
+        // WebKit automatically terminates the frame navigation with WebKitErrorDomain code 102
+        // ("Frame load interrupted") or code 100 ("WebKitErrorCannotShowMIMEType").
+        // This is standard WebKit download/routing behavior, NEVER a portal failure!
+        if nsError.code == 102 ||
+           nsError.domain == "WebKitErrorDomain" ||
+           nsError.domain == "_WKErrorDomain" ||
+           nsError.localizedDescription.localizedCaseInsensitiveContains("Frame load interrupted") {
+            return
+        }
+
+        // 3. Ignore non-fatal MIME or plugin handling codes
+        if nsError.code == 100 || nsError.code == 101 || nsError.code == 204 {
+            return
+        }
+
+        // 4. If the platform portal is already loaded and operational (i.e. WhatsApp, Telegram,
+        // Slack, etc. is already up and running), any subnavigation, attachment download, or
+        // background iframe failure must NEVER cover or disrupt the working workspace.
+        if let currentHost = webView.url?.host?.lowercased(),
+           let homeHost = homeURL.host?.lowercased(),
+           currentHost == homeHost || currentHost.hasSuffix(".\(homeHost)") {
+            print("[PortalSession] Suppressed non-fatal in-portal navigation error on \(platformID): \(failure.localizedDescription)")
+            return
+        }
+
         isLoading = false
         error = failure.localizedDescription
         updateNavigation()
@@ -4375,6 +4428,10 @@ struct AICopilotDrawer: View {
 
     // MARK: - Export Helpers
     private func exportMembersCSV(openInFinder: Bool = true) {
+        guard store.isPro else {
+            store.triggerUpgrade(reason: "Group Member Roster CSV & JSON export is a PINGGO Pro feature.")
+            return
+        }
         guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
             store.showToast("No member details to export")
             return
@@ -4407,6 +4464,10 @@ struct AICopilotDrawer: View {
     }
 
     private func copyMembersCSV() {
+        guard store.isPro else {
+            store.triggerUpgrade(reason: "Group Member Roster CSV & JSON export is a PINGGO Pro feature.")
+            return
+        }
         guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
             store.showToast("No member details to copy")
             return
@@ -4418,6 +4479,10 @@ struct AICopilotDrawer: View {
     }
 
     private func copyMembersJSON() {
+        guard store.isPro else {
+            store.triggerUpgrade(reason: "Group Member Roster CSV & JSON export is a PINGGO Pro feature.")
+            return
+        }
         guard let ctx = activeContext, !ctx.effectiveMembers.isEmpty else {
             store.showToast("No member details to copy")
             return

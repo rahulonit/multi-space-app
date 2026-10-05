@@ -11,6 +11,7 @@ enum Palette {
     // Quiet, low-chroma surfaces keep dense communication UI readable without
     // turning every nested panel into a separate visual layer.
     static var background: Color { light ? Color(red: 0.965, green: 0.970, blue: 0.978) : Color(red: 0.047, green: 0.052, blue: 0.063) }
+    static var window: Color { background }
     static var sidebar: Color { light ? Color(red: 0.945, green: 0.951, blue: 0.961) : Color(red: 0.059, green: 0.065, blue: 0.078) }
     static var panel: Color { light ? Color(red: 0.992, green: 0.994, blue: 0.997) : Color(red: 0.071, green: 0.078, blue: 0.092) }
     static var card: Color { light ? Color(red: 0.972, green: 0.976, blue: 0.983) : Color(red: 0.091, green: 0.099, blue: 0.116) }

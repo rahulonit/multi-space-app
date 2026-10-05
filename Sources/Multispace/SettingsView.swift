@@ -519,49 +519,66 @@ struct SettingsView: View {
     }
 
     private var cloudSubscriptionCard: some View {
-        settingsCard("Cloud Subscription & License", symbol: "crown.fill", color: .yellow) {
+        settingsCard("License & Subscription", symbol: "crown.fill", color: .yellow) {
             VStack(spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Text(store.userProfile.subscriptionTier)
+                            Text(LicenseService.shared.currentTier.rawValue)
                                 .font(.system(size: 14, weight: .bold))
-                            Text("ACTIVE")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundStyle(.green)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1.5)
-                                .background(Color.green.opacity(0.15), in: Capsule())
+                            if LicenseService.shared.isPro {
+                                Text("ACTIVE")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.green.opacity(0.15), in: Capsule())
+                            } else {
+                                Text("FREE TIER")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.gray.opacity(0.15), in: Capsule())
+                            }
                         }
-                        Text("Linked to \(store.userProfile.email)")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
+                        if let license = LicenseService.shared.activeLicense {
+                            Text("Key: \(license.key.prefix(8))••••••••")
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .foregroundStyle(Palette.muted)
+                        } else {
+                            Text("Up to 3 social accounts · Single workspace view")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Palette.muted)
+                        }
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Renews Oct 24, 2027")
-                            .font(.system(size: 11.5, weight: .medium))
-                        Text("Ref: #PG-\(abs(store.userProfile.email.hashValue % 90000) + 10000)")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.muted)
+                    if LicenseService.shared.isPro {
+                        Button("Deactivate") {
+                            LicenseService.shared.deactivate()
+                            store.showToast("License deactivated.")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Button("Upgrade to Pro") {
+                            store.triggerUpgrade(reason: "Unlock unlimited accounts, Split View, and Roster Export.")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     }
                 }
                 .padding(10)
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
 
                 HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Image(systemName: LicenseService.shared.isPro ? "checkmark.circle.fill" : "info.circle.fill")
+                        .foregroundStyle(LicenseService.shared.isPro ? .green : Palette.muted)
                         .font(.system(size: 12))
-                    Text("Cloud License verified via \(store.userProfile.provider ?? "Provider") In-App Billing.")
+                    Text(LicenseService.shared.isPro ? "All Pro features unlocked on this Mac." : "Upgrade to PINGGO Pro for $9.99/mo or $79/yr.")
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.muted)
                     Spacer()
-                    Button("Manage Plan") {
-                        page = .subscription
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
