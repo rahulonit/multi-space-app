@@ -19,6 +19,9 @@ final class AppStore: ObservableObject {
         didSet {
             persistAICredentials()
             UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences")
+            if preferences.cloudSyncEnabled && CloudSyncService.shared.isCloudConnected {
+                CloudSyncService.shared.pushPreferencesDebounced(store: self)
+            }
         }
     }
     @Published var userProfile: UserProfile = .init() {
@@ -52,7 +55,33 @@ final class AppStore: ObservableObject {
     @Published var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
     var isPro: Bool {
-        LicenseService.shared.isPro
+        if LicenseService.shared.isPro {
+            return true
+        }
+        if preferences.cloudTier.lowercased() == "pro" {
+            if let expiresAt = preferences.cloudTierExpiresAt {
+                return expiresAt > Date()
+            }
+            return true
+        }
+        return false
+    }
+
+    var isCloudProExpired: Bool {
+        if preferences.cloudTier.lowercased() == "pro" {
+            if let expiresAt = preferences.cloudTierExpiresAt {
+                return expiresAt <= Date()
+            }
+        }
+        return preferences.cloudSubscriptionStatus.lowercased() == "expired"
+    }
+
+    var subscriptionDaysRemaining: Int {
+        if let expiresAt = preferences.cloudTierExpiresAt {
+            let diff = expiresAt.timeIntervalSince(Date())
+            return max(0, Int(ceil(diff / 86400)))
+        }
+        return preferences.cloudDaysRemaining
     }
 
     func triggerUpgrade(reason: String) {
@@ -144,6 +173,8 @@ final class AppStore: ObservableObject {
 
         NotificationService.shared.requestAuthorization()
         DOMSelectorService.shared.fetchLatestRemoteSelectors()
+        NetworkMonitorService.shared.start()
+        MediaHardwareService.ensureMediaAccess()
 
         NotificationCenter.default.addObserver(forName: Notification.Name("NavigateToPlatform"), object: nil, queue: .main) { [weak self] notif in
             if let id = notif.object as? String {
@@ -152,6 +183,21 @@ final class AppStore: ObservableObject {
                 }
             }
         }
+
+        NotificationCenter.default.addObserver(forName: Notification.Name("OpenInAppBrowser"), object: nil, queue: .main) { [weak self] notif in
+            if let url = notif.object as? URL {
+                Task { @MainActor [weak self] in
+                    self?.openBrowser(url: url)
+                }
+            }
+        }
+
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                NotificationCenter.default.post(name: Notification.Name("SystemDidWakeFromSleep"), object: nil)
+            }
+            .store(in: &cancellables)
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: DispatchQueue.main)
@@ -181,8 +227,24 @@ final class AppStore: ObservableObject {
                         timeout: Double(self.preferences.tabFreezeMinutes * 60)
                     )
                 }
+                if self.preferences.cloudSyncEnabled && NetworkMonitorService.shared.isConnected {
+                    let lastSync = CloudSyncService.shared.lastSyncedAt ?? .distantPast
+                    if Date().timeIntervalSince(lastSync) > 300 {
+                        Task { @MainActor in
+                            await CloudSyncService.shared.syncNow(store: self)
+                        }
+                    }
+                }
             }
             .store(in: &cancellables)
+
+        if preferences.cloudSyncEnabled && !preferences.cloudAuthToken.isEmpty {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                CloudSyncService.shared.connectRealTimeWebSocket(store: self)
+                await CloudSyncService.shared.syncNow(store: self)
+            }
+        }
     }
 
     private func persistAICredentials() {
@@ -541,6 +603,20 @@ final class AppStore: ObservableObject {
         savePlatformActivity()
         updateDockBadge()
         refreshSummaries()
+
+        if !NSApp.isActive {
+            let platformName = platform(acc.platformID)?.name ?? "PINGGO"
+            for preview in previews where preview.isUnread == true {
+                NotificationService.shared.notifyNewMessage(
+                    platformName: platformName,
+                    platformID: acc.platformID,
+                    accountName: acc.name,
+                    sender: preview.sender,
+                    previewText: preview.text,
+                    messageID: preview.id
+                )
+            }
+        }
     }
 
     func refreshSummaries() {
@@ -1220,6 +1296,52 @@ final class AppStore: ObservableObject {
         default:
             break
         }
+    }
+
+    func updateRemoteSpaces(_ newSpaces: [Space]) {
+        for rSpace in newSpaces {
+            if let idx = data.spaces.firstIndex(where: { $0.id == rSpace.id }) {
+                data.spaces[idx] = rSpace
+            } else {
+                data.spaces.append(rSpace)
+            }
+        }
+        save()
+        objectWillChange.send()
+    }
+
+    func restorePreferencesFromCloud(_ payload: SyncedPreferencesPayload) {
+        preferences.appearance = payload.appearance
+        preferences.accent = payload.accent
+        preferences.compactMode = payload.compactMode
+        preferences.openLinksInAppBrowser = payload.openLinksInAppBrowser
+        preferences.showVideoHoverPill = payload.showVideoHoverPill
+        preferences.videoDownloadFolder = payload.videoDownloadFolder
+
+        if payload.syncAiSettings {
+            preferences.aiEnabled = payload.aiEnabled
+            preferences.aiProvider = payload.aiProvider
+            if !payload.openAiApiKey.isEmpty {
+                preferences.openAiApiKey = payload.openAiApiKey
+                preferences.isChatGptLoggedIn = true
+                KeychainHelper.savePassword(payload.openAiApiKey, account: KeychainHelper.openAIAPIAccount)
+            }
+            if !payload.geminiApiKey.isEmpty {
+                preferences.geminiApiKey = payload.geminiApiKey
+                preferences.isGeminiLoggedIn = true
+                KeychainHelper.savePassword(payload.geminiApiKey, account: KeychainHelper.geminiAPIAccount)
+            }
+            preferences.openAiModelTier = payload.openAiModelTier
+            preferences.geminiModelTier = payload.geminiModelTier
+            preferences.ollamaEndpoint = payload.ollamaEndpoint
+            preferences.ollamaModel = payload.ollamaModel
+            preferences.personaStyle = payload.personaStyle
+            preferences.defaultReplyTone = payload.defaultReplyTone
+            preferences.customAiPrompt = payload.customAiPrompt
+        }
+        persistAICredentials()
+        UserDefaults.standard.set(try? JSONEncoder().encode(preferences), forKey: "appPreferences")
+        objectWillChange.send()
     }
 
     private func save() {

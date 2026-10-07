@@ -904,6 +904,36 @@ struct AppPreferences: Codable, Equatable {
     var adBlockBlockAds: Bool = true
     var adBlockBlockTrackers: Bool = true
     var adBlockBlockCookieBanners: Bool = true
+    var openLinksInAppBrowser: Bool = true
+
+    // MARK: - Video & Media Download Preferences
+    var videoDownloadFolder: String = "" // Empty string defaults to ~/Downloads
+    var showVideoHoverPill: Bool = true
+
+    // MARK: - Cloud & MongoDB Sync Preferences
+    var cloudSyncEnabled: Bool = false
+    var cloudServerURL: String = "http://localhost:4000"
+    var cloudAuthToken: String = ""
+    var cloudUserEmail: String = ""
+    var syncSpaces: Bool = true
+    var syncBriefings: Bool = true
+    var syncBookmarks: Bool = true
+    var syncAiSettings: Bool = true
+
+    // MARK: - Cloud Tier & Subscription Preferences
+    var cloudTier: String = "free"
+    var cloudTierExpiresAt: Date? = nil
+    var cloudSubscriptionStatus: String = "free"
+    var cloudDaysRemaining: Int = 0
+    var cloudPlanName: String = "PINGGO Free"
+
+    // MARK: - Smart Reply & Focus Mode Preferences
+    var showSmartReplyBar: Bool = true
+    var vipContacts: [String] = []
+    var focusModeEnabled: Bool = false
+    var focusWorkHoursStart: Int = 9
+    var focusWorkHoursEnd: Int = 18
+    var focusMutedPlatforms: [String] = ["instagram", "reddit", "x", "tiktok"]
 
     enum CodingKeys: String, CodingKey {
         case language, appearance, accent, compactMode, openTo, launchWebsites, launchDelay
@@ -914,7 +944,11 @@ struct AppPreferences: Codable, Equatable {
         // loads and persists them through KeychainHelper instead.
         case aiModelTier, geminiModelTier, openAiModelTier, ollamaModelTier, ollamaEndpoint, ollamaModel, personaStyle
         case stealthModeDefault, defaultReplyTone, customAiPrompt
-        case adBlockBlockAds, adBlockBlockTrackers, adBlockBlockCookieBanners
+        case adBlockBlockAds, adBlockBlockTrackers, adBlockBlockCookieBanners, openLinksInAppBrowser
+        case videoDownloadFolder, showVideoHoverPill
+        case cloudSyncEnabled, cloudServerURL, cloudAuthToken, cloudUserEmail, syncSpaces, syncBriefings, syncBookmarks, syncAiSettings
+        case cloudTier, cloudTierExpiresAt, cloudSubscriptionStatus, cloudDaysRemaining, cloudPlanName
+        case showSmartReplyBar, vipContacts, focusModeEnabled, focusWorkHoursStart, focusWorkHoursEnd, focusMutedPlatforms
     }
 
     init() {}
@@ -960,8 +994,37 @@ struct AppPreferences: Codable, Equatable {
         adBlockBlockAds = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockAds) ?? true
         adBlockBlockTrackers = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockTrackers) ?? true
         adBlockBlockCookieBanners = try c.decodeIfPresent(Bool.self, forKey: .adBlockBlockCookieBanners) ?? true
+        openLinksInAppBrowser = try c.decodeIfPresent(Bool.self, forKey: .openLinksInAppBrowser) ?? true
+        videoDownloadFolder = try c.decodeIfPresent(String.self, forKey: .videoDownloadFolder) ?? ""
+        showVideoHoverPill = try c.decodeIfPresent(Bool.self, forKey: .showVideoHoverPill) ?? true
+        cloudSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .cloudSyncEnabled) ?? false
+        cloudServerURL = try c.decodeIfPresent(String.self, forKey: .cloudServerURL) ?? "http://localhost:4000"
+        cloudAuthToken = try c.decodeIfPresent(String.self, forKey: .cloudAuthToken) ?? ""
+        cloudUserEmail = try c.decodeIfPresent(String.self, forKey: .cloudUserEmail) ?? ""
+        syncSpaces = try c.decodeIfPresent(Bool.self, forKey: .syncSpaces) ?? true
+        syncBriefings = try c.decodeIfPresent(Bool.self, forKey: .syncBriefings) ?? true
+        syncBookmarks = try c.decodeIfPresent(Bool.self, forKey: .syncBookmarks) ?? true
+        syncAiSettings = try c.decodeIfPresent(Bool.self, forKey: .syncAiSettings) ?? true
+        cloudTier = try c.decodeIfPresent(String.self, forKey: .cloudTier) ?? "free"
+        cloudTierExpiresAt = try c.decodeIfPresent(Date.self, forKey: .cloudTierExpiresAt)
+        cloudSubscriptionStatus = try c.decodeIfPresent(String.self, forKey: .cloudSubscriptionStatus) ?? "free"
+        cloudDaysRemaining = try c.decodeIfPresent(Int.self, forKey: .cloudDaysRemaining) ?? 0
+        cloudPlanName = try c.decodeIfPresent(String.self, forKey: .cloudPlanName) ?? "PINGGO Free"
+        showSmartReplyBar = try c.decodeIfPresent(Bool.self, forKey: .showSmartReplyBar) ?? true
+        vipContacts = try c.decodeIfPresent([String].self, forKey: .vipContacts) ?? []
+        focusModeEnabled = try c.decodeIfPresent(Bool.self, forKey: .focusModeEnabled) ?? false
+        focusWorkHoursStart = try c.decodeIfPresent(Int.self, forKey: .focusWorkHoursStart) ?? 9
+        focusWorkHoursEnd = try c.decodeIfPresent(Int.self, forKey: .focusWorkHoursEnd) ?? 18
+        focusMutedPlatforms = try c.decodeIfPresent([String].self, forKey: .focusMutedPlatforms) ?? ["instagram", "reddit", "x", "tiktok"]
     }
 
+}
+
+struct CopilotSmartAction: Identifiable, Hashable, Codable {
+    var id: String { label }
+    var label: String
+    var icon: String
+    var promptToRun: String
 }
 
 struct CopilotMessage: Identifiable, Hashable, Codable {
@@ -969,6 +1032,9 @@ struct CopilotMessage: Identifiable, Hashable, Codable {
     var role: String // "user" or "assistant"
     var content: String
     var timestamp: Date = .now
+    var providerBadge: String? = nil
+    var isDraftReply: Bool = false
+    var smartActions: [CopilotSmartAction]? = nil
 }
 
 enum PersonaStyle: String, CaseIterable, Identifiable {

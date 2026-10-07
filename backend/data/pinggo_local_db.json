@@ -1,0 +1,143 @@
+{
+  "users": [
+    {
+      "email": "user_test_1791358013359@example.com",
+      "password": "$2a$10$V.oCgW93IFzSQzRrT9wtt.XKZkERlVap5iG8ZHh0OfB4n7W5o879W",
+      "displayName": "Test Explorer",
+      "tier": "free",
+      "devices": [
+        {
+          "deviceId": "mac-test-device-uuid",
+          "platform": "macOS",
+          "lastActiveAt": "2026-10-07T07:26:53.468Z"
+        },
+        {
+          "deviceId": "mac-test-device-uuid",
+          "platform": "macOS",
+          "lastActiveAt": "2026-10-07T07:26:53.543Z"
+        }
+      ],
+      "createdAt": "2026-10-07T07:26:53.468Z",
+      "updatedAt": "2026-10-07T07:26:53.543Z",
+      "_id": "6ac5f43dc909e53dccc65061"
+    },
+    {
+      "email": "pinggo_user@example.com",
+      "password": "$2a$10$gJi9.GN1GMs3t/8XajxLIew0N65CCDC8B.LU5nqIEmX8u/SrcdphW",
+      "displayName": "PINGGO Desktop User",
+      "tier": "free",
+      "devices": [
+        {
+          "deviceId": "mac-desktop-client-01",
+          "platform": "macOS",
+          "lastActiveAt": "2026-10-07T07:32:16.565Z"
+        }
+      ],
+      "createdAt": "2026-10-07T07:32:16.565Z",
+      "updatedAt": "2026-10-07T07:32:16.565Z",
+      "_id": "6ac5f580c909e53dccc65064"
+    },
+    {
+      "email": "sub_test_1791359017200@example.com",
+      "password": "$2a$10$XxlQt83tk.ClRWEehotgo.orPUJtEnHl3JYUfeHtyOj1j3BYQEpxu",
+      "displayName": "Tier User",
+      "tier": "pro",
+      "tierExpiresAt": "2026-10-05T07:43:37.362Z",
+      "subscriptionStatus": "active",
+      "planName": "PINGGO Pro (Monthly)",
+      "devices": [],
+      "createdAt": "2026-10-07T07:43:37.316Z",
+      "updatedAt": "2026-10-07T07:43:37.329Z",
+      "_id": "6ac5f829cdb4d771d8541a37",
+      "lastPaymentAt": "2026-10-07T07:43:37.329Z",
+      "lastPaymentMethod": "In-App Payment / Card"
+    },
+    {
+      "email": "sub_test_1791359156444@example.com",
+      "password": "$2a$10$foCAC0DKZG2qO4FZgfKii.K.dG.AyFawUo.XGTatQNem/WfQzCHOi",
+      "displayName": "Tier User",
+      "tier": "pro",
+      "tierExpiresAt": "2027-10-07T07:45:56.691Z",
+      "subscriptionStatus": "active",
+      "planName": "PINGGO Pro (Annual)",
+      "devices": [],
+      "createdAt": "2026-10-07T07:45:56.584Z",
+      "updatedAt": "2026-10-07T07:45:56.691Z",
+      "_id": "6ac5f8b4e139aac952e57ac6",
+      "lastPaymentAt": "2026-10-07T07:45:56.691Z",
+      "lastPaymentMethod": "Repayment / Card",
+      "previousTier": "pro",
+      "expiredAt": "2026-10-07T06:45:56.615Z"
+    },
+    {
+      "email": "rahulonit@gmail.com",
+      "password": "$2a$10$0klM/4T.H2lMt5iOUagakeJGX7KsCYGG.nAUIpoCeF36557iOpWOG",
+      "displayName": "Rahul Kumar",
+      "tier": "free",
+      "tierExpiresAt": null,
+      "subscriptionStatus": "free",
+      "planName": "PINGGO Free",
+      "devices": [],
+      "createdAt": "2026-10-07T08:31:36.514Z",
+      "updatedAt": "2026-10-07T08:31:36.514Z",
+      "_id": "6ac60368e139aac952e57ac7"
+    }
+  ],
+  "spaces": [
+    {
+      "userId": "6ac5f43dc909e53dccc65061",
+      "id": "space-test-1",
+      "name": "Work WhatsApp",
+      "platform": "WhatsApp",
+      "port": 10001,
+      "updatedAt": "2026-10-07T07:26:53.547Z",
+      "_id": "6ac5f43dc909e53dccc65062"
+    },
+    {
+      "userId": "6ac5f580c909e53dccc65064",
+      "id": "space-whatsapp",
+      "name": "WhatsApp Business",
+      "platform": "WhatsApp",
+      "port": 10001,
+      "updatedAt": "2026-10-07T07:32:17.173Z",
+      "_id": "6ac5f581c909e53dccc65065"
+    },
+    {
+      "userId": "6ac5f580c909e53dccc65064",
+      "id": "space-telegram",
+      "name": "Telegram Core",
+      "platform": "Telegram",
+      "port": 10002,
+      "updatedAt": "2026-10-07T07:32:17.174Z",
+      "_id": "6ac5f581c909e53dccc65066"
+    }
+  ],
+  "preferences": [
+    {
+      "userId": "6ac5f43dc909e53dccc65061",
+      "theme": "dark",
+      "syncAiSettings": true,
+      "defaultAiEngine": "ChatGPT",
+      "openAiApiKey": "sk-proj-testkey1234567890",
+      "claudeApiKey": "sk-ant-testclaude987654321",
+      "geminiApiKey": "AIzaSyTestGeminiKey123",
+      "deepseekApiKey": "sk-deepseek-testkey",
+      "updatedAt": "2026-10-07T07:26:53.547Z",
+      "_id": "6ac5f43dc909e53dccc65063"
+    },
+    {
+      "userId": "6ac5f580c909e53dccc65064",
+      "appearance": "Dark",
+      "accent": "indigo",
+      "syncAiSettings": true,
+      "defaultAiEngine": "ChatGPT",
+      "openAiApiKey": "sk-proj-prod-live-openai-key-mac",
+      "geminiApiKey": "AIzaSyProdLiveGeminiKeyMac",
+      "claudeApiKey": "sk-ant-live-claude-key-mac",
+      "updatedAt": "2026-10-07T07:32:17.175Z",
+      "_id": "6ac5f581c909e53dccc65067"
+    }
+  ],
+  "ai_briefings": [],
+  "browser_bookmarks": []
+}

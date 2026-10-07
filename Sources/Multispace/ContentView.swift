@@ -50,6 +50,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $store.showingUpgradeSheet) {
             UpgradeProSheet(featureReason: store.upgradeSheetReason)
+                .environmentObject(store)
         }
         .sheet(isPresented: Binding(
             get: { !store.hasCompletedOnboarding },

@@ -161,13 +161,120 @@ struct CommandPaletteView: View {
             }
         }
 
+        // Spaces & Channels
+        for space in store.data.spaces {
+            list.append(Item(
+                id: "space-\(space.id.uuidString)",
+                title: space.name,
+                subtitle: space.detail,
+                category: "Spaces",
+                symbol: space.symbol,
+                platform: nil,
+                badge: "Space"
+            ) {
+                store.activeSpaceID = space.id
+                store.destination = .home
+            })
+        }
+        for channel in store.data.channels {
+            if let space = store.data.spaces.first(where: { $0.id == channel.spaceID }) {
+                list.append(Item(
+                    id: "channel-\(channel.id.uuidString)",
+                    title: "#\(channel.name)",
+                    subtitle: "\(space.name) · \(channel.topic)",
+                    category: "Spaces",
+                    symbol: "number",
+                    platform: nil,
+                    badge: "Channel"
+                ) {
+                    store.activeSpaceID = space.id
+                    store.destination = .home
+                })
+            }
+        }
+
+        // Browser Bookmarks
+        for bm in store.browserState.bookmarks {
+            list.append(Item(
+                id: "bm-\(bm.id.uuidString)",
+                title: bm.title,
+                subtitle: bm.urlString,
+                category: "Bookmarks",
+                symbol: bm.symbol,
+                platform: nil,
+                badge: "Web"
+            ) {
+                if let url = URL(string: bm.urlString) {
+                    store.openBrowser(url: url)
+                }
+            })
+        }
+
+        // Media Downloads
+        for download in VideoDownloadManager.shared.activeDownloads.prefix(8) {
+            list.append(Item(
+                id: "dl-\(download.id.uuidString)",
+                title: download.title,
+                subtitle: download.isComplete ? "Downloaded (\(download.qualityLabel))" : download.statusText,
+                category: "Downloads",
+                symbol: download.isComplete ? "arrow.down.circle.fill" : "arrow.down.circle",
+                platform: nil,
+                badge: download.isComplete ? "Done" : "\(Int(download.progress * 100))%"
+            ) {
+                if let fileURL = download.savedFileURL {
+                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                }
+            })
+        }
+
+        // Cloud Sync Action
+        list.append(Item(
+            id: "act-cloud-sync",
+            title: "Sync with MongoDB Atlas",
+            subtitle: "Push and pull latest workspaces and preferences to cloud",
+            category: "Actions",
+            symbol: "cloud.fill",
+            platform: nil,
+            badge: "Cloud"
+        ) {
+            Task {
+                await CloudSyncService.shared.syncNow(store: store)
+            }
+        })
+
         return list
     }
 
+    @State private var selectedCategory: String = "All"
+    private let categories = ["All", "Apps", "Messages", "Actions", "Bookmarks", "Spaces", "Downloads"]
+
     private var filteredItems: [Item] {
         let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return allItems }
-        return allItems.filter { item in
+        var items = allItems
+
+        if selectedCategory != "All" {
+            items = items.filter { item in
+                switch selectedCategory {
+                case "Apps":
+                    return item.category == "Social Apps" || item.category == "Accounts"
+                case "Messages":
+                    return item.category == "Recent Messages" || item.category == "Active Contacts"
+                case "Actions":
+                    return item.category == "Actions" || item.category == "Navigation" || item.category == "AI Assistant"
+                case "Bookmarks":
+                    return item.category == "Bookmarks"
+                case "Spaces":
+                    return item.category == "Spaces" || item.category == "Channels"
+                case "Downloads":
+                    return item.category == "Downloads"
+                default:
+                    return true
+                }
+            }
+        }
+
+        guard !clean.isEmpty else { return items }
+        return items.filter { item in
             item.title.localizedCaseInsensitiveContains(clean) ||
             (item.subtitle?.localizedCaseInsensitiveContains(clean) ?? false) ||
             item.category.localizedCaseInsensitiveContains(clean)
@@ -209,6 +316,32 @@ struct CommandPaletteView: View {
                 }
                 .padding(16)
                 .background(Palette.panel)
+
+                Divider()
+
+                // Category Filter Chips
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(categories, id: \.self) { cat in
+                            let isSelected = (selectedCategory == cat)
+                            Button {
+                                selectedCategory = cat
+                                selectedIndex = 0
+                            } label: {
+                                Text(cat)
+                                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(isSelected ? Palette.accent : Palette.panel, in: Capsule())
+                                    .foregroundStyle(isSelected ? .white : Palette.muted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                }
+                .background(Palette.sidebar)
 
                 Divider()
 

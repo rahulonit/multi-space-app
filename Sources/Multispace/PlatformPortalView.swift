@@ -573,6 +573,7 @@ private struct PortalBrowser: View {
     @State private var dismissedPasskeyBanner = false
     @State private var showingAIDrawer = false
     @State private var copilotWidth: CGFloat = 380
+    @State private var showingPortalDownloadsPopover = false
     @ObservedObject private var downloadManager: VideoDownloadManager = VideoDownloadManager.shared
 
     private var isAuthenticationPage: Bool {
@@ -766,17 +767,26 @@ private struct PortalBrowser: View {
                 // Active Downloads indicator for this platform
                 let activeMedia = downloadManager.activeDownloads.filter { !$0.isComplete && $0.error == nil }
                 if !activeMedia.isEmpty {
-                    HStack(spacing: 5) {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .frame(width: 12, height: 12)
-                        Text(activeMedia.first?.statusText ?? "Downloading…")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Palette.accent)
+                    Button {
+                        showingPortalDownloadsPopover.toggle()
+                    } label: {
+                        HStack(spacing: 5) {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .frame(width: 12, height: 12)
+                            Text(activeMedia.first?.statusText ?? "Downloading…")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(Palette.accent)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(Palette.accent.opacity(0.1), in: Capsule())
                     }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(Palette.accent.opacity(0.1), in: Capsule())
+                    .buttonStyle(.plain)
+                    .help("View active downloads and transfer controls")
+                    .popover(isPresented: $showingPortalDownloadsPopover, arrowEdge: .bottom) {
+                        DownloadCenterView()
+                    }
                 }
 
                 // AI Co-Pilot Toggle Button
@@ -981,6 +991,16 @@ private struct PortalBrowser: View {
             if session.isLoading {
                 ProgressView().progressViewStyle(.linear).tint(Palette.accent)
                     .padding(.top, 78)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if store.preferences.showSmartReplyBar && !showingAIDrawer {
+                if let ctx = session.activeThread ?? store.activeThreadContext(for: account.id),
+                   !ctx.messages.isEmpty {
+                    SmartReplyFloatingBar(session: session, contactName: ctx.contactName, lastMessage: ctx.messages.last?.text ?? "")
+                        .padding(.bottom, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .onAppear { [store] in
@@ -1398,6 +1418,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     let homeURL: URL
     let accountID: UUID
     let platformID: String
+    let accountName: String
     var activityHandler: ((String, [[String: String]], [String], [[String: String]], String?, [[String: Any]], Int?, String?, [AIChatMemberItem]?) -> Void)?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
 
@@ -1406,8 +1427,20 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         return name.isEmpty ? "__default__" : name
     }
 
-    func appendCopilotMessage(role: String, content: String) {
-        copilotHistory.append(CopilotMessage(role: role, content: content))
+    func appendCopilotMessage(
+        role: String,
+        content: String,
+        providerBadge: String? = nil,
+        isDraftReply: Bool = false,
+        smartActions: [CopilotSmartAction]? = nil
+    ) {
+        copilotHistory.append(CopilotMessage(
+            role: role,
+            content: content,
+            providerBadge: providerBadge,
+            isDraftReply: isDraftReply,
+            smartActions: smartActions
+        ))
         if copilotHistory.count > 20 {
             copilotHistory.removeFirst(copilotHistory.count - 20)
         }
@@ -1424,17 +1457,26 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
     init(account: PlatformAccount, url: URL) {
         accountID = account.id
         platformID = account.platformID
+        accountName = account.name
         homeURL = url
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = account.usesLegacyStore ? .default() : WKWebsiteDataStore(forIdentifier: account.id)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        // Allow WebRTC incoming call ringtones and notification sounds without requiring immediate user gesture
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.allowsAirPlayForMediaPlayback = true
+        configuration.preferences.isElementFullscreenEnabled = true
+
         let selectorScript = DOMSelectorService.shared.generateInjectionScript()
         if !selectorScript.isEmpty {
             configuration.userContentController.addUserScript(WKUserScript(source: selectorScript,
                                                                            injectionTime: .atDocumentStart,
                                                                            forMainFrameOnly: false))
         }
+        configuration.userContentController.addUserScript(WKUserScript(source: Self.notificationScript,
+                                                                       injectionTime: .atDocumentStart,
+                                                                       forMainFrameOnly: false))
         configuration.userContentController.addUserScript(WKUserScript(source: Self.passkeyScript,
                                                                        injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
@@ -1452,6 +1494,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let weakHandler = WeakScriptMessageHandler(delegate: self)
         configuration.userContentController.add(weakHandler, name: "pinggoActivity")
         configuration.userContentController.add(weakHandler, name: "multispaceActivity")
+        configuration.userContentController.add(weakHandler, name: "pinggoNotification")
         configuration.userContentController.add(weakHandler, name: "pinggoVideoSniffer")
         configuration.userContentController.add(weakHandler, name: "pinggoVideoDownload")
         webView.navigationDelegate = self
@@ -1459,6 +1502,28 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.allowsBackForwardNavigationGestures = true
         // Use standard modern Safari desktop user agent
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
+
+        NotificationCenter.default.addObserver(forName: Notification.Name("NetworkDidReconnect"), object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.error != nil {
+                    print("[PortalSession] Network reconnected while portal was in error state. Reloading \(self.platformID)...")
+                    self.error = nil
+                    self.reload()
+                } else {
+                    self.webView.evaluateJavaScript("window.dispatchEvent(new Event('online'));", completionHandler: nil)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(forName: Notification.Name("SystemDidWakeFromSleep"), object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                print("[PortalSession] System woke from sleep. Pinging portal \(self.platformID)...")
+                self.webView.evaluateJavaScript("window.dispatchEvent(new Event('online'));", completionHandler: nil)
+            }
+        }
+
         load(url)
     }
 
@@ -1472,6 +1537,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.stopLoading()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoActivity")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "multispaceActivity")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoNotification")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoVideoSniffer")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pinggoVideoDownload")
         activityHandler = nil
@@ -1620,6 +1686,25 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             return
         }
 
+        if message.name == "pinggoNotification", let dict = message.body as? [String: Any] {
+            guard !PortalSessionRegistry.shared.isAppLocked else { return }
+            let title = (dict["title"] as? String) ?? "New Message"
+            let body = (dict["body"] as? String) ?? ""
+            let tag = (dict["tag"] as? String) ?? UUID().uuidString
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                NotificationService.shared.notifyNewMessage(
+                    platformName: self.platformID.capitalized,
+                    platformID: self.platformID,
+                    accountName: self.accountName,
+                    sender: title.isEmpty ? self.platformID.capitalized : title,
+                    previewText: body,
+                    messageID: tag
+                )
+            }
+            return
+        }
+
         guard message.name == "pinggoActivity" || message.name == "multispaceActivity" else { return }
         guard !PortalSessionRegistry.shared.isAppLocked else { return }
         if let currentHost = webView.url?.host?.lowercased(),
@@ -1752,6 +1837,16 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         requestMediaCapturePermissionFor origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,
         type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void
+    ) {
+        MediaHardwareService.ensureMediaAccess()
+        decisionHandler(.grant)
+    }
+
+    @available(macOS 13.0, *)
+    func webView(
+        _ webView: WKWebView,
+        requestNotificationPermissionFor origin: WKSecurityOrigin,
         decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void
     ) {
         decisionHandler(.grant)
@@ -1889,7 +1984,7 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             }
 
             if isExternalURL(targetURL) {
-                NSWorkspace.shared.open(targetURL)
+                routeOrOpenLink(targetURL)
                 return nil
             }
         }
@@ -1955,13 +2050,19 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             return
         }
 
+        if let scheme = targetURL.scheme?.lowercased(), !["http", "https"].contains(scheme) {
+            decisionHandler(.cancel)
+            routeOrOpenLink(targetURL)
+            return
+        }
+
         // Check if user or page is navigating to a file attachment
         if navigationAction.targetFrame?.isMainFrame == true {
             let kind = Self.classifyAttachment(url: targetURL)
             if kind == .pdf {
                 decisionHandler(.cancel)
                 if webView == popupWebView { popupWebView = nil }
-                NSWorkspace.shared.open(targetURL)
+                routeOrOpenLink(targetURL)
                 return
             } else if kind == .media || kind == .otherFile {
                 if webView == popupWebView { popupWebView = nil }
@@ -1969,12 +2070,12 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
                 return
             }
 
-            // Only open in external browser if the user explicitly clicked a link targeting the main frame
+            // Only open in internal/external browser if the user explicitly clicked a link targeting the main frame
             // and it is truly an external website, not an auth domain or subframe captcha/challenge
             if navigationAction.navigationType == .linkActivated && isExternalURL(targetURL) {
                 decisionHandler(.cancel)
                 if webView == popupWebView { popupWebView = nil }
-                NSWorkspace.shared.open(targetURL)
+                routeOrOpenLink(targetURL)
                 return
             }
         }
@@ -2080,6 +2181,42 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
         print("[PortalSession] Download failed: \(error.localizedDescription)")
     }
 
+    private func routeOrOpenLink(_ targetURL: URL) {
+        let scheme = targetURL.scheme?.lowercased() ?? ""
+        if !["http", "https"].contains(scheme) {
+            NSWorkspace.shared.open(targetURL)
+            return
+        }
+
+        let targetHost = targetURL.host?.lowercased() ?? ""
+
+        // Cross-platform routing: check if link points to another space in PINGGO
+        if targetHost.contains("whatsapp.com") || targetHost == "wa.me" {
+            NotificationCenter.default.post(name: Notification.Name("NavigateToPlatform"), object: "whatsapp")
+            return
+        } else if targetHost.contains("telegram.org") || targetHost == "t.me" || targetHost == "telegram.me" {
+            NotificationCenter.default.post(name: Notification.Name("NavigateToPlatform"), object: "telegram")
+            return
+        } else if targetHost.contains("discord.com") || targetHost == "discord.gg" {
+            NotificationCenter.default.post(name: Notification.Name("NavigateToPlatform"), object: "discord")
+            return
+        } else if targetHost.contains("slack.com") {
+            NotificationCenter.default.post(name: Notification.Name("NavigateToPlatform"), object: "slack")
+            return
+        }
+
+        // Check if user prefers opening links in PINGGO's in-app tabbed browser
+        let prefs = UserDefaults.standard.data(forKey: "appPreferences")
+            .flatMap { try? JSONDecoder().decode(AppPreferences.self, from: $0) }
+        let openInInternal = prefs?.openLinksInAppBrowser ?? true
+
+        if openInInternal {
+            NotificationCenter.default.post(name: Notification.Name("OpenInAppBrowser"), object: targetURL)
+        } else {
+            NSWorkspace.shared.open(targetURL)
+        }
+    }
+
     private func isExternalURL(_ url: URL) -> Bool {
         guard let targetHost = url.host?.lowercased(),
               let homeHost = homeURL.host?.lowercased() else { return false }
@@ -2113,13 +2250,41 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
             }
         }
 
-        let metaFamily = ["instagram.com", "facebook.com", "fb.com", "messenger.com", "threads.net", "whatsapp.com"]
-        if metaFamily.contains(cleanHome) && metaFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+        // WhatsApp & Meta family
+        let metaFamily = [
+            "instagram.com", "facebook.com", "fb.com", "messenger.com", "threads.net",
+            "whatsapp.com", "wa.me", "chat.whatsapp.com", "api.whatsapp.com", "web.whatsapp.com"
+        ]
+        if metaFamily.contains(where: { cleanHome.contains($0) || $0.contains(cleanHome) }) &&
+           metaFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
             return false
         }
 
-        if (cleanHome == "telegram.org" || cleanHome == "t.me") &&
-            (targetHost == "telegram.org" || targetHost.hasSuffix(".telegram.org") || targetHost == "t.me") {
+        // Discord family
+        let discordFamily = ["discord.com", "discord.gg", "discordapp.com", "discord.media"]
+        if (cleanHome.contains("discord.com") || discordFamily.contains(cleanHome)) &&
+           discordFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+            return false
+        }
+
+        // Telegram family
+        let telegramFamily = ["telegram.org", "t.me", "telegram.me"]
+        if (cleanHome.contains("telegram.org") || cleanHome == "t.me" || telegramFamily.contains(cleanHome)) &&
+           telegramFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+            return false
+        }
+
+        // Slack family (including Slack redirector)
+        let slackFamily = ["slack.com", "slack-edge.com", "slack-msgs.com", "slack-redir.net"]
+        if (cleanHome.hasSuffix("slack.com") || slackFamily.contains(cleanHome)) &&
+           slackFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
+            return false
+        }
+
+        // Twitter / X family
+        let xFamily = ["x.com", "twitter.com", "t.co", "twimg.com"]
+        if (cleanHome == "x.com" || cleanHome == "twitter.com" || xFamily.contains(cleanHome)) &&
+           xFamily.contains(where: { targetHost == $0 || targetHost.hasSuffix(".\($0)") }) {
             return false
         }
 
@@ -3444,6 +3609,167 @@ final class PortalSession: NSObject, ObservableObject, WKNavigationDelegate, WKU
       }
     })();
     """#
+
+    private static let notificationScript = #"""
+    (() => {
+      if (window.__pinggoNotificationInjected) return;
+      window.__pinggoNotificationInjected = true;
+
+      const OrigNotification = window.Notification;
+
+      class PinggoNotification {
+        static permission = 'granted';
+        static requestPermission(callback) {
+          const promise = Promise.resolve('granted');
+          if (typeof callback === 'function') {
+            promise.then(callback);
+          }
+          return promise;
+        }
+
+        constructor(title, options = {}) {
+          this.title = title || 'Notification';
+          this.body = options.body || '';
+          this.icon = options.icon || '';
+          this.tag = options.tag || '';
+          this.data = options.data || null;
+          this.onclick = null;
+          this.onclose = null;
+          this.onerror = null;
+
+          try {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pinggoNotification) {
+              window.webkit.messageHandlers.pinggoNotification.postMessage({
+                title: this.title,
+                body: this.body,
+                icon: this.icon,
+                tag: this.tag
+              });
+            }
+          } catch (e) {
+            console.warn('[PINGGO] Failed to dispatch notification to native host', e);
+          }
+
+          if (OrigNotification && typeof OrigNotification === 'function') {
+            try {
+              new OrigNotification(title, options);
+            } catch (e) {}
+          }
+        }
+
+        close() {
+          if (typeof this.onclose === 'function') {
+            this.onclose();
+          }
+        }
+      }
+
+      window.Notification = PinggoNotification;
+    })();
+    """#
+}
+
+// MARK: - Contextual AI Smart Reply Floating Bar
+struct SmartReplyFloatingBar: View {
+    @ObservedObject var session: PortalSession
+    let contactName: String
+    let lastMessage: String
+    @State private var insertedFeedback: String? = nil
+
+    private struct SmartReplyOption: Identifiable {
+        let id: String
+        let label: String
+        let icon: String
+        let reply: String
+    }
+
+    private var defaultReplies: [SmartReplyOption] {
+        [
+            SmartReplyOption(
+                id: "ack",
+                label: "Got it & reviewing",
+                icon: "checkmark.circle.fill",
+                reply: "Got it, thanks for updating me! Reviewing this now."
+            ),
+            SmartReplyOption(
+                id: "decline",
+                label: "Polite decline",
+                icon: "hand.raised.fill",
+                reply: "Thanks for reaching out! Unfortunately, I won't be able to take this on right now."
+            ),
+            SmartReplyOption(
+                id: "call",
+                label: "Schedule 15m sync",
+                icon: "calendar.badge.clock",
+                reply: "Sounds good. Let's schedule a quick 15-minute sync to align. What time works best for you?"
+            ),
+            SmartReplyOption(
+                id: "clarify",
+                label: "Ask for details",
+                icon: "questionmark.bubble.fill",
+                reply: "Thanks! Could you clarify the key deliverables and the deadline for this?"
+            )
+        ]
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+                Text("Smart Reply")
+                    .font(.system(size: 11.5, weight: .bold))
+                    .foregroundStyle(Palette.accent)
+            }
+            .padding(.trailing, 2)
+
+            ForEach(defaultReplies) { opt in
+                Button {
+                    applyReply(opt.reply)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: opt.icon)
+                            .font(.system(size: 10))
+                        Text(opt.label)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Palette.hover, in: Capsule())
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let feedback = insertedFeedback {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.green)
+                    Text(feedback)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.green)
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.ultraThickMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Palette.accent.opacity(0.3), lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: insertedFeedback)
+    }
+
+    private func applyReply(_ text: String) {
+        session.insertTextIntoChat(text)
+        insertedFeedback = "Pasted!"
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            insertedFeedback = nil
+        }
+    }
 }
 
 struct AICopilotDrawer: View {
@@ -3520,21 +3846,33 @@ struct AICopilotDrawer: View {
         return "💬 Normal"
     }
 
+    private var isProviderKeyMissing: Bool {
+        let prefs = store.preferences
+        if prefs.aiProvider == "gemini" && prefs.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if prefs.aiProvider == "chatgpt" && prefs.openAiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
+    }
+
     private var providerLabel: String {
         let prefs = store.preferences
-        if prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty { return "Gemini 2.5 Flash" }
-        if prefs.aiProvider == "chatgpt" && !prefs.openAiApiKey.isEmpty { return "ChatGPT" }
+        if prefs.aiProvider == "gemini" {
+            return prefs.geminiApiKey.isEmpty ? "Gemini (Setup Key)" : "Gemini 2.5 Flash"
+        }
+        if prefs.aiProvider == "chatgpt" {
+            return prefs.openAiApiKey.isEmpty ? "ChatGPT (Setup Key)" : "ChatGPT"
+        }
         if prefs.aiProvider == "ollama" { return "Ollama (\(prefs.ollamaModel))" }
-        return "Smart Engine"
+        return "Smart Engine (Local)"
     }
 
     private var providerIndicatorColor: Color {
         let prefs = store.preferences
+        if isProviderKeyMissing { return .orange }
         if prefs.aiProvider == "ollama" { return .purple }
         if (prefs.aiProvider == "gemini" && !prefs.geminiApiKey.isEmpty) || (prefs.aiProvider == "chatgpt" && !prefs.openAiApiKey.isEmpty) {
             return .green
         }
-        return .orange
+        return .blue
     }
 
     var body: some View {
@@ -3577,12 +3915,20 @@ struct AICopilotDrawer: View {
             Text("PINGGO AI")
                 .font(.system(size: 13, weight: .semibold))
 
-            HStack(spacing: 5) {
-                Circle().fill(providerIndicatorColor).frame(width: 6, height: 6)
-                Text(providerLabel).lineLimit(1)
+            Button {
+                if isProviderKeyMissing {
+                    store.destination = .settings
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Circle().fill(providerIndicatorColor).frame(width: 6, height: 6)
+                    Text(providerLabel).lineLimit(1)
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isProviderKeyMissing ? Color.orange : Palette.muted)
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(Palette.muted)
+            .buttonStyle(.plain)
+            .help(isProviderKeyMissing ? "API key required. Click to configure in Settings > AI." : "Active AI provider")
 
             Spacer()
 
@@ -4196,43 +4542,75 @@ struct AICopilotDrawer: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Palette.accent)
-                Text(providerLabel)
+                Text(msg.providerBadge ?? providerLabel)
                     .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(Palette.accent)
                 Spacer()
             }
 
-            Text(LocalizedStringKey(msg.content))
-                .font(.system(size: 12))
-                .foregroundStyle(.primary)
-                .lineSpacing(3)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            formattedCopilotContent(msg.content)
 
-            // Action Toolbar (Insert into Chat, Copy, Regenerate)
-            HStack(spacing: 8) {
-                // Insert into Chat button
-                Button {
-                    session.insertTextIntoChat(msg.content)
-                    insertedMsgID = msg.id
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        insertedMsgID = nil
+            // Contextual Suggested Actions (if any detected)
+            if let actions = msg.smartActions, !actions.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("QUICK ACTIONS")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 2)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(actions) { act in
+                                Button {
+                                    sendQuery(act.promptToRun)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: act.icon)
+                                            .font(.system(size: 9.5))
+                                            .foregroundStyle(Palette.accent)
+                                        Text(act.label)
+                                            .font(.system(size: 10.5, weight: .medium))
+                                    }
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(Palette.hover, in: Capsule())
+                                    .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+                                    .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: insertedMsgID == msg.id ? "checkmark" : "arrow.down.doc.fill")
-                            .font(.system(size: 9, weight: .bold))
-                        Text(insertedMsgID == msg.id ? "Inserted!" : "Insert into Chat")
-                            .font(.system(size: 10.5, weight: .semibold))
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
-                    .foregroundStyle(.white)
                 }
-                .buttonStyle(.plain)
-                .help("Insert text directly into WhatsApp/Telegram/Slack chat input")
+                .padding(.top, 2)
+            }
+
+            // Action Toolbar (Insert into Chat ONLY for draft replies; Copy & Notes for summaries)
+            HStack(spacing: 8) {
+                if msg.isDraftReply {
+                    // Insert into Chat button
+                    Button {
+                        session.insertTextIntoChat(msg.content)
+                        insertedMsgID = msg.id
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            insertedMsgID = nil
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: insertedMsgID == msg.id ? "checkmark" : "arrow.down.doc.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text(insertedMsgID == msg.id ? "Inserted!" : "Insert into Chat")
+                                .font(.system(size: 10.5, weight: .semibold))
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Insert drafted reply directly into chat input")
+                }
 
                 // Copy button
                 Button {
@@ -4247,7 +4625,7 @@ struct AICopilotDrawer: View {
                     HStack(spacing: 4) {
                         Image(systemName: copiedMsgID == msg.id ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 9))
-                        Text(copiedMsgID == msg.id ? "Copied" : "Copy")
+                        Text(copiedMsgID == msg.id ? "Copied" : (msg.isDraftReply ? "Copy" : "Copy Summary"))
                             .font(.system(size: 10.5))
                     }
                     .padding(.horizontal, 8)
@@ -4276,6 +4654,62 @@ struct AICopilotDrawer: View {
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func formattedCopilotContent(_ content: String) -> some View {
+        let lines = content.components(separatedBy: "\n")
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("### ") {
+                    let title = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                    Text(title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .padding(.top, 4)
+                        .padding(.bottom, 1)
+                } else if trimmed.hasPrefix("#### ") {
+                    let subtitle = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                    Text(subtitle)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .padding(.top, 3)
+                } else if trimmed.hasPrefix("• ") {
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle()
+                            .fill(Palette.accent)
+                            .frame(width: 4, height: 4)
+                            .padding(.top, 5)
+                        Text(LocalizedStringKey(String(trimmed.dropFirst(2))))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if trimmed.hasPrefix("- [ ] ") {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "square")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.accent)
+                            .padding(.top, 2)
+                        Text(LocalizedStringKey(String(trimmed.dropFirst(6))))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if trimmed.isEmpty {
+                    Spacer().frame(height: 2)
+                } else {
+                    Text(LocalizedStringKey(trimmed))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(trimmed.hasPrefix("*") && trimmed.hasSuffix("*") ? Palette.muted : .primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .lineSpacing(3)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Live Streaming Assistant Card
@@ -4420,7 +4854,13 @@ struct AICopilotDrawer: View {
                 }
             )
             guard !Task.isCancelled else { return }
-            session.appendCopilotMessage(role: "assistant", content: result)
+            session.appendCopilotMessage(
+                role: "assistant",
+                content: result.text,
+                providerBadge: result.providerBadge,
+                isDraftReply: result.isDraftReply,
+                smartActions: result.smartActions.isEmpty ? nil : result.smartActions
+            )
             isGenerating = false
             streamingText = ""
         }

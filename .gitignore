@@ -25,3 +25,10 @@ DerivedData/
 # Packaging / generated artifacts
 *.appx
 *.msix
+
+# Environment & secrets
+*.env
+.env
+.env.*
+atlas-credentials.env
+node_modules/

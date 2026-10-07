@@ -1,0 +1,19 @@
+{
+  "name": "pinggo-mongodb-gateway",
+  "version": "1.0.0",
+  "description": "Zero-Trust Backend API Gateway for PINGGO connecting desktop clients to MongoDB",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.9.0",
+    "ws": "^8.22.0"
+  }
+}

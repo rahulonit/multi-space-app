@@ -1,10 +1,25 @@
 import SwiftUI
 
 private enum HomeFilter: String, CaseIterable {
-    case all = "All"
+    case all = "All Updates"
     case unread = "Unread"
+    case tasks = "Action Items"
+    case questions = "Questions"
     case live = "Active"
     case sleeping = "Sleeping"
+}
+
+struct HomeActivityItem: Identifiable {
+    let id: String
+    let platform: SocialPlatform
+    let account: PlatformAccount
+    let title: String
+    let snippet: String
+    let time: String?
+    let isAlert: Bool
+    let isUnread: Bool
+    let isQuestion: Bool
+    let isTask: Bool
 }
 
 struct HomeView: View {
@@ -17,10 +32,11 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 heroHeaderCard
+                aiExecutiveBriefingCard
                 bentoStatsRow
                 searchAndFilterBar
-                socialAppsBentoGrid
                 recentActivityStream
+                socialAppsBentoGrid
                 quickShortcutsBar
             }
             .padding(.horizontal, store.preferences.compactMode ? 16 : 24)
@@ -33,6 +49,9 @@ struct HomeView: View {
     // MARK: - Hero Header Banner
     private var heroHeaderCard: some View {
         let userName = store.userProfile.isSignedIn ? store.userProfile.displayName : store.me.name
+        let isOnline = NetworkMonitorService.shared.isConnected
+        let netDesc = NetworkMonitorService.shared.connectionDescription
+
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
                 AppLogo(size: 48, cornerRadius: 12)
@@ -59,6 +78,20 @@ struct HomeView: View {
 
                 // Status & Quick Action Pills
                 HStack(spacing: 8) {
+                    // Network Connectivity Pill
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(isOnline ? Color.green : Color.red)
+                            .frame(width: 7, height: 7)
+                        Text(netDesc)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Palette.panel, in: Capsule())
+                    .overlay(Capsule().stroke(Palette.card, lineWidth: 1))
+
                     if store.totalUnreadCount > 0 {
                         HStack(spacing: 6) {
                             Circle().fill(.red).frame(width: 8, height: 8)
@@ -135,18 +168,206 @@ struct HomeView: View {
         )
     }
 
+    // MARK: - AI Executive Briefing Card
+    private var aiExecutiveBriefingCard: some View {
+        let summary = store.platformSummaries["all"]
+        let headline = summary?.headline ?? "All inboxes clear across connected platforms"
+        let overview = summary?.executiveOverview ?? "No pending messages or action items across any connected platforms. You are completely caught up!"
+        let actionItems = summary?.actionItems ?? []
+        let questions = summary?.threads.compactMap { thread -> (sender: String, question: String)? in
+            guard let q = thread.detectedQuestion, !q.isEmpty else { return nil }
+            return (thread.sender, q)
+        } ?? []
+        let topics = summary?.keyTopics ?? []
+
+        return VStack(alignment: .leading, spacing: 14) {
+            // Header Row
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text("AI EXECUTIVE BRIEFING")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(Palette.accent)
+
+                        Text("·")
+                            .foregroundStyle(Palette.muted)
+
+                        Text("Cross-Platform Synthesis")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                    }
+
+                    Text(headline)
+                        .font(.system(size: 14, weight: .bold))
+                }
+
+                Spacer()
+
+                Button {
+                    store.refreshSummaries()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Refresh AI")
+                            .font(.system(size: 10.5, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Palette.panel, in: Capsule())
+                    .overlay(Capsule().stroke(Palette.card, lineWidth: 1))
+                    .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Re-synthesize intelligence across all active portals")
+            }
+
+            // Overview Narrative Banner
+            Text(overview)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.text)
+                .lineSpacing(3)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+
+            // Action Items & Questions Grid
+            if !actionItems.isEmpty || !questions.isEmpty {
+                HStack(alignment: .top, spacing: 14) {
+                    // Action Items Column
+                    if !actionItems.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.orange)
+                                Text("ACTION ITEMS (\(actionItems.count))")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .tracking(1.0)
+                                    .foregroundStyle(Palette.muted)
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(actionItems.prefix(4).enumerated()), id: \.offset) { _, item in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Image(systemName: "checkmark.circle")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.orange)
+                                            .padding(.top, 2)
+                                        Text(item)
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Palette.text)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                    }
+
+                    // Questions Column
+                    if !questions.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "questionmark.bubble.fill")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.purple)
+                                Text("QUESTIONS AWAITING REPLY (\(questions.count))")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .tracking(1.0)
+                                    .foregroundStyle(Palette.muted)
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(questions.prefix(3).enumerated()), id: \.offset) { _, pair in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(pair.sender)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Palette.accent)
+                                        Text("\"\(pair.question)\"")
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(Palette.text)
+                                            .italic()
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.card, lineWidth: 1))
+                    }
+                }
+            }
+
+            // Topics Chips
+            if !topics.isEmpty {
+                HStack(spacing: 6) {
+                    Text("KEY TOPICS:")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .tracking(1.0)
+                        .foregroundStyle(Palette.muted)
+
+                    ForEach(topics, id: \.self) { topic in
+                        Text("#\(topic)")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Palette.card, in: Capsule())
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Palette.panel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Palette.accent.opacity(0.35), Palette.card],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+        )
+    }
+
     // MARK: - Bento Metrics Strip
     private var bentoStatsRow: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
             // Stat 1: Unread Messages
-            statTile(
-                title: "Unread Messages",
-                value: "\(store.totalUnreadCount)",
-                subtitle: store.totalUnreadCount == 0 ? "All inboxes reviewed" : "Pending your attention",
-                symbol: "bubble.left.and.bubble.right.fill",
-                color: store.totalUnreadCount > 0 ? .red : Palette.accent,
-                actionText: store.totalUnreadCount > 0 ? "Review Inboxes" : nil
-            )
+            Button {
+                selectedFilter = .unread
+            } label: {
+                statTile(
+                    title: "Unread Messages",
+                    value: "\(store.totalUnreadCount)",
+                    subtitle: store.totalUnreadCount == 0 ? "All inboxes reviewed" : "Pending your attention",
+                    symbol: "bubble.left.and.bubble.right.fill",
+                    color: store.totalUnreadCount > 0 ? .red : Palette.accent,
+                    actionText: store.totalUnreadCount > 0 ? "Review Unreads" : nil
+                )
+            }
+            .buttonStyle(.plain)
 
             // Stat 2: Active Accounts
             Button { store.triggerAddPlatform() } label: {
@@ -254,7 +475,7 @@ struct HomeView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
 
-                TextField("Search platforms, accounts, or messages…", text: $searchText)
+                TextField("Search platforms, accounts, contacts, or messages…", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
 
@@ -301,6 +522,151 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Recent Activity Stream
+    private var recentActivityStream: some View {
+        let items = filteredActivityItems
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("UNIFIED ACTIVITY STREAM")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(Palette.muted)
+
+                Spacer()
+
+                Text("\(items.count) item\(items.count == 1 ? "" : "s")")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+
+            if items.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "bubble.left.and.exclamationmark.bubble.right")
+                        .font(.system(size: 28))
+                        .foregroundStyle(Palette.muted)
+                    Text("No matching incoming activity")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("When connected platforms (like WhatsApp, Discord, or Telegram) receive new messages, instant previews will stream here.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(32)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.card, lineWidth: 1))
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(items.prefix(20)) { item in
+                        activityRowView(item: item)
+                    }
+                }
+            }
+        }
+    }
+
+    private func activityRowView(item: HomeActivityItem) -> some View {
+        Button {
+            store.selectAccount(item.account.id)
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                PlatformLogo(platform: item.platform, size: 24)
+                    .frame(width: 38, height: 38)
+                    .background(spaceColor(item.platform.color).opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("\(item.platform.name) · \(item.account.name)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+
+                        if item.isUnread {
+                            Text("Unread")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Color.red.opacity(0.12), in: Capsule())
+                        }
+
+                        if item.isTask {
+                            Text("Action Item")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Color.orange.opacity(0.12), in: Capsule())
+                        }
+
+                        if item.isQuestion {
+                            Text("Question")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.purple)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Color.purple.opacity(0.12), in: Capsule())
+                        }
+
+                        if item.isAlert {
+                            Text("Alert")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Color.orange.opacity(0.12), in: Capsule())
+                        }
+
+                        Spacer()
+
+                        if let time = item.time {
+                            Text(time)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.muted)
+                        }
+                    }
+
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .bold))
+
+                    Text(item.snippet)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        store.openInSplitView(platformID: item.platform.id, accountID: item.account.id)
+                    } label: {
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 26, height: 26)
+                            .background(Palette.card, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open in Split View (⌘\\)")
+
+                    HStack(spacing: 4) {
+                        Text("Open")
+                            .font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundStyle(Palette.accent)
+                }
+            }
+            .padding(14)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.card, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Social Apps Bento Grid
@@ -394,100 +760,6 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Recent Activity Stream
-    private var recentActivityStream: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("RECENT INCOMING ACTIVITY")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.5)
-                    .foregroundStyle(Palette.muted)
-
-                Spacer()
-            }
-
-            if !hasActivity {
-                VStack(spacing: 12) {
-                    Image(systemName: "bubble.left.and.exclamationmark.bubble.right")
-                        .font(.system(size: 28))
-                        .foregroundStyle(Palette.muted)
-                    Text("No incoming message previews yet")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Sign in to your platforms. When a signed-in portal (like WhatsApp, Discord, or Telegram) receives new messages, instant previews will stream here.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 420)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(32)
-                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.card, lineWidth: 1))
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(store.platformAccounts) { account in
-                        if let platform = store.platform(account.platformID),
-                           let snapshot = store.platformActivity[account.id] {
-                            ForEach(snapshot.messages) { message in
-                                activityRow(platform: platform, account: account, title: message.sender, snippet: message.text, isAlert: false)
-                            }
-                            if store.preferences.showWebsiteAlerts {
-                                ForEach(snapshot.notifications, id: \.self) { alert in
-                                    activityRow(platform: platform, account: account, title: "Website alert", snippet: alert, isAlert: true)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func activityRow(platform: SocialPlatform, account: PlatformAccount, title: String, snippet: String, isAlert: Bool) -> some View {
-        Button {
-            store.selectAccount(account.id)
-        } label: {
-            HStack(alignment: .center, spacing: 14) {
-                PlatformLogo(platform: platform, size: 24)
-                    .frame(width: 36, height: 36)
-                    .background(spaceColor(platform.color).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isAlert ? "bell.fill" : "bubble.left.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(isAlert ? .orange : Palette.accent)
-                        Text("\(platform.name) · \(account.name)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Palette.muted)
-                    }
-
-                    Text(title)
-                        .font(.system(size: 13, weight: .bold))
-
-                    Text(snippet)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(2)
-                }
-
-                Spacer()
-
-                HStack(spacing: 4) {
-                    Text("Open")
-                        .font(.system(size: 11, weight: .semibold))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(Palette.accent)
-            }
-            .padding(14)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.card, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Quick Launcher Bar
     private var quickShortcutsBar: some View {
         HStack(spacing: 12) {
@@ -536,10 +808,84 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Activity Items Aggregator
+    private var allActivityItems: [HomeActivityItem] {
+        var items: [HomeActivityItem] = []
+        for account in store.platformAccounts {
+            guard let platform = store.platform(account.platformID),
+                  let snapshot = store.platformActivity[account.id] else { continue }
+
+            for message in snapshot.messages {
+                let text = message.text
+                let lower = text.lowercased()
+                let isQ = text.contains("?") || lower.hasPrefix("can ") || lower.hasPrefix("could ") || lower.hasPrefix("what ") || lower.hasPrefix("how ") || lower.hasPrefix("when ") || lower.hasPrefix("where ")
+                let isT = lower.contains("todo") || lower.contains("please ") || lower.contains("need to") || lower.contains("urgent") || lower.contains("deadline") || lower.contains("review") || lower.contains("send ")
+                items.append(HomeActivityItem(
+                    id: message.id,
+                    platform: platform,
+                    account: account,
+                    title: message.sender,
+                    snippet: text,
+                    time: message.time,
+                    isAlert: false,
+                    isUnread: message.isUnread == true,
+                    isQuestion: isQ,
+                    isTask: isT
+                ))
+            }
+
+            if store.preferences.showWebsiteAlerts {
+                for (idx, alert) in snapshot.notifications.enumerated() {
+                    items.append(HomeActivityItem(
+                        id: "\(account.id)-alert-\(idx)",
+                        platform: platform,
+                        account: account,
+                        title: "Website Alert",
+                        snippet: alert,
+                        time: nil,
+                        isAlert: true,
+                        isUnread: false,
+                        isQuestion: false,
+                        isTask: false
+                    ))
+                }
+            }
+        }
+        return items
+    }
+
+    private var filteredActivityItems: [HomeActivityItem] {
+        allActivityItems.filter { item in
+            // Filter by search query
+            if !searchText.isEmpty {
+                let matches = item.title.localizedCaseInsensitiveContains(searchText)
+                    || item.snippet.localizedCaseInsensitiveContains(searchText)
+                    || item.platform.name.localizedCaseInsensitiveContains(searchText)
+                    || item.account.name.localizedCaseInsensitiveContains(searchText)
+                if !matches { return false }
+            }
+
+            // Filter by category chip
+            switch selectedFilter {
+            case .all:
+                return true
+            case .unread:
+                return item.isUnread
+            case .tasks:
+                return item.isTask
+            case .questions:
+                return item.isQuestion
+            case .live:
+                return !store.isSessionHibernated(accountID: item.account.id)
+            case .sleeping:
+                return store.isSessionHibernated(accountID: item.account.id)
+            }
+        }
+    }
+
     // MARK: - Filter & Computed Helpers
     private var filteredAccounts: [PlatformAccount] {
         store.platformAccounts.filter { account in
-            // Filter by search text
             if !searchText.isEmpty {
                 let platform = store.platform(account.platformID)
                 let platformName = platform?.name ?? ""
@@ -555,9 +901,8 @@ struct HomeView: View {
                 if !matches { return false }
             }
 
-            // Filter by category
             switch selectedFilter {
-            case .all:
+            case .all, .tasks, .questions:
                 return true
             case .unread:
                 let unread = store.platformActivity[account.id]?.unreadCount ?? 0
@@ -573,9 +918,13 @@ struct HomeView: View {
     private func countForFilter(_ filter: HomeFilter) -> Int {
         switch filter {
         case .all:
-            return store.platformAccounts.count
+            return allActivityItems.count
         case .unread:
-            return store.platformAccounts.filter { (store.platformActivity[$0.id]?.unreadCount ?? 0) > 0 }.count
+            return allActivityItems.filter(\.isUnread).count
+        case .tasks:
+            return allActivityItems.filter(\.isTask).count
+        case .questions:
+            return allActivityItems.filter(\.isQuestion).count
         case .live:
             return store.platformAccounts.filter { !store.isSessionHibernated(accountID: $0.id) }.count
         case .sleeping:
@@ -590,13 +939,6 @@ struct HomeView: View {
     private var estimatedRamSavedMB: Int {
         let sleepingCount = store.sleepingSessionCount()
         return sleepingCount * 140 + (sleepingCount > 0 ? 60 : 0)
-    }
-
-    private var hasActivity: Bool {
-        store.platformAccounts.contains { account in
-            guard let snapshot = store.platformActivity[account.id] else { return false }
-            return !snapshot.messages.isEmpty || (store.preferences.showWebsiteAlerts && !snapshot.notifications.isEmpty)
-        }
     }
 
     private var greetingText: String {

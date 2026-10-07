@@ -71,6 +71,9 @@ struct SettingsView: View {
     @State private var ollamaInstalledModels: [String] = []
     @State private var isCheckingOllama: Bool = false
     @State private var ollamaStatusDetail: String? = nil
+    @ObservedObject private var cloudSync = CloudSyncService.shared
+    @State private var cloudLoginEmail: String = ""
+    @State private var cloudLoginPassword: String = ""
 
     var body: some View {
         GeometryReader { geometry in
@@ -275,16 +278,346 @@ struct SettingsView: View {
     }
 
     private var accountPage: some View {
-        VStack(spacing: 24) {
-            if !store.userProfile.isSignedIn {
+        VStack(spacing: 20) {
+            unifiedAccountAndCloudCard
+            if !store.userProfile.isSignedIn && !cloudSync.isCloudConnected {
                 guestProfileBanner
                 socialLoginSection
-                localUserCard
                 syncBenefitsCard
             } else {
-                authenticatedUserCard
-                cloudSubscriptionCard
                 cloudBackupCard
+            }
+        }
+    }
+
+    private var effectiveUserEmail: String {
+        if !cloudSync.currentUserEmail.isEmpty {
+            return cloudSync.currentUserEmail
+        }
+        if store.userProfile.isSignedIn && !store.userProfile.email.isEmpty {
+            return store.userProfile.email
+        }
+        return "guest@pinggo.app"
+    }
+
+    private var userInitials: String {
+        let name = store.userProfile.isSignedIn ? store.userProfile.displayName : (cloudSync.currentUserEmail.isEmpty ? "U" : cloudSync.currentUserEmail)
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    private var unifiedAccountAndCloudCard: some View {
+        settingsCard("Account & Cloud Synchronization", symbol: "person.crop.circle.badge.checkmark", color: .indigo) {
+            VStack(alignment: .leading, spacing: 16) {
+                // 1. Hero Profile Header & Plan Status
+                HStack(alignment: .center, spacing: 14) {
+                    // Avatar with Google/Provider badge
+                    ZStack(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(Palette.accent.opacity(0.18))
+                            .frame(width: 52, height: 52)
+                            .overlay(
+                                Text(userInitials)
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(Palette.accent)
+                            )
+
+                        if let provider = store.userProfile.provider {
+                            Image(systemName: providerSymbol(provider))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(3.5)
+                                .background(providerColor(provider), in: Circle())
+                                .offset(x: 2, y: 2)
+                        }
+                    }
+
+                    // Name, Email, Validity & Cloud Indicator
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(store.userProfile.isSignedIn ? store.userProfile.displayName : (cloudSync.currentUserEmail.isEmpty ? "Local User" : cloudSync.currentUserEmail.components(separatedBy: "@").first ?? "User"))
+                                .font(.system(size: 16, weight: .bold))
+
+                            // Tier Badge
+                            if store.isCloudProExpired {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                    Text("PLAN EXPIRED")
+                                }
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2.5)
+                                .background(Color.orange, in: Capsule())
+                            } else if store.isPro {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "crown.fill")
+                                    Text("PRO")
+                                }
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2.5)
+                                .background(Color.green, in: Capsule())
+                            } else {
+                                Text("FREE TIER")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(Palette.muted)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(Color.gray.opacity(0.18), in: Capsule())
+                            }
+
+                            // Cloud Status indicator
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(cloudSync.isCloudConnected ? Color.green : Color.gray.opacity(0.5))
+                                    .frame(width: 7, height: 7)
+                                Text(cloudSync.isCloudConnected ? "Cloud Active" : "Local Only")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(cloudSync.isCloudConnected ? Color.green : Palette.muted)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Palette.panel, in: Capsule())
+                        }
+
+                        // Email & Plan Validity text
+                        HStack(spacing: 6) {
+                            Text(effectiveUserEmail)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+
+                            Text("•")
+                                .foregroundStyle(Palette.muted.opacity(0.5))
+
+                            if store.isCloudProExpired {
+                                Text("Repayment required to restore Pro")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.orange)
+                            } else if store.isPro {
+                                if let expires = store.preferences.cloudTierExpiresAt {
+                                    Text("Valid until \(expires.formatted(date: .abbreviated, time: .omitted)) (\(store.subscriptionDaysRemaining)d left)")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.green)
+                                } else {
+                                    Text("Lifetime license active")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.green)
+                                }
+                            } else {
+                                Text("Free Tier (3 workspaces limit)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    // Right header buttons: Renew / Upgrade & Sign Out
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if store.isCloudProExpired || !store.isPro {
+                            Button {
+                                store.triggerUpgrade(reason: store.isCloudProExpired ? "Renew PINGGO Pro to restore unlimited workspaces" : "Upgrade to PINGGO Pro")
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: store.isCloudProExpired ? "arrow.clockwise.circle.fill" : "crown.fill")
+                                    Text(store.isCloudProExpired ? "Renew Plan" : "Upgrade to Pro")
+                                }
+                                .font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(store.isCloudProExpired ? Color.orange : Palette.accent)
+                            .controlSize(.small)
+                        } else {
+                            Button("Manage Pro") {
+                                store.triggerUpgrade(reason: "Manage your active subscription.")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        if store.userProfile.isSignedIn || cloudSync.isCloudConnected {
+                            Button("Sign Out", role: .destructive) {
+                                cloudSync.disconnect(store: store)
+                                store.signOutProfile()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.red.opacity(0.85))
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
+
+                // 2. Cloud Sync Connection Status / Connect Box
+                if !cloudSync.isCloudConnected {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "icloud.and.arrow.up")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Palette.accent)
+                            Text("Connect to MongoDB Cloud")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text("Sync workspaces & AI keys across devices")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        HStack(spacing: 8) {
+                            TextField("Email", text: Binding(
+                                get: { cloudLoginEmail.isEmpty ? effectiveUserEmail : cloudLoginEmail },
+                                set: { cloudLoginEmail = $0 }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+
+                            SecureField("Password", text: $cloudLoginPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11))
+
+                            Button(cloudSync.isSyncing ? "Connecting…" : "Connect Cloud") {
+                                Task {
+                                    let emailToUse = cloudLoginEmail.isEmpty ? effectiveUserEmail : cloudLoginEmail
+                                    _ = await cloudSync.loginOrRegister(
+                                        email: emailToUse,
+                                        password: cloudLoginPassword,
+                                        serverURL: store.preferences.cloudServerURL,
+                                        store: store
+                                    )
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(Palette.accent)
+                            .disabled(cloudLoginPassword.isEmpty || cloudSync.isSyncing)
+                        }
+                    }
+                    .padding(12)
+                    .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Palette.accent.opacity(0.2), lineWidth: 1)
+                    )
+                }
+
+                // 3. Data to Synchronize toggles
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("DATA TO SYNCHRONIZE")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Palette.muted)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        Toggle("Spaces, Layouts & Ordering", isOn: $store.preferences.syncSpaces)
+                            .font(.system(size: 11.5))
+                            .tint(Palette.accent)
+
+                        Toggle("Daily AI Briefings & Actions", isOn: $store.preferences.syncBriefings)
+                            .font(.system(size: 11.5))
+                            .tint(Palette.accent)
+
+                        Toggle("Browser Bookmarks & Tags", isOn: $store.preferences.syncBookmarks)
+                            .font(.system(size: 11.5))
+                            .tint(Palette.accent)
+
+                        Toggle("AI Provider, Keys & Models", isOn: $store.preferences.syncAiSettings)
+                            .font(.system(size: 11.5))
+                            .tint(Palette.accent)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                Divider()
+
+                // 4. Action & Sync Bar
+                HStack {
+                    if let lastSync = cloudSync.lastSyncedAt {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.green)
+                            Text("Last Synced: \(lastSync.formatted(date: .omitted, time: .shortened))")
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .font(.system(size: 11))
+                    } else {
+                        HStack(spacing: 5) {
+                            Image(systemName: "circle")
+                                .foregroundStyle(Palette.muted)
+                            Text(cloudSync.isCloudConnected ? "Ready to sync" : "Not connected to cloud")
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .font(.system(size: 11))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        Task {
+                            let restored = await cloudSync.pullFromCloud(store: store)
+                            if restored {
+                                store.showToast("Settings and AI keys restored from MongoDB")
+                            } else {
+                                store.showToast("No remote settings found in cloud")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down.circle")
+                            Text("Restore from Cloud")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(cloudSync.isSyncing || !cloudSync.isCloudConnected)
+
+                    Button {
+                        Task {
+                            await cloudSync.syncNow(store: store)
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            if cloudSync.isSyncing {
+                                ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
+                            Text("Sync Now")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(Palette.accent)
+                    .disabled(cloudSync.isSyncing || !cloudSync.isCloudConnected)
+                }
+
+                // 5. Advanced Server Settings (Collapsible)
+                DisclosureGroup("Advanced Server & Gateway Settings") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Backend Gateway URL:")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                            TextField("http://localhost:4000", text: $store.preferences.cloudServerURL)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(maxWidth: 240)
+                            Spacer()
+                        }
+                        Text("Default: http://localhost:4000. Change this if using a remote hosted PINGGO server.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.system(size: 11))
             }
         }
     }
@@ -524,9 +857,16 @@ struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Text(LicenseService.shared.currentTier.rawValue)
+                            Text(store.isPro ? (store.preferences.cloudPlanName.isEmpty ? "PINGGO Pro" : store.preferences.cloudPlanName) : "PINGGO Free")
                                 .font(.system(size: 14, weight: .bold))
-                            if LicenseService.shared.isPro {
+                            if store.isCloudProExpired {
+                                Text("EXPIRED")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
+                            } else if store.isPro {
                                 Text("ACTIVE")
                                     .font(.system(size: 9.5, weight: .bold))
                                     .foregroundStyle(.green)
@@ -546,6 +886,16 @@ struct SettingsView: View {
                             Text("Key: \(license.key.prefix(8))••••••••")
                                 .font(.system(size: 11.5, design: .monospaced))
                                 .foregroundStyle(Palette.muted)
+                        } else if let expires = store.preferences.cloudTierExpiresAt {
+                            if store.isCloudProExpired {
+                                Text("Plan ended on \(expires.formatted(date: .abbreviated, time: .omitted)) • Repayment required to restore Pro")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Color.orange)
+                            } else {
+                                Text("Valid until \(expires.formatted(date: .long, time: .omitted)) (\(store.subscriptionDaysRemaining) days remaining)")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.muted)
+                            }
                         } else {
                             Text("Up to 3 social accounts · Single workspace view")
                                 .font(.system(size: 11.5))
@@ -553,13 +903,28 @@ struct SettingsView: View {
                         }
                     }
                     Spacer()
-                    if LicenseService.shared.isPro {
-                        Button("Deactivate") {
-                            LicenseService.shared.deactivate()
-                            store.showToast("License deactivated.")
+                    if store.isCloudProExpired {
+                        Button("Renew Plan") {
+                            store.triggerUpgrade(reason: "Your Pro plan has expired. Please renew to restore unlimited workspaces.")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.orange)
                         .controlSize(.small)
+                    } else if store.isPro {
+                        if LicenseService.shared.isPro {
+                            Button("Deactivate") {
+                                LicenseService.shared.deactivate()
+                                store.showToast("License deactivated.")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        } else {
+                            Button("Manage Plan") {
+                                store.triggerUpgrade(reason: "Manage your active PINGGO Pro subscription.")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
                     } else {
                         Button("Upgrade to Pro") {
                             store.triggerUpgrade(reason: "Unlock unlimited accounts, Split View, and Roster Export.")
@@ -572,10 +937,10 @@ struct SettingsView: View {
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
 
                 HStack {
-                    Image(systemName: LicenseService.shared.isPro ? "checkmark.circle.fill" : "info.circle.fill")
-                        .foregroundStyle(LicenseService.shared.isPro ? .green : Palette.muted)
+                    Image(systemName: store.isPro ? "checkmark.circle.fill" : (store.isCloudProExpired ? "exclamationmark.triangle.fill" : "info.circle.fill"))
+                        .foregroundStyle(store.isPro ? .green : (store.isCloudProExpired ? .orange : Palette.muted))
                         .font(.system(size: 12))
-                    Text(LicenseService.shared.isPro ? "All Pro features unlocked on this Mac." : "Upgrade to PINGGO Pro for $9.99/mo or $79/yr.")
+                    Text(store.isPro ? "All Pro features unlocked on this Mac." : (store.isCloudProExpired ? "Plan expired. Reverted to Free tier — tap Renew Plan to restore." : "Upgrade to PINGGO Pro for $9.99/mo or $79/yr."))
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.muted)
                     Spacer()
@@ -1307,6 +1672,56 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .frame(width: 170)
+                }
+            }
+
+            settingsCard("Web Links & Browser", symbol: "safari.fill", color: .teal) {
+                settingsRow("Open in PINGGO Browser", "Open external articles and web links inside PINGGO's built-in tabbed browser instead of external Safari/Chrome.") {
+                    Toggle("In-App Browser", isOn: $store.preferences.openLinksInAppBrowser)
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+            }
+
+            settingsCard("Media & Video Downloads", symbol: "arrow.down.circle.fill", color: .green) {
+                settingsRow("Download Location", "Folder where saved videos, clips, and status media are stored.") {
+                    HStack(spacing: 8) {
+                        Text(store.preferences.videoDownloadFolder.isEmpty ? "~/Downloads" : (URL(fileURLWithPath: store.preferences.videoDownloadFolder).lastPathComponent))
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                            .frame(maxWidth: 160, alignment: .trailing)
+
+                        Button("Choose Folder…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseFiles = false
+                            panel.canChooseDirectories = true
+                            panel.allowsMultipleSelection = false
+                            panel.prompt = "Select Download Folder"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                store.preferences.videoDownloadFolder = url.path
+                            }
+                        }
+                        .controlSize(.small)
+
+                        if !store.preferences.videoDownloadFolder.isEmpty {
+                            Button("Reset") {
+                                store.preferences.videoDownloadFolder = ""
+                            }
+                            .controlSize(.small)
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                        }
+                    }
+                }
+
+                Divider()
+
+                settingsRow("Floating Video Download Pill", "Show a floating download button when hovering over videos in feeds and players.") {
+                    Toggle("Hover Pill", isOn: $store.preferences.showVideoHoverPill)
+                        .labelsHidden()
+                        .tint(Palette.accent)
                 }
             }
         }

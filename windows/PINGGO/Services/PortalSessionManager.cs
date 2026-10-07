@@ -85,6 +85,14 @@ namespace PINGGO.Services
             webView.NewWindowRequested += (s, e) =>
             {
                 if (string.IsNullOrWhiteSpace(e.Uri)) return;
+
+                // Preserve in-session handling for OAuth login popups (Google, Microsoft, Apple, Auth0, etc.)
+                if (IsOAuthAuthUrl(e.Uri))
+                {
+                    e.Handled = false;
+                    return;
+                }
+
                 e.Handled = true;
                 try
                 {
@@ -1099,5 +1107,28 @@ namespace PINGGO.Services
         };
 
         private static bool IsMediaOrOtherFileExtension(string ext) => _mediaAndFileExtensions.Contains(ext);
+
+        private static bool IsOAuthAuthUrl(string uriString)
+        {
+            if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri)) return false;
+            var host = uri.Host.ToLowerInvariant();
+            var authDomains = new[]
+            {
+                "accounts.google.com",
+                "appleid.apple.com",
+                "login.microsoftonline.com",
+                "login.live.com",
+                "account.live.com",
+                "account.microsoft.com",
+                "auth0.com",
+                "arkoselabs.com",
+                "funcaptcha.com",
+                "recaptcha.net",
+                "hcaptcha.com",
+                "cloudflare.com",
+                "challenges.cloudflare.com"
+            };
+            return authDomains.Any(d => host == d || host.EndsWith("." + d));
+        }
     }
 }

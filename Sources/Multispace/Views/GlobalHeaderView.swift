@@ -19,8 +19,12 @@ enum HeaderNavTab: String, CaseIterable, Identifiable {
 
 struct GlobalHeaderView: View {
     @EnvironmentObject private var store: AppStore
+    @ObservedObject private var downloadManager = VideoDownloadManager.shared
+    @ObservedObject private var mediaHardware = MediaHardwareService.shared
     let windowWidth: CGFloat
     @State private var showingSecurityPopover = false
+    @State private var showingDownloadsPopover = false
+    @State private var showingNotificationsPopover = false
 
     private var usesCompactHeaderControls: Bool { windowWidth < 1100 }
 
@@ -151,6 +155,11 @@ struct GlobalHeaderView: View {
     // MARK: - Right Controls
     private var rightControls: some View {
         HStack(spacing: 8) {
+            // Active Call Hub (when a call is ongoing)
+            if mediaHardware.isCallActive {
+                activeCallPill
+            }
+
             // Security Status (80–100 px)
             if !usesCompactHeaderControls {
                 securityPill
@@ -164,12 +173,46 @@ struct GlobalHeaderView: View {
                 searchIconButton
             }
 
+            // Downloads Center (40 px)
+            downloadsButton
+
             // Notifications (40 px)
             notificationsButton
 
             // Profile Avatar (40–44 px)
             profileButton
         }
+    }
+
+    // MARK: - Active Call Hub Pill
+    private var activeCallPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 7, height: 7)
+            Text(mediaHardware.activePlatformName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.green)
+            Text(mediaHardware.formattedDuration)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.green.opacity(0.85))
+
+            Button {
+                mediaHardware.endCallTracking()
+            } label: {
+                Image(systemName: "phone.down.fill")
+                    .font(.system(size: 8.5))
+                    .foregroundStyle(.red)
+                    .padding(3)
+                    .background(Color.red.opacity(0.15), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("End Call Tracking")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4.5)
+        .background(Color.green.opacity(0.12), in: Capsule())
+        .overlay(Capsule().stroke(Color.green.opacity(0.35), lineWidth: 1))
     }
 
     // MARK: - Security Status (80–100 px)
@@ -295,7 +338,7 @@ struct GlobalHeaderView: View {
     // MARK: - Notifications Button (40 px)
     private var notificationsButton: some View {
         Button {
-            store.showToast(store.totalUnreadCount > 0 ? "\(store.totalUnreadCount) unread notifications" : "All notifications up to date")
+            showingNotificationsPopover.toggle()
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bell.fill")
@@ -318,6 +361,46 @@ struct GlobalHeaderView: View {
         }
         .buttonStyle(.plain)
         .help("Notifications (\(store.totalUnreadCount) unread)")
+        .popover(isPresented: $showingNotificationsPopover, arrowEdge: .bottom) {
+            UnifiedNotificationCenterView()
+        }
+    }
+
+    // MARK: - Downloads Center Button (40 px)
+    private var downloadsButton: some View {
+        let activeCount = downloadManager.activeDownloads.filter { !$0.isComplete }.count
+        return Button {
+            showingDownloadsPopover.toggle()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: activeCount > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(activeCount > 0 ? Palette.accent : Color.primary.opacity(0.85))
+                    .frame(width: 34, height: 34)
+                    .background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(activeCount > 0 ? Palette.accent.opacity(0.4) : Palette.border, lineWidth: 1)
+                    )
+
+                if activeCount > 0 {
+                    ZStack {
+                        Circle()
+                            .fill(Palette.accent)
+                            .frame(width: 14, height: 14)
+                        Text("\(activeCount)")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Downloads & Media (\(activeCount) active)")
+        .popover(isPresented: $showingDownloadsPopover, arrowEdge: .bottom) {
+            DownloadCenterView()
+        }
     }
 
     // MARK: - Profile Avatar Button (40–44 px)

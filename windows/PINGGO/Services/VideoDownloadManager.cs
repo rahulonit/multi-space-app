@@ -68,6 +68,14 @@ namespace PINGGO.Services
         public bool IsComplete { get; set; }
         public string? SavedFilePath { get; set; }
         public string? Error { get; set; }
+        public long BytesWritten { get; set; }
+        public long TotalBytes { get; set; }
+        public double SpeedBytesPerSecond { get; set; }
+        public string? EstimatedTimeRemaining { get; set; }
+        public bool IsPaused { get; set; }
+        public CancellationTokenSource? Cts { get; set; }
+        public DetectedVideoMedia? Media { get; set; }
+        public VideoQualityOption? Quality { get; set; }
     }
 
     public class VideoDownloadManager
@@ -112,6 +120,27 @@ namespace PINGGO.Services
             }
         }
 
+        public void CancelDownload(Guid id)
+        {
+            var item = ActiveDownloads.FirstOrDefault(d => d.Id == id);
+            if (item != null)
+            {
+                item.Cts?.Cancel();
+                item.StatusText = "Cancelled";
+                item.Error = null;
+                item.Progress = 0;
+            }
+        }
+
+        public void ClearCompleted()
+        {
+            var completed = ActiveDownloads.Where(d => d.IsComplete).ToList();
+            foreach (var item in completed)
+            {
+                ActiveDownloads.Remove(item);
+            }
+        }
+
         public async Task StartDownloadAsync(DetectedVideoMedia media, VideoQualityOption option, CoreWebView2? webView = null)
         {
             var item = new VideoDownloadProgressItem
@@ -119,7 +148,10 @@ namespace PINGGO.Services
                 Title = SanitizeFilename(media.Title),
                 QualityLabel = option.Label,
                 Progress = 0.05,
-                StatusText = "Starting download…"
+                StatusText = "Starting download…",
+                Media = media,
+                Quality = option,
+                Cts = new CancellationTokenSource()
             };
             ActiveDownloads.Add(item);
 
@@ -157,21 +189,45 @@ namespace PINGGO.Services
                     counter++;
                 }
 
-                using var response = await _httpClient.GetAsync(option.Url, HttpCompletionOption.ResponseHeadersRead);
+                var token = item.Cts?.Token ?? CancellationToken.None;
+                using var response = await _httpClient.GetAsync(option.Url, HttpCompletionOption.ResponseHeadersRead, token);
                 response.EnsureSuccessStatusCode();
 
                 var totalBytes = response.Content.Headers.ContentLength ?? -1L;
-                using var contentStream = await response.Content.ReadAsStreamAsync();
+                item.TotalBytes = totalBytes;
+                using var contentStream = await response.Content.ReadAsStreamAsync(token);
                 using var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
 
                 var buffer = new byte[81920];
                 long totalRead = 0;
                 int bytesRead;
+                var lastSampleTime = DateTime.UtcNow;
+                long lastBytes = 0;
+                double speed = 0;
 
-                while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                while ((bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), token)) > 0)
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), token);
                     totalRead += bytesRead;
+                    item.BytesWritten = totalRead;
+
+                    var now = DateTime.UtcNow;
+                    var elapsed = (now - lastSampleTime).TotalSeconds;
+                    if (elapsed >= 0.5)
+                    {
+                        var instant = (totalRead - lastBytes) / elapsed;
+                        speed = speed == 0 ? instant : (speed * 0.7 + instant * 0.3);
+                        lastBytes = totalRead;
+                        lastSampleTime = now;
+                        item.SpeedBytesPerSecond = speed;
+
+                        if (totalBytes > 0 && speed > 1024)
+                        {
+                            var remainingSeconds = (totalBytes - totalRead) / speed;
+                            item.EstimatedTimeRemaining = remainingSeconds < 60 ? $"{Math.Round(remainingSeconds)}s left" : $"{Math.Round(remainingSeconds / 60)}m left";
+                        }
+                    }
+
                     if (totalBytes > 0)
                     {
                         item.Progress = (double)totalRead / totalBytes;
@@ -183,6 +239,12 @@ namespace PINGGO.Services
                 item.StatusText = "Completed";
                 item.IsComplete = true;
                 item.SavedFilePath = destPath;
+            }
+            catch (OperationCanceledException)
+            {
+                item.StatusText = "Cancelled";
+                item.Error = null;
+                item.Progress = 0;
             }
             catch (Exception ex)
             {
