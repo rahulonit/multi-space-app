@@ -12,22 +12,40 @@ struct PlatformLogo: View {
             if platform.usesOfficialLogo,
                let file = Bundle.module.url(forResource: platform.officialIdentity?.id ?? platform.id, withExtension: "png"),
                let image = NSImage(contentsOf: file) {
-                Image(nsImage: image).resizable().scaledToFit()
+                let sizedImage: NSImage = {
+                    let copy = image.copy() as? NSImage ?? image
+                    copy.size = NSSize(width: size, height: size)
+                    return copy
+                }()
+                Image(nsImage: sizedImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: max(3, size * 0.22)))
             } else if platform.customIcon != true,
                       let host = platform.resolvedWebsiteURL?.host,
                       let favicon = URL(string: "https://\(host)/favicon.ico") {
                 AsyncImage(url: favicon) { phase in
                     if let image = phase.image {
-                        image.resizable().scaledToFit()
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: size, height: size)
+                            .clipShape(RoundedRectangle(cornerRadius: max(3, size * 0.22)))
                     } else {
                         Image(systemName: platform.symbol)
-                            .resizable().scaledToFit()
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: size, height: size)
                             .foregroundStyle(spaceColor(platform.color))
                     }
                 }
+                .frame(width: size, height: size)
             } else {
                 Image(systemName: platform.symbol)
-                    .resizable().scaledToFit()
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
                     .foregroundStyle(spaceColor(platform.color))
             }
         }
@@ -574,6 +592,7 @@ private struct PortalBrowser: View {
     @State private var showingAIDrawer = false
     @State private var copilotWidth: CGFloat = 380
     @State private var showingPortalDownloadsPopover = false
+    @State private var dismissedSmartReplyContact: String? = nil
     @ObservedObject private var downloadManager: VideoDownloadManager = VideoDownloadManager.shared
 
     private var isAuthenticationPage: Bool {
@@ -623,6 +642,7 @@ private struct PortalBrowser: View {
                 } label: {
                     HStack(spacing: 7) {
                         PlatformLogo(platform: platform, size: 20)
+                            .frame(width: 20, height: 20)
                         Text(platform.name)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color.primary)
@@ -638,9 +658,14 @@ private struct PortalBrowser: View {
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
-                    .background(Palette.card.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .background(Palette.card.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Palette.border.opacity(0.6), lineWidth: 1)
+                    )
                 }
-                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
 
                 // Navigation Cluster
                 HStack(spacing: 2) {
@@ -996,10 +1021,20 @@ private struct PortalBrowser: View {
         .overlay(alignment: .bottom) {
             if store.preferences.showSmartReplyBar && !showingAIDrawer {
                 if let ctx = session.activeThread ?? store.activeThreadContext(for: account.id),
-                   !ctx.messages.isEmpty {
-                    SmartReplyFloatingBar(session: session, contactName: ctx.contactName, lastMessage: ctx.messages.last?.text ?? "")
-                        .padding(.bottom, 16)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                   !ctx.messages.isEmpty,
+                   dismissedSmartReplyContact != ctx.contactName {
+                    SmartReplyFloatingBar(
+                        session: session,
+                        contactName: ctx.contactName,
+                        lastMessage: ctx.messages.last?.text ?? "",
+                        onDismiss: {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                dismissedSmartReplyContact = ctx.contactName
+                            }
+                        }
+                    )
+                    .padding(.bottom, 68)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -3674,6 +3709,7 @@ struct SmartReplyFloatingBar: View {
     @ObservedObject var session: PortalSession
     let contactName: String
     let lastMessage: String
+    var onDismiss: (() -> Void)? = nil
     @State private var insertedFeedback: String? = nil
 
     private struct SmartReplyOption: Identifiable {
@@ -3752,6 +3788,20 @@ struct SmartReplyFloatingBar: View {
                         .foregroundStyle(.green)
                 }
                 .transition(.scale.combined(with: .opacity))
+            }
+
+            if let onDismiss {
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(Palette.muted)
+                        .padding(4.5)
+                        .background(Palette.hover, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss smart reply suggestions")
             }
         }
         .padding(.horizontal, 12)

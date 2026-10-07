@@ -989,6 +989,17 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func completeUserSignIn(name: String, email: String, provider: String = "Cloud Account") {
+        userProfile.isSignedIn = true
+        userProfile.provider = provider
+        userProfile.displayName = name
+        userProfile.email = email
+        userProfile.lastCloudBackup = .now
+        data.me.name = name
+        save()
+        objectWillChange.send()
+    }
+
     func signInWith(provider: String, name: String, email: String, tier: String = "PINGGO Pro (Active)") {
         userProfile.isSignedIn = true
         userProfile.provider = provider
@@ -1004,11 +1015,12 @@ final class AppStore: ObservableObject {
     }
 
     func signOutProfile() {
+        CloudSyncService.shared.disconnect(store: self)
         userProfile.isSignedIn = false
         userProfile.provider = nil
         userProfile.subscriptionTier = "Free"
         userProfile.subscriptionStatus = "Active"
-        showToast("Signed out. Operating in local mode.")
+        save()
         objectWillChange.send()
     }
 

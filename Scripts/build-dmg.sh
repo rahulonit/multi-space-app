@@ -25,5 +25,6 @@ hdiutil create \
   -format UDZO \
   "$dmg_path"
 
+sleep 1
 hdiutil verify "$dmg_path"
 echo "Built and verified $dmg_path"

@@ -224,23 +224,40 @@ final class CloudSyncService: ObservableObject {
     }
 
     // MARK: - Authentication Methods
-    func loginOrRegister(email: String, password: String, serverURL: String, store: AppStore) async -> Bool {
+    enum CloudAuthResult: Sendable {
+        case success(String)
+        case failure(String)
+
+        var isSuccess: Bool {
+            if case .success = self { return true }
+            return false
+        }
+
+        var message: String {
+            switch self {
+            case .success(let m), .failure(let m): return m
+            }
+        }
+    }
+
+    func login(email: String, password: String, store: AppStore) async -> CloudAuthResult {
         isSyncing = true
         syncError = nil
-        syncStatusMessage = "Authenticating…"
+        syncStatusMessage = "Checking account…"
 
-        let baseURL = serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let baseURL = store.preferences.cloudServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         guard let url = URL(string: "\(baseURL)/api/v1/auth/login") else {
-            syncError = "Invalid server URL"
             isSyncing = false
-            return false
+            syncError = "Invalid server URL"
+            return .failure("Invalid server URL")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let body: [String: Any] = [
-            "email": email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            "email": cleanEmail,
             "password": password,
             "deviceId": deviceID,
             "platform": "macOS"
@@ -251,9 +268,8 @@ final class CloudSyncService: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: request)
 
             guard let httpResp = response as? HTTPURLResponse else {
-                syncError = "Invalid server response"
                 isSyncing = false
-                return false
+                return .failure("Server unreachable. Please check connection.")
             }
 
             if httpResp.statusCode == 200 {
@@ -266,41 +282,65 @@ final class CloudSyncService: ObservableObject {
                 store.preferences.cloudAuthToken = authResult.token
                 store.preferences.cloudUserEmail = authResult.user.email
                 store.preferences.cloudSyncEnabled = true
-                store.preferences.cloudServerURL = baseURL
-                self.applyUserSubscription(user: authResult.user, store: store)
 
-                isSyncing = false
+                // Synchronize store profile state
+                let displayName = authResult.user.displayName ?? (cleanEmail.components(separatedBy: "@").first ?? "User")
+                store.completeUserSignIn(name: displayName, email: authResult.user.email, provider: "Cloud Account")
+
+                // Restore user subscription plan & validity
+                self.applyUserSubscription(user: authResult.user, store: store)
                 connectRealTimeWebSocket(store: store)
-                let hasRemoteSettings = await pullFromCloud(store: store)
-                if hasRemoteSettings {
-                    store.showToast("Settings & AI keys restored from MongoDB account")
+
+                // Automatically restore user settings, spaces, AI credentials, and bookmarks from database
+                let hasRemote = await pullFromCloud(store: store)
+                isSyncing = false
+
+                if hasRemote {
+                    store.showToast("Welcome back! Settings, spaces & plan restored.")
                 } else {
                     await syncNow(store: store)
-                    store.showToast("Connected to MongoDB Cloud")
+                    store.showToast("Signed in! Workspaces linked to account.")
                 }
-                return true
-            } else {
-                let registered = await registerAccount(email: email, password: password, baseURL: baseURL, store: store)
+                return .success("Signed in successfully")
+            } else if httpResp.statusCode == 401 {
                 isSyncing = false
-                return registered
+                let msg = "No account found for this email or password incorrect. If you don't have an account, please switch to Create Account."
+                self.syncError = msg
+                return .failure(msg)
+            } else {
+                isSyncing = false
+                let errMsg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "Authentication failed (HTTP \(httpResp.statusCode))"
+                self.syncError = errMsg
+                return .failure(errMsg)
             }
         } catch {
-            syncError = "Connection error: \(error.localizedDescription)"
-            syncStatusMessage = "Connection failed"
             isSyncing = false
-            return false
+            syncError = error.localizedDescription
+            return .failure("Could not connect to server: \(error.localizedDescription)")
         }
     }
 
-    private func registerAccount(email: String, password: String, baseURL: String, store: AppStore) async -> Bool {
-        guard let regURL = URL(string: "\(baseURL)/api/v1/auth/register") else { return false }
-        var request = URLRequest(url: regURL)
+    func register(name: String, email: String, password: String, store: AppStore) async -> CloudAuthResult {
+        isSyncing = true
+        syncError = nil
+        syncStatusMessage = "Creating account…"
+
+        let baseURL = store.preferences.cloudServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard let url = URL(string: "\(baseURL)/api/v1/auth/register") else {
+            isSyncing = false
+            return .failure("Invalid server URL")
+        }
+
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (cleanEmail.components(separatedBy: "@").first ?? "User") : name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
-            "email": email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            "email": cleanEmail,
             "password": password,
-            "displayName": store.userProfile.displayName,
+            "displayName": cleanName,
             "deviceId": deviceID,
             "platform": "macOS"
         ]
@@ -308,7 +348,13 @@ final class CloudSyncService: ObservableObject {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResp = response as? HTTPURLResponse, (httpResp.statusCode == 200 || httpResp.statusCode == 201) {
+
+            guard let httpResp = response as? HTTPURLResponse else {
+                isSyncing = false
+                return .failure("Server unreachable. Please check connection.")
+            }
+
+            if httpResp.statusCode == 200 || httpResp.statusCode == 201 {
                 let authResult = try JSONDecoder().decode(CloudAuthResponse.self, from: data)
                 self.isCloudConnected = true
                 self.currentUserEmail = authResult.user.email
@@ -318,20 +364,45 @@ final class CloudSyncService: ObservableObject {
                 store.preferences.cloudAuthToken = authResult.token
                 store.preferences.cloudUserEmail = authResult.user.email
                 store.preferences.cloudSyncEnabled = true
-                store.preferences.cloudServerURL = baseURL
+
+                // Update profile in store
+                store.completeUserSignIn(name: authResult.user.displayName ?? cleanName, email: authResult.user.email, provider: "Cloud Account")
+
                 self.applyUserSubscription(user: authResult.user, store: store)
                 connectRealTimeWebSocket(store: store)
+
+                // Immediately upload and back up current local spaces and settings into the new account
                 await syncNow(store: store)
-                store.showToast("Account created & backed up to MongoDB")
-                return true
+                isSyncing = false
+                store.showToast("Account created! All spaces & settings saved to cloud.")
+                return .success("Account created and settings saved")
+            } else if httpResp.statusCode == 409 {
+                isSyncing = false
+                let msg = "An account with this email already exists. Please switch to Sign In to restore your settings."
+                self.syncError = msg
+                return .failure(msg)
             } else {
-                syncError = "Authentication failed (Invalid credentials)"
-                syncStatusMessage = "Authentication failed"
-                return false
+                isSyncing = false
+                let errMsg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "Registration failed (HTTP \(httpResp.statusCode))"
+                self.syncError = errMsg
+                return .failure(errMsg)
             }
         } catch {
-            syncError = "Registration error: \(error.localizedDescription)"
-            return false
+            isSyncing = false
+            syncError = error.localizedDescription
+            return .failure("Could not connect to server: \(error.localizedDescription)")
+        }
+    }
+
+    func loginOrRegister(email: String, password: String, serverURL: String, store: AppStore) async -> Bool {
+        store.preferences.cloudServerURL = serverURL
+        let res = await login(email: email, password: password, store: store)
+        switch res {
+        case .success:
+            return true
+        case .failure:
+            let regRes = await register(name: "", email: email, password: password, store: store)
+            return regRes.isSuccess
         }
     }
 
@@ -345,6 +416,9 @@ final class CloudSyncService: ObservableObject {
         } else {
             store.preferences.cloudTierExpiresAt = nil
         }
+
+        store.userProfile.subscriptionTier = store.preferences.cloudPlanName
+        store.userProfile.subscriptionStatus = (user.isExpired == true) ? "Expired" : "Active"
 
         if user.isExpired == true {
             store.showToast("⚠️ Your Pro plan has expired. Switched to Free tier.")
@@ -443,10 +517,22 @@ final class CloudSyncService: ObservableObject {
         store.preferences.cloudAuthToken = ""
         store.preferences.cloudUserEmail = ""
         store.preferences.cloudSyncEnabled = false
+        store.preferences.cloudTier = "free"
+        store.preferences.cloudSubscriptionStatus = "free"
+        store.preferences.cloudTierExpiresAt = nil
+        store.preferences.cloudDaysRemaining = 0
+        store.preferences.cloudPlanName = "PINGGO Free"
+
         self.isCloudConnected = false
         self.currentUserEmail = ""
         self.syncStatusMessage = "Not Connected"
         self.syncError = nil
+
+        store.userProfile.isSignedIn = false
+        store.userProfile.provider = nil
+        store.userProfile.subscriptionTier = "Free"
+        store.userProfile.subscriptionStatus = "Active"
+        store.showToast("Signed out. Operating in local mode.")
     }
 
     // MARK: - Real-Time WebSocket Synchronization

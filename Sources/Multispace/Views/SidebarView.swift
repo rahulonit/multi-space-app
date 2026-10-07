@@ -68,38 +68,6 @@ struct SidebarView: View {
                             platformButton(platform)
                         }
                     }
-
-                    if !compact {
-                        Divider().background(Palette.border)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 8)
-
-                        Text("Spaces")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 4)
-
-                        workspaceRow("Personal", symbol: "person", count: 14)
-                        workspaceRow("Work", symbol: "briefcase", count: 58)
-                        workspaceRow("Projects", symbol: "folder.fill", count: 12)
-
-                        Button {
-                            store.showToast("Workspace creation is coming next")
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 12))
-                                Text("New space")
-                                    .font(.system(size: 11.5, weight: .medium))
-                                Spacer()
-                            }
-                            .foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 10)
-                            .frame(height: 32)
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
                 .padding(.horizontal, compact ? 8 : 10)
             }
@@ -190,25 +158,6 @@ struct SidebarView: View {
                 Text("This removes \(account.name) from PINGGO and clears its separate website session. Your account on the social platform is not deleted.")
             }
         }
-    }
-
-    private func workspaceRow(_ title: String, symbol: String, count: Int, selected: Bool = false) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(selected ? Palette.accent : Palette.muted)
-                .frame(width: 17)
-            Text(title)
-                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
-                .foregroundStyle(selected ? Color.primary : Palette.muted)
-            Spacer()
-            Text("\(count)")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Palette.muted)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(selected ? Palette.navActiveBg : Color.clear, in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func navButton(_ title: String, symbol: String, destination: AppDestination) -> some View {

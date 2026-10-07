@@ -60,14 +60,21 @@ struct AppLogo: View {
         Group {
             if let file = Bundle.module.url(forResource: "app-logo", withExtension: "png"),
                let image = NSImage(contentsOf: file) {
-                Image(nsImage: image)
+                let sizedImage: NSImage = {
+                    let copy = image.copy() as? NSImage ?? image
+                    copy.size = NSSize(width: size, height: size)
+                    return copy
+                }()
+                Image(nsImage: sizedImage)
                     .resizable()
                     .scaledToFit()
+                    .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius ?? (size * 0.22)))
             } else {
                 Image(systemName: "square.stack.3d.up.fill")
                     .resizable()
                     .scaledToFit()
+                    .frame(width: size, height: size)
                     .foregroundStyle(Palette.accent)
             }
         }

@@ -60,7 +60,6 @@ struct SettingsView: View {
     @State private var showingPinSetupSheet = false
     @State private var pinSetupIsChanging = false
     @State private var selectedSocialLoginProvider: String? = nil
-    @State private var activeAILoginProvider: String? = nil
     @State private var showingEditProfileSheet = false
     @State private var showGeminiApiKey = false
     @State private var showOpenAiApiKey = false
@@ -72,6 +71,17 @@ struct SettingsView: View {
     @State private var isCheckingOllama: Bool = false
     @State private var ollamaStatusDetail: String? = nil
     @ObservedObject private var cloudSync = CloudSyncService.shared
+    enum AuthTab: String, CaseIterable, Identifiable {
+        case signIn = "Sign In"
+        case createAccount = "Create Account"
+        var id: String { rawValue }
+    }
+    @State private var authTab: AuthTab = .signIn
+    @State private var authFullName: String = ""
+    @State private var authEmail: String = ""
+    @State private var authPassword: String = ""
+    @State private var authErrorMessage: String? = nil
+    @State private var isAuthenticating: Bool = false
     @State private var cloudLoginEmail: String = ""
     @State private var cloudLoginPassword: String = ""
 
@@ -163,12 +173,6 @@ struct SettingsView: View {
             set: { selectedSocialLoginProvider = $0?.provider }
         )) { item in
             SocialLoginSheet(providerName: item.provider)
-        }
-        .sheet(item: Binding(
-            get: { activeAILoginProvider.map { AILoginProviderItem(id: $0) } },
-            set: { activeAILoginProvider = $0?.id }
-        )) { item in
-            AILoginWebSheet(provider: item.id)
         }
         .sheet(isPresented: $showingEditProfileSheet) {
             EditProfileSheet()
@@ -279,13 +283,11 @@ struct SettingsView: View {
 
     private var accountPage: some View {
         VStack(spacing: 20) {
-            unifiedAccountAndCloudCard
-            if !store.userProfile.isSignedIn && !cloudSync.isCloudConnected {
-                guestProfileBanner
-                socialLoginSection
-                syncBenefitsCard
+            if store.userProfile.isSignedIn || cloudSync.isCloudConnected {
+                unifiedAccountProfileCard
             } else {
-                cloudBackupCard
+                accountAuthCard
+                syncBenefitsCard
             }
         }
     }
@@ -309,7 +311,7 @@ struct SettingsView: View {
         return String(name.prefix(2)).uppercased()
     }
 
-    private var unifiedAccountAndCloudCard: some View {
+    private var unifiedAccountProfileCard: some View {
         settingsCard("Account & Cloud Synchronization", symbol: "person.crop.circle.badge.checkmark", color: .indigo) {
             VStack(alignment: .leading, spacing: 16) {
                 // 1. Hero Profile Header & Plan Status
@@ -455,57 +457,6 @@ struct SettingsView: View {
                 .padding(12)
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
 
-                // 2. Cloud Sync Connection Status / Connect Box
-                if !cloudSync.isCloudConnected {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "icloud.and.arrow.up")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Palette.accent)
-                            Text("Connect to MongoDB Cloud")
-                                .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            Text("Sync workspaces & AI keys across devices")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.muted)
-                        }
-
-                        HStack(spacing: 8) {
-                            TextField("Email", text: Binding(
-                                get: { cloudLoginEmail.isEmpty ? effectiveUserEmail : cloudLoginEmail },
-                                set: { cloudLoginEmail = $0 }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-
-                            SecureField("Password", text: $cloudLoginPassword)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11))
-
-                            Button(cloudSync.isSyncing ? "Connecting…" : "Connect Cloud") {
-                                Task {
-                                    let emailToUse = cloudLoginEmail.isEmpty ? effectiveUserEmail : cloudLoginEmail
-                                    _ = await cloudSync.loginOrRegister(
-                                        email: emailToUse,
-                                        password: cloudLoginPassword,
-                                        serverURL: store.preferences.cloudServerURL,
-                                        store: store
-                                    )
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .tint(Palette.accent)
-                            .disabled(cloudLoginPassword.isEmpty || cloudSync.isSyncing)
-                        }
-                    }
-                    .padding(12)
-                    .background(Palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Palette.accent.opacity(0.2), lineWidth: 1)
-                    )
-                }
 
                 // 3. Data to Synchronize toggles
                 VStack(alignment: .leading, spacing: 8) {
@@ -598,138 +549,221 @@ struct SettingsView: View {
                     .disabled(cloudSync.isSyncing || !cloudSync.isCloudConnected)
                 }
 
-                // 5. Advanced Server Settings (Collapsible)
-                DisclosureGroup("Advanced Server & Gateway Settings") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Backend Gateway URL:")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.muted)
-                            TextField("http://localhost:4000", text: $store.preferences.cloudServerURL)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11, design: .monospaced))
-                                .frame(maxWidth: 240)
-                            Spacer()
-                        }
-                        Text("Default: http://localhost:4000. Change this if using a remote hosted PINGGO server.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Palette.muted)
+
+            }
+        }
+    }
+
+    private var accountAuthCard: some View {
+        settingsCard("Account Sign In & Cloud Backup", symbol: "person.crop.circle.badge.plus", color: .indigo) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Auth Tab Picker
+                Picker("", selection: $authTab) {
+                    ForEach(AuthTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
                     }
-                    .padding(.top, 6)
                 }
-                .font(.system(size: 11))
-            }
-        }
-    }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 2)
 
-    private var guestProfileBanner: some View {
-        settingsCard("Cloud Account & Sync", symbol: "cloud.fill", color: .indigo) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Store Subscription & Sync Workspaces Across Devices")
-                    .font(.system(size: 15, weight: .bold))
-                Text("Sign in with Google, Apple, or Microsoft to back up your social workspaces, sync your PINGGO Pro subscription, and restore custom URLs and platforms on any Mac.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
-                    .lineSpacing(2)
-            }
-        }
-    }
+                if authTab == .signIn {
+                    // MARK: - Sign In Tab (Restores Settings & Plan)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.badge.arrow.right")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Palette.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Sign In to Restore Your Setup")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("If your account is in the database, all spaces, AI keys, and Pro subscription will be automatically restored.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                        }
 
-    private var socialLoginSection: some View {
-        settingsCard("Sign In Options", symbol: "person.badge.key.fill", color: .blue) {
-            VStack(spacing: 12) {
-                socialLoginRow(
-                    provider: "Apple",
-                    icon: "apple.logo",
-                    iconColor: .primary,
-                    title: "Continue with Apple",
-                    desc: "Fast Touch ID & iCloud Keychain sync",
-                    badge: " Apple ID"
-                )
+                        VStack(spacing: 8) {
+                            TextField("Email Address", text: $authEmail)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
 
-                Divider()
+                            SecureField("Password", text: $authPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                        }
 
-                socialLoginRow(
-                    provider: "Google",
-                    icon: "g.circle.fill",
-                    iconColor: Color(red: 0.92, green: 0.26, blue: 0.21),
-                    title: "Continue with Google",
-                    desc: "Sync via Google Cloud & Workspace",
-                    badge: "Google Cloud"
-                )
+                        if let error = authErrorMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(.orange)
+                                Text(error)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        }
 
-                Divider()
+                        HStack {
+                            Button {
+                                authTab = .createAccount
+                                authErrorMessage = nil
+                            } label: {
+                                Text("Don't have an account? Create one")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.accent)
+                            }
+                            .buttonStyle(.plain)
 
-                socialLoginRow(
-                    provider: "Microsoft",
-                    icon: "square.grid.2x2.fill",
-                    iconColor: Color(red: 0.0, green: 0.63, blue: 0.94),
-                    title: "Continue with Microsoft",
-                    desc: "Sync via Microsoft Account & Entra ID",
-                    badge: "Microsoft 365"
-                )
-            }
-        }
-    }
+                            Spacer()
 
-    private func socialLoginRow(provider: String, icon: String, iconColor: Color, title: String, desc: String, badge: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(iconColor)
-                .frame(width: 34, height: 34)
-                .background(iconColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                            Button {
+                                Task {
+                                    isAuthenticating = true
+                                    authErrorMessage = nil
+                                    let res = await cloudSync.login(email: authEmail, password: authPassword, store: store)
+                                    isAuthenticating = false
+                                    switch res {
+                                    case .success:
+                                        authPassword = ""
+                                        authErrorMessage = nil
+                                    case .failure(let err):
+                                        authErrorMessage = err
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if isAuthenticating {
+                                        ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+                                    } else {
+                                        Image(systemName: "arrow.right.circle.fill")
+                                    }
+                                    Text(isAuthenticating ? "Signing In…" : "Sign In & Restore")
+                                }
+                                .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+                            .tint(Palette.accent)
+                            .disabled(authEmail.isEmpty || authPassword.isEmpty || isAuthenticating)
+                        }
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(badge)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(Palette.panel, in: Capsule())
+                        Divider()
+
+                        // Quick 1-Click Demo Accounts
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("QUICK 1-CLICK DEMO ACCOUNTS")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundStyle(Palette.muted)
+
+                            HStack(spacing: 8) {
+                                Button("Google (rahulonit@gmail.com)") {
+                                    authEmail = "rahulonit@gmail.com"
+                                    authPassword = "mypassword123"
+                                    Task {
+                                        isAuthenticating = true
+                                        authErrorMessage = nil
+                                        let res = await cloudSync.login(email: authEmail, password: authPassword, store: store)
+                                        isAuthenticating = false
+                                        if case .failure(let err) = res {
+                                            authErrorMessage = err
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                    }
+                } else {
+                    // MARK: - Create Account Tab (Stores Details & Settings)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Palette.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Create Account & Store Details")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Register an account in the database to store and back up all your current local workspaces and AI keys.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.muted)
+                            }
+                        }
+
+                        VStack(spacing: 8) {
+                            TextField("Full Name (e.g. Rahul Kumar)", text: $authFullName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+
+                            TextField("Email Address", text: $authEmail)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+
+                            SecureField("Password (minimum 6 characters)", text: $authPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                        }
+
+                        if let error = authErrorMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(.orange)
+                                Text(error)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        }
+
+                        HStack {
+                            Button {
+                                authTab = .signIn
+                                authErrorMessage = nil
+                            } label: {
+                                Text("Already have an account? Sign In")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.accent)
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    isAuthenticating = true
+                                    authErrorMessage = nil
+                                    let res = await cloudSync.register(name: authFullName, email: authEmail, password: authPassword, store: store)
+                                    isAuthenticating = false
+                                    switch res {
+                                    case .success:
+                                        authPassword = ""
+                                        authErrorMessage = nil
+                                    case .failure(let err):
+                                        authErrorMessage = err
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if isAuthenticating {
+                                        ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+                                    } else {
+                                        Image(systemName: "cloud.fill")
+                                    }
+                                    Text(isAuthenticating ? "Saving…" : "Create Account & Store Details")
+                                }
+                                .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+                            .tint(Palette.accent)
+                            .disabled(authEmail.isEmpty || authPassword.isEmpty || isAuthenticating)
+                        }
+                    }
                 }
-                Text(desc)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.muted)
-            }
-
-            Spacer()
-
-            Button("Sign In") {
-                selectedSocialLoginProvider = provider
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .tint(Palette.accent)
-        }
-    }
-
-    private var localUserCard: some View {
-        settingsCard("Local Profile (Offline)", symbol: "laptopcomputer", color: .gray) {
-            HStack(spacing: 14) {
-                Avatar(member: store.me, size: 44)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.me.name)
-                        .font(.system(size: 14, weight: .bold))
-                    Text("@\(store.me.handle) · \(store.me.status)")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.muted)
-                    Text("Currently saved only on this Mac. Sign in above to sync to cloud.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.muted)
-                }
-
-                Spacer()
-
-                Button("Edit Name") {
-                    showingEditProfileSheet = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
     }
@@ -766,72 +800,7 @@ struct SettingsView: View {
         }
     }
 
-    private var authenticatedUserCard: some View {
-        settingsCard("Connected Account", symbol: "person.crop.circle.fill.badge.checkmark", color: .green) {
-            VStack(spacing: 16) {
-                HStack(spacing: 14) {
-                    ZStack(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(Palette.accent.opacity(0.2))
-                            .frame(width: 52, height: 52)
-                        Text(String(store.userProfile.displayName.prefix(1)).uppercased())
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(Palette.accent)
 
-                        ZStack {
-                            Circle()
-                                .fill(Palette.panel)
-                                .frame(width: 20, height: 20)
-                            Image(systemName: providerSymbol(store.userProfile.provider ?? ""))
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(providerColor(store.userProfile.provider ?? ""))
-                        }
-                        .offset(x: 2, y: 2)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(store.userProfile.displayName)
-                                .font(.system(size: 15, weight: .bold))
-                            HStack(spacing: 3) {
-                                Image(systemName: "checkmark.seal.fill")
-                                Text("Synced")
-                            }
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.12), in: Capsule())
-                        }
-
-                        Text(store.userProfile.email)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
-
-                        Text("Signed in with \(store.userProfile.provider ?? "Cloud Account")")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Button("Edit Details") {
-                            showingEditProfileSheet = true
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button("Sign Out", role: .destructive) {
-                            store.signOutProfile()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
-            }
-        }
-    }
 
     private func providerSymbol(_ provider: String) -> String {
         switch provider {
@@ -851,194 +820,7 @@ struct SettingsView: View {
         }
     }
 
-    private var cloudSubscriptionCard: some View {
-        settingsCard("License & Subscription", symbol: "crown.fill", color: .yellow) {
-            VStack(spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(store.isPro ? (store.preferences.cloudPlanName.isEmpty ? "PINGGO Pro" : store.preferences.cloudPlanName) : "PINGGO Free")
-                                .font(.system(size: 14, weight: .bold))
-                            if store.isCloudProExpired {
-                                Text("EXPIRED")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(.orange)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(Color.orange.opacity(0.15), in: Capsule())
-                            } else if store.isPro {
-                                Text("ACTIVE")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(.green)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(Color.green.opacity(0.15), in: Capsule())
-                            } else {
-                                Text("FREE TIER")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(Palette.muted)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(Color.gray.opacity(0.15), in: Capsule())
-                            }
-                        }
-                        if let license = LicenseService.shared.activeLicense {
-                            Text("Key: \(license.key.prefix(8))••••••••")
-                                .font(.system(size: 11.5, design: .monospaced))
-                                .foregroundStyle(Palette.muted)
-                        } else if let expires = store.preferences.cloudTierExpiresAt {
-                            if store.isCloudProExpired {
-                                Text("Plan ended on \(expires.formatted(date: .abbreviated, time: .omitted)) • Repayment required to restore Pro")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Color.orange)
-                            } else {
-                                Text("Valid until \(expires.formatted(date: .long, time: .omitted)) (\(store.subscriptionDaysRemaining) days remaining)")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Palette.muted)
-                            }
-                        } else {
-                            Text("Up to 3 social accounts · Single workspace view")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Palette.muted)
-                        }
-                    }
-                    Spacer()
-                    if store.isCloudProExpired {
-                        Button("Renew Plan") {
-                            store.triggerUpgrade(reason: "Your Pro plan has expired. Please renew to restore unlimited workspaces.")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.orange)
-                        .controlSize(.small)
-                    } else if store.isPro {
-                        if LicenseService.shared.isPro {
-                            Button("Deactivate") {
-                                LicenseService.shared.deactivate()
-                                store.showToast("License deactivated.")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        } else {
-                            Button("Manage Plan") {
-                                store.triggerUpgrade(reason: "Manage your active PINGGO Pro subscription.")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    } else {
-                        Button("Upgrade to Pro") {
-                            store.triggerUpgrade(reason: "Unlock unlimited accounts, Split View, and Roster Export.")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-                }
-                .padding(10)
-                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
 
-                HStack {
-                    Image(systemName: store.isPro ? "checkmark.circle.fill" : (store.isCloudProExpired ? "exclamationmark.triangle.fill" : "info.circle.fill"))
-                        .foregroundStyle(store.isPro ? .green : (store.isCloudProExpired ? .orange : Palette.muted))
-                        .font(.system(size: 12))
-                    Text(store.isPro ? "All Pro features unlocked on this Mac." : (store.isCloudProExpired ? "Plan expired. Reverted to Free tier — tap Renew Plan to restore." : "Upgrade to PINGGO Pro for $9.99/mo or $79/yr."))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                    Spacer()
-                }
-            }
-        }
-    }
-
-    private var cloudBackupCard: some View {
-        settingsCard("User Data & Cloud Sync", symbol: "arrow.triangle.2.circlepath.circle.fill", color: .cyan) {
-            VStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Cloud Storage Quota")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Text(store.userProfile.cloudStorageUsage)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                    }
-                    ProgressView(value: 0.03)
-                        .tint(Palette.accent)
-                }
-
-                Divider()
-
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Synced Items")
-                            .font(.system(size: 11.5, weight: .semibold))
-                        Text("• \(store.socialPlatforms.count) Social Platforms & URLs")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                        Text("• \(store.platformAccounts.count) Active Accounts & Sessions")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                        Text("• App Preferences & App Lock")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("Last Backup")
-                            .font(.system(size: 11.5, weight: .semibold))
-                        if let backup = store.userProfile.lastCloudBackup {
-                            Text(backup.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 11))
-                                .foregroundStyle(.green)
-                        } else {
-                            Text("Never")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.muted)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
-
-                Divider()
-
-                HStack {
-                    Toggle("Auto-Sync Changes", isOn: $store.userProfile.autoCloudSync)
-                        .font(.system(size: 11.5))
-                        .tint(Palette.accent)
-
-                    Spacer()
-
-                    Button {
-                        let json = store.exportUserDataJSON()
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(json, forType: .string)
-                        store.showToast("Exported user data JSON copied to clipboard!")
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.arrow.up")
-                            Text("Export Data")
-                        }
-                        .font(.system(size: 11))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
-                        store.triggerCloudSync()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Sync Now")
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(Palette.accent)
-                }
-            }
-        }
-    }
 
     private var aiSettingsPage: some View {
         VStack(spacing: 24) {
@@ -1143,67 +925,102 @@ struct SettingsView: View {
                 }
             }
 
-            // Connected Providers Card
-            settingsCard("Connected AI Providers", symbol: "person.badge.shield.checkmark.fill", color: .indigo) {
-                // Google Gemini Card
-                aiAccountRow(
-                    title: "Google Gemini",
-                    subtitle: "Gemini API · Secured by macOS Keychain",
-                    icon: "sparkles",
-                    color: Color(red: 0.26, green: 0.52, blue: 0.96),
-                    isLoggedIn: !store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn,
-                    provider: "gemini"
-                )
-
-                Divider()
-
-                // OpenAI ChatGPT Card
-                aiAccountRow(
-                    title: "OpenAI ChatGPT",
-                    subtitle: "OpenAI API · Secured by macOS Keychain",
-                    icon: "bubble.left.and.bubble.right.fill",
-                    color: Color(red: 0.06, green: 0.65, blue: 0.53),
-                    isLoggedIn: !store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn,
-                    provider: "chatgpt"
-                )
-            }
-
-            // Direct API Keys & Models
-            settingsCard("API Keys & Direct Integration", symbol: "key.horizontal.fill", color: .blue) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Provider Configuration")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Choose the model used after connecting a provider. Without a connected provider, PINGGO clearly labels results from its local Smart Engine.")
-                        .font(.system(size: 11))
+            // Master AI Providers & Model Integration Card
+            settingsCard("AI Providers & Model Integration", symbol: "brain.head.profile", color: .blue) {
+                // Intro & Security Callout
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connect your preferred AI engines to unlock context-aware smart replies, conversation summaries, action item extraction, and real-time translation across all messaging spaces. When no external provider is configured, PINGGO falls back to its built-in local smart engine.")
+                        .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundStyle(.green)
+                            .font(.system(size: 13))
+                        Text("Hardware-Secured: API keys are encrypted and stored locally in your macOS Keychain. They are never sent to third-party tracking servers and communicate directly with each provider's official API endpoints.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                 }
 
                 Divider()
 
-                // Google Gemini Key
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
-                        Text("Google Gemini API Key")
-                            .font(.system(size: 12.5, weight: .semibold))
+                // 1. Google Gemini Section
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(red: 0.26, green: 0.52, blue: 0.96).opacity(0.15))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("Google Gemini")
+                                    .font(.system(size: 13, weight: .bold))
+
+                                if !store.preferences.geminiApiKey.isEmpty && store.preferences.isGeminiLoggedIn {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(Color.green).frame(width: 6, height: 6)
+                                        Text("Connected")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.green)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.12), in: Capsule())
+                                } else if !store.preferences.geminiApiKey.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(Color.orange).frame(width: 6, height: 6)
+                                        Text("Key Saved (Untested)")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(.orange)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.12), in: Capsule())
+                                } else {
+                                    Text("Not Configured")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Palette.muted)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Palette.card.opacity(0.6), in: Capsule())
+                                }
+                            }
+
+                            Text("Gemini 2.5 multimodal models with ultra-low latency, 1M+ token context, and deep multilingual understanding.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted)
+                        }
+
                         Spacer()
+
                         Picker("Model", selection: $store.preferences.geminiModelTier) {
-                            Text("gemini-2.5-flash").tag("gemini-2.5-flash")
-                            Text("gemini-2.5-pro").tag("gemini-2.5-pro")
+                            Text("gemini-2.5-flash (Fastest)").tag("gemini-2.5-flash")
+                            Text("gemini-2.5-pro (Reasoning)").tag("gemini-2.5-pro")
                             Text("gemini-1.5-flash").tag("gemini-1.5-flash")
                             Text("gemini-1.5-pro").tag("gemini-1.5-pro")
                         }
                         .labelsHidden()
-                        .frame(width: 155)
+                        .frame(width: 175)
                     }
 
+                    // Key input and action buttons
                     HStack(spacing: 8) {
                         Group {
                             if showGeminiApiKey {
-                                TextField("AIzaSy...", text: aiCredentialBinding(provider: "gemini"))
+                                TextField("Enter Gemini API key (AIzaSy...)", text: aiCredentialBinding(provider: "gemini"))
                             } else {
-                                SecureField("AIzaSy...", text: aiCredentialBinding(provider: "gemini"))
+                                SecureField("Enter Gemini API key (AIzaSy...)", text: aiCredentialBinding(provider: "gemini"))
                             }
                         }
                         .textFieldStyle(.roundedBorder)
@@ -1218,7 +1035,7 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button("Test Key") {
+                        Button {
                             testingAiConnection = true
                             aiTestResult = nil
                             Task {
@@ -1231,37 +1048,114 @@ struct SettingsView: View {
                                 aiTestResult = res
                                 store.preferences.isGeminiLoggedIn = res.success
                             }
+                        } label: {
+                            if testingAiConnection {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Text("Test Key")
+                            }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(store.preferences.geminiApiKey.isEmpty || testingAiConnection)
+
+                        if !store.preferences.geminiApiKey.isEmpty {
+                            Button("Disconnect") {
+                                Task {
+                                    await AIService.shared.signOut(provider: "gemini", store: store)
+                                    aiTestResult = nil
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    // Direct helper link
+                    HStack(spacing: 4) {
+                        Text("Need a Gemini API key?")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                        Link("Get a free key from Google AI Studio", destination: URL(string: "https://aistudio.google.com/app/apikey")!)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
                     }
                 }
 
                 Divider()
 
-                // OpenAI ChatGPT Key
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .foregroundStyle(Color(red: 0.06, green: 0.65, blue: 0.53))
-                        Text("OpenAI ChatGPT API Key")
-                            .font(.system(size: 12.5, weight: .semibold))
+                // 2. OpenAI ChatGPT Section
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(red: 0.06, green: 0.65, blue: 0.53).opacity(0.15))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.06, green: 0.65, blue: 0.53))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("OpenAI ChatGPT")
+                                    .font(.system(size: 13, weight: .bold))
+
+                                if !store.preferences.openAiApiKey.isEmpty && store.preferences.isChatGptLoggedIn {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(Color.green).frame(width: 6, height: 6)
+                                        Text("Connected")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.green)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.12), in: Capsule())
+                                } else if !store.preferences.openAiApiKey.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(Color.orange).frame(width: 6, height: 6)
+                                        Text("Key Saved (Untested)")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(.orange)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.12), in: Capsule())
+                                } else {
+                                    Text("Not Configured")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Palette.muted)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Palette.card.opacity(0.6), in: Capsule())
+                                }
+                            }
+
+                            Text("GPT-4o & GPT-4o-mini models for natural conversational flow, nuanced tone matching, and precise reasoning.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted)
+                        }
+
                         Spacer()
+
                         Picker("Model", selection: $store.preferences.openAiModelTier) {
-                            Text("gpt-4o-mini").tag("gpt-4o-mini")
-                            Text("gpt-4o").tag("gpt-4o")
+                            Text("gpt-4o-mini (Fast & Low Cost)").tag("gpt-4o-mini")
+                            Text("gpt-4o (High Precision)").tag("gpt-4o")
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 175)
                     }
 
+                    // Key input and action buttons
                     HStack(spacing: 8) {
                         Group {
                             if showOpenAiApiKey {
-                                TextField("sk-proj-...", text: aiCredentialBinding(provider: "chatgpt"))
+                                TextField("Enter OpenAI API key (sk-proj-...)", text: aiCredentialBinding(provider: "chatgpt"))
                             } else {
-                                SecureField("sk-proj-...", text: aiCredentialBinding(provider: "chatgpt"))
+                                SecureField("Enter OpenAI API key (sk-proj-...)", text: aiCredentialBinding(provider: "chatgpt"))
                             }
                         }
                         .textFieldStyle(.roundedBorder)
@@ -1276,7 +1170,7 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button("Test Key") {
+                        Button {
                             testingAiConnection = true
                             aiTestResult = nil
                             Task {
@@ -1289,57 +1183,98 @@ struct SettingsView: View {
                                 aiTestResult = res
                                 store.preferences.isChatGptLoggedIn = res.success
                             }
+                        } label: {
+                            if testingAiConnection {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Text("Test Key")
+                            }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(store.preferences.openAiApiKey.isEmpty || testingAiConnection)
+
+                        if !store.preferences.openAiApiKey.isEmpty {
+                            Button("Disconnect") {
+                                Task {
+                                    await AIService.shared.signOut(provider: "chatgpt", store: store)
+                                    aiTestResult = nil
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    // Direct helper link
+                    HStack(spacing: 4) {
+                        Text("Need an OpenAI secret key?")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                        Link("Generate a key in OpenAI API Keys Dashboard", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color(red: 0.06, green: 0.65, blue: 0.53))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(Color(red: 0.06, green: 0.65, blue: 0.53))
                     }
                 }
 
                 Divider()
 
-                // Ollama Local LLM (Offline / Privacy-First)
+                // 3. Ollama Local LLM Section
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        HStack(spacing: 6) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.purple.opacity(0.15))
+                                .frame(width: 32, height: 32)
                             Image(systemName: "cpu.fill")
+                                .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(.purple)
-                            Text("Ollama Local LLM (Offline / Privacy-First)")
-                                .font(.system(size: 12.5, weight: .semibold))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("Ollama Local LLM")
+                                    .font(.system(size: 13, weight: .bold))
+
+                                if isCheckingOllama {
+                                    HStack(spacing: 4) {
+                                        ProgressView().controlSize(.mini)
+                                        Text("Detecting...")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Palette.muted)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Palette.card, in: Capsule())
+                                } else if let online = ollamaIsOnline {
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(online ? Color.green : Color.orange)
+                                            .frame(width: 6, height: 6)
+                                        Text(online ? "Active (\(ollamaInstalledModels.count) models)" : "Offline")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(online ? .green : .orange)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background((online ? Color.green : Color.orange).opacity(0.12), in: Capsule())
+                                }
+                            }
+
+                            Text("Run open-weights models completely offline on your Mac's Apple Silicon GPU. Zero cloud data sharing.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted)
                         }
 
                         Spacer()
-
-                        // Live Status Badge
-                        if isCheckingOllama {
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                Text("Detecting...")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.muted)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Palette.card, in: Capsule())
-                        } else if let online = ollamaIsOnline {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(online ? Color.green : Color.orange)
-                                    .frame(width: 6, height: 6)
-                                Text(online ? "Active (\(ollamaInstalledModels.count) models)" : "Offline")
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(online ? .green : .orange)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background((online ? Color.green : Color.orange).opacity(0.12), in: Capsule())
-                        }
                     }
 
-                    // Model Selection
+                    // Model Selection & Presets
                     HStack(spacing: 10) {
-                        Text("Active Model")
+                        Text("Active Model:")
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Palette.muted)
 
@@ -1421,6 +1356,18 @@ struct SettingsView: View {
                         .disabled(testingAiConnection)
                     }
 
+                    HStack(spacing: 4) {
+                        Text("Get Ollama for macOS:")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted)
+                        Link("ollama.com", destination: URL(string: "https://ollama.com")!)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.purple)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(.purple)
+                    }
+
                     if let detail = ollamaStatusDetail {
                         Text(detail)
                             .font(.system(size: 10.5))
@@ -1433,6 +1380,7 @@ struct SettingsView: View {
                     }
                 }
 
+                // Feedback Banner
                 if let res = aiTestResult {
                     HStack(spacing: 8) {
                         Image(systemName: res.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -1440,90 +1388,20 @@ struct SettingsView: View {
                         Text(res.message)
                             .font(.system(size: 11.5))
                             .foregroundStyle(res.success ? .green : .red)
+                        Spacer()
+                        Button {
+                            aiTestResult = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background((res.success ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
                 }
-            }
-        }
-    }
-
-    private func aiAccountRow(
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
-        isLoggedIn: Bool,
-        provider: String
-    ) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(color)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .bold))
-                    if isLoggedIn {
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.green).frame(width: 6, height: 6)
-                            Text("Connected")
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundStyle(.green)
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.12), in: Capsule())
-                    } else {
-                        Text("Not Connected")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Palette.card.opacity(0.6), in: Capsule())
-                    }
-                }
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.muted)
-            }
-
-            Spacer()
-
-            if isLoggedIn {
-                Button("Manage") {
-                    activeAILoginProvider = provider
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button("Sign Out") {
-                    Task {
-                        await AIService.shared.signOut(provider: provider, store: store)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            } else {
-                Button {
-                    activeAILoginProvider = provider
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.right.circle.fill")
-                        Text("Connect")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(color)
-                .controlSize(.small)
             }
         }
     }

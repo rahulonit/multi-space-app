@@ -26,7 +26,7 @@ struct GlobalHeaderView: View {
     @State private var showingDownloadsPopover = false
     @State private var showingNotificationsPopover = false
 
-    private var usesCompactHeaderControls: Bool { windowWidth < 1100 }
+    private var usesCompactHeaderControls: Bool { windowWidth < 800 }
 
     private var activeTab: HeaderNavTab {
         switch store.destination {
@@ -45,7 +45,7 @@ struct GlobalHeaderView: View {
         HStack(spacing: 10) {
             // Compact brand area
             brandArea
-                .frame(width: usesCompactHeaderControls ? 38 : 184, alignment: .leading)
+                .frame(width: usesCompactHeaderControls ? 32 : 110, alignment: .leading)
 
             if windowWidth > 1200 {
                 // Centered Navigation Pill layout
@@ -81,13 +81,13 @@ struct GlobalHeaderView: View {
             }
         } label: {
             HStack(spacing: 8) {
-                AppLogo(size: 28)
-                Text("Pinggo")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .lineLimit(1)
-                    .opacity(usesCompactHeaderControls ? 0 : 1)
-                    .frame(width: usesCompactHeaderControls ? 0 : nil)
+                AppLogo(size: 26)
+                if !usesCompactHeaderControls {
+                    Text("Pinggo")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+                }
             }
         }
         .buttonStyle(.plain)
